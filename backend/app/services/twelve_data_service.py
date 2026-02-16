@@ -20,8 +20,9 @@ class TwelveDataService:
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(url, params=params)
-                response.raise_for_status()
                 data = response.json()
+                print(f"[TwelveData] Response for {symbol}: {data}")
+                response.raise_for_status()
                 # TwelveData returns {'price': '...'} or error
                 if "price" in data:
                     return {

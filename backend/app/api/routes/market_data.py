@@ -5,7 +5,7 @@ from typing import List, Dict, Any
 
 router = APIRouter()
 
-@router.get("/quote/{symbol}")
+@router.get("/quote/{symbol:path}")
 async def get_quote(symbol: str):
     """Get real-time quote for a specific symbol using Unified Market Data Service."""
     data = await market_data_service.get_price(symbol)
@@ -13,7 +13,7 @@ async def get_quote(symbol: str):
         raise HTTPException(status_code=404, detail=data.get("error", "Data not found"))
     return data
 
-@router.get("/historical/{symbol}")
+@router.get("/historical/{symbol:path}")
 async def get_historical(symbol: str, limit: int = 30):
     """Get historical data (OHLC) for a symbol."""
     data = await market_data_service.get_historical(symbol, limit)

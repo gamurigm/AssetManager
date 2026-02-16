@@ -23,6 +23,8 @@ const MOCK_TRANSACTIONS = [
 export default function ClientDashboard() {
     const [holdings, setHoldings] = useState(INITIAL_HOLDINGS);
     const [loading, setLoading] = useState(true);
+    const [activeTab, setActiveTab] = useState("portfolio");
+    const [openTabs, setOpenTabs] = useState([{ id: "portfolio", title: "My Portfolio", symbol: null }]);
 
     useEffect(() => {
         const fetchPrices = async () => {
@@ -52,9 +54,24 @@ export default function ClientDashboard() {
         };
 
         fetchPrices();
-        const interval = setInterval(fetchPrices, 30000); // 30s refresh
+        const interval = setInterval(fetchPrices, 30000);
         return () => clearInterval(interval);
     }, []);
+
+    const openSymbolTab = (symbol: string) => {
+        if (!openTabs.find(t => t.id === symbol)) {
+            setOpenTabs([...openTabs, { id: symbol, title: symbol, symbol: symbol }]);
+        }
+        setActiveTab(symbol);
+    };
+
+    const closeTab = (e: React.MouseEvent, id: string) => {
+        e.stopPropagation();
+        if (id === "portfolio") return;
+        const newTabs = openTabs.filter(t => t.id !== id);
+        setOpenTabs(newTabs);
+        if (activeTab === id) setActiveTab("portfolio");
+    };
 
     const totalValue = holdings.reduce((sum, h) => sum + h.shares * h.price, 0);
     const totalPnL = holdings.reduce((sum, h) => sum + h.shares * h.change, 0);
@@ -62,115 +79,231 @@ export default function ClientDashboard() {
 
     return (
         <AppLayout>
-            <div className="p-6 lg:p-8 space-y-6 animate-fade-in">
-                {/* Header */}
-                <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-                    <div>
-                        <p className="text-muted text-sm font-medium">Good afternoon</p>
-                        <h1 className="text-3xl font-bold tracking-tight mt-1">My Portfolio</h1>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <span className={`flex h-2 w-2 rounded-full ${loading ? 'bg-yellow-400' : 'bg-green animate-pulse'}`} />
-                        <span className="text-xs text-muted font-medium">{loading ? 'Updating...' : 'Live Real-time Data'}</span>
-                    </div>
+            <div className="flex flex-col h-full bg-background animate-fade-in">
+                {/* Tabs Bar */}
+                <div className="flex items-center gap-1 px-4 pt-4 border-b border-border bg-card/30">
+                    {openTabs.map((tab) => (
+                        <div
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={`group flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider cursor-pointer transition-all rounded-t-xl border-t border-x border-transparent translate-y-[1px] ${activeTab === tab.id
+                                    ? "bg-background border-border text-accent"
+                                    : "text-muted hover:text-foreground hover:bg-card/50"
+                                }`}
+                        >
+                            {tab.title}
+                            {tab.id !== "portfolio" && (
+                                <X
+                                    size={12}
+                                    onClick={(e) => closeTab(e, tab.id)}
+                                    className="opacity-0 group-hover:opacity-100 hover:text-red transition-opacity p-0.5 rounded-md hover:bg-red/10"
+                                />
+                            )}
+                        </div>
+                    ))}
                 </div>
 
-                {/* Stats Cards */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 stagger">
-                    <StatCard
-                        label="Total Value"
-                        value={`$${totalValue.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
-                        icon={<DollarSign size={18} />}
-                        accent="blue"
-                    />
-                    <StatCard
-                        label="Today's P&L"
-                        value={`${totalPnL >= 0 ? "+" : ""}$${totalPnL.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
-                        sub={`${pnlPercent >= 0 ? "+" : ""}${pnlPercent.toFixed(2)}%`}
-                        icon={totalPnL >= 0 ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
-                        accent={totalPnL >= 0 ? "green" : "red"}
-                    />
-                    <StatCard
-                        label="Holdings"
-                        value={holdings.length.toString()}
-                        icon={<BarChart3 size={18} />}
-                        accent="purple"
-                    />
-                    <StatCard
-                        label="Win Rate"
-                        value="72.4%"
-                        icon={<TrendingUp size={18} />}
-                        accent="emerald"
-                    />
-                </div>
+                <div className="flex-1 overflow-y-auto p-6 lg:p-8 space-y-6">
+                    {activeTab === "portfolio" ? (
+                        <>
+                            {/* Header */}
+                            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+                                <div>
+                                    <p className="text-muted text-sm font-medium">Markets are active</p>
+                                    <h1 className="text-3xl font-bold tracking-tight mt-1">Institutional Dashboard</h1>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className={`flex h-2 w-2 rounded-full ${loading ? 'bg-yellow-400' : 'bg-green animate-pulse'}`} />
+                                    <span className="text-xs text-muted font-medium">{loading ? 'Updating...' : 'Live Real-time Data'}</span>
+                                </div>
+                            </div>
 
-                {/* Main Grid */}
-                <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                    {/* Holdings Table */}
-                    <div className="xl:col-span-2 bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
-                        <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card-hover/30">
-                            <h2 className="text-base font-semibold">Holdings</h2>
-                            <span className="text-xs text-muted">{holdings.length} positions · Multi-Source</span>
-                        </div>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-sm">
-                                <thead>
-                                    <tr className="text-left text-muted text-xs border-b border-border bg-background/50">
-                                        <th className="px-6 py-3 font-medium">Asset</th>
-                                        <th className="px-4 py-3 font-medium text-right">Shares</th>
-                                        <th className="px-4 py-3 font-medium text-right">Price</th>
-                                        <th className="px-4 py-3 font-medium text-right">Value</th>
-                                        <th className="px-4 py-3 font-medium text-right">Change</th>
-                                        <th className="px-6 py-3 font-medium text-right">Source</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="stagger">
-                                    {holdings.map((h) => (
-                                        <tr key={h.symbol} className="border-b border-border/50 hover:bg-card-hover transition-colors group">
-                                            <td className="px-6 py-4">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="h-9 w-9 rounded-lg bg-accent/10 flex items-center justify-center text-accent font-bold text-xs group-hover:scale-110 transition-transform">
-                                                        {h.symbol.slice(0, 2)}
-                                                    </div>
-                                                    <div>
-                                                        <p className="font-semibold">{h.symbol}</p>
-                                                        <p className="text-xs text-muted truncate max-w-[120px]">{h.name}</p>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td className="px-4 py-4 text-right font-mono text-xs">{h.shares}</td>
-                                            <td className="px-4 py-4 text-right font-mono font-medium">${h.price.toFixed(h.symbol.includes('/') ? 4 : 2)}</td>
-                                            <td className="px-4 py-4 text-right font-mono font-semibold text-accent">
-                                                ${(h.shares * h.price).toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                                            </td>
-                                            <td className="px-4 py-4 text-right">
-                                                <div className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${h.changePercent >= 0
-                                                    ? "text-green bg-green/10"
-                                                    : "text-red bg-red/10"
-                                                    }`}>
-                                                    {h.changePercent >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-                                                    {Math.abs(h.changePercent).toFixed(2)}%
-                                                </div>
-                                            </td>
-                                            <td className="px-6 py-4 text-right">
-                                                <span className="text-[10px] bg-background border border-border px-2 py-0.5 rounded-md text-muted font-mono">
-                                                    {h.source}
-                                                </span>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
+                            {/* Stats Cards */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 stagger">
+                                <StatCard
+                                    label="Total Value"
+                                    value={`$${totalValue.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
+                                    icon={<DollarSign size={18} />}
+                                    accent="blue"
+                                />
+                                <StatCard
+                                    label="Today's P&L"
+                                    value={`${totalPnL >= 0 ? "+" : ""}$${totalPnL.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
+                                    sub={`${pnlPercent >= 0 ? "+" : ""}${pnlPercent.toFixed(2)}%`}
+                                    icon={totalPnL >= 0 ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
+                                    accent={totalPnL >= 0 ? "green" : "red"}
+                                />
+                                <StatCard
+                                    label="Active Positions"
+                                    value={holdings.length.toString()}
+                                    icon={<BarChart3 size={18} />}
+                                    accent="purple"
+                                />
+                                <StatCard
+                                    label="Portfolio Health"
+                                    value="Optimal"
+                                    icon={<TrendingUp size={18} />}
+                                    accent="emerald"
+                                />
+                            </div>
 
-                    {/* Watchlist Panel */}
-                    <div className="h-[500px] xl:h-auto">
-                        <Watchlist />
-                    </div>
+                            {/* Main Grid */}
+                            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                                {/* Holdings Table */}
+                                <div className="xl:col-span-2 bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
+                                    <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card-hover/30">
+                                        <h2 className="text-base font-semibold">Holdings</h2>
+                                        <span className="text-xs text-muted">{holdings.length} positions · Multi-Source</span>
+                                    </div>
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-sm">
+                                            <thead>
+                                                <tr className="text-left text-muted text-xs border-b border-border bg-background/50">
+                                                    <th className="px-6 py-3 font-medium">Asset</th>
+                                                    <th className="px-4 py-3 font-medium text-right">Shares</th>
+                                                    <th className="px-4 py-3 font-medium text-right">Price</th>
+                                                    <th className="px-4 py-3 font-medium text-right">Value</th>
+                                                    <th className="px-4 py-3 font-medium text-right">Change</th>
+                                                    <th className="px-6 py-3 font-medium text-right">Source</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="stagger">
+                                                {holdings.map((h) => (
+                                                    <tr
+                                                        key={h.symbol}
+                                                        onClick={() => openSymbolTab(h.symbol)}
+                                                        className="border-b border-border/50 hover:bg-card-hover transition-colors group cursor-pointer"
+                                                    >
+                                                        <td className="px-6 py-4">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="h-9 w-9 rounded-lg bg-accent/10 flex items-center justify-center text-accent font-bold text-xs group-hover:scale-110 transition-transform">
+                                                                    {h.symbol.slice(0, 2)}
+                                                                </div>
+                                                                <div>
+                                                                    <p className="font-semibold group-hover:text-accent transition-colors">{h.symbol}</p>
+                                                                    <p className="text-xs text-muted truncate max-w-[120px]">{h.name}</p>
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-4 py-4 text-right font-mono text-xs">{h.shares}</td>
+                                                        <td className="px-4 py-4 text-right font-mono font-medium">${h.price.toFixed(h.symbol.includes('/') ? 4 : 2)}</td>
+                                                        <td className="px-4 py-4 text-right font-mono font-semibold text-accent">
+                                                            ${(h.shares * h.price).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                                                        </td>
+                                                        <td className="px-4 py-4 text-right">
+                                                            <div className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${h.changePercent >= 0
+                                                                ? "text-green bg-green/10"
+                                                                : "text-red bg-red/10"
+                                                                }`}>
+                                                                {h.changePercent >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                                                                {Math.abs(h.changePercent).toFixed(2)}%
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-6 py-4 text-right">
+                                                            <span className="text-[10px] bg-background border border-border px-2 py-0.5 rounded-md text-muted font-mono">
+                                                                {h.source}
+                                                            </span>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                {/* Watchlist Panel */}
+                                <div className="h-[500px] xl:h-[600px]">
+                                    <Watchlist onSelectSymbol={openSymbolTab} />
+                                </div>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="h-full min-h-[600px] rounded-2xl overflow-hidden border border-border bg-card">
+                            <InternalChart symbol={activeTab} />
+                        </div>
+                    )}
                 </div>
             </div>
         </AppLayout>
+    );
+}
+
+import { createChart, ColorType } from "lightweight-charts";
+import { X } from "lucide-react";
+
+function InternalChart({ symbol }: { symbol: string }) {
+    const chartContainerRef = useRef<HTMLDivElement>(null);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        if (!chartContainerRef.current) return;
+
+        const chart = createChart(chartContainerRef.current, {
+            layout: {
+                background: { type: ColorType.Solid, color: 'transparent' },
+                textColor: '#d1d1d1',
+            },
+            grid: {
+                vertLines: { color: '#1f1f1f' },
+                horzLines: { color: '#1f1f1f' },
+            },
+            width: chartContainerRef.current.clientWidth,
+            height: 600,
+        });
+
+        // @ts-ignore
+        const candlestickSeries = chart.addCandlestickSeries({
+            upColor: '#26a69d',
+            downColor: '#ef5350',
+            borderVisible: false,
+            wickUpColor: '#26a69d',
+            wickDownColor: '#ef5350',
+        });
+
+        const fetchHistory = async () => {
+            try {
+                const res = await fetch(`http://localhost:8000/api/v1/market/historical/${encodeURIComponent(symbol)}?limit=300`);
+                const data = await res.json();
+                if (data.historical) {
+                    const formattedData = data.historical.map((d: any) => ({
+                        time: d.date,
+                        open: d.open,
+                        high: d.high,
+                        low: d.low,
+                        close: d.close,
+                    })).sort((a: any, b: any) => a.time.localeCompare(b.time));
+
+                    candlestickSeries.setData(formattedData);
+                    chart.timeScale().fitContent();
+                    setLoading(false);
+                }
+            } catch (e) {
+                console.error("Failed to fetch history", e);
+            }
+        };
+
+        fetchHistory();
+        const handleResize = () => chart.applyOptions({ width: chartContainerRef.current?.clientWidth || 800 });
+        window.addEventListener('resize', handleResize);
+        return () => {
+            window.removeEventListener('resize', handleResize);
+            chart.remove();
+        };
+    }, [symbol]);
+
+    return (
+        <div className="flex flex-col h-full">
+            <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card-hover/20">
+                <div className="flex items-center gap-3">
+                    <div className="h-8 w-8 rounded-lg bg-accent/20 flex items-center justify-center text-accent text-xs font-bold">
+                        {symbol.slice(0, 2)}
+                    </div>
+                    <h2 className="text-xl font-bold">{symbol} <span className="text-muted text-sm font-normal">/ Historical Performance</span></h2>
+                </div>
+                {loading && <span className="text-xs animate-pulse text-accent font-mono">Loading Data...</span>}
+            </div>
+            <div ref={chartContainerRef} className="flex-1 w-full" />
+        </div>
     );
 }
 

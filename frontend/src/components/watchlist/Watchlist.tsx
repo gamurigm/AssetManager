@@ -17,7 +17,7 @@ interface WatchlistItem {
     changePercent: number;
 }
 
-export default function Watchlist() {
+export default function Watchlist({ onSelectSymbol }: { onSelectSymbol: (s: string) => void }) {
     const [items, setItems] = useState<WatchlistItem[]>([]);
     const [newSymbol, setNewSymbol] = useState("");
     const [loading, setLoading] = useState(false);
@@ -62,23 +62,12 @@ export default function Watchlist() {
         setSymbols(symbols.filter(item => item !== s));
     };
 
-    const openChart = (symbol: string) => {
-        // Call the Electron API exposed via preload.js
-        if (window.electronAPI) {
-            window.electronAPI.openChart(symbol);
-        } else {
-            // Fallback for browser (regular popup or just log)
-            console.log(`Open chart for ${symbol}`);
-            window.open(`/chart/${symbol}`, '_blank', 'width=800,height=600');
-        }
-    };
-
     return (
         <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col h-full">
             <div className="px-5 py-4 border-b border-border flex items-center justify-between bg-card-hover/20">
                 <div className="flex items-center gap-2">
                     <Star size={16} className="text-yellow-400 fill-yellow-400" />
-                    <h2 className="text-sm font-bold uppercase tracking-wider">Watchlist</h2>
+                    <h2 className="text-xs font-bold uppercase tracking-widest text-muted">Watchlist</h2>
                 </div>
                 <div className="flex items-center gap-2">
                     <input
@@ -86,8 +75,8 @@ export default function Watchlist() {
                         value={newSymbol}
                         onChange={(e) => setNewSymbol(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && addSymbol()}
-                        placeholder="Add ticker..."
-                        className="bg-background border border-border rounded-lg px-2 py-1 text-xs w-24 focus:outline-none focus:ring-1 focus:ring-accent"
+                        placeholder="ADD TICKER"
+                        className="bg-background border border-border rounded-lg px-2 py-1 text-[10px] font-bold w-20 focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-muted/50"
                     />
                     <button onClick={addSymbol} className="p-1 hover:bg-accent/10 rounded-md text-accent transition-colors">
                         <Plus size={16} />
@@ -99,10 +88,11 @@ export default function Watchlist() {
                 {items.map((item) => (
                     <div
                         key={item.symbol}
-                        className="group flex items-center justify-between p-3 rounded-xl hover:bg-card-hover transition-all border border-transparent hover:border-border/50"
+                        onClick={() => onSelectSymbol(item.symbol)}
+                        className="group flex items-center justify-between p-3 rounded-xl hover:bg-card-hover transition-all border border-transparent hover:border-border/50 cursor-pointer"
                     >
                         <div className="flex items-center gap-3">
-                            <div onClick={() => openChart(item.symbol)} className="cursor-pointer">
+                            <div>
                                 <p className="text-sm font-bold group-hover:text-accent transition-colors">{item.symbol}</p>
                                 <div className="flex items-center gap-1">
                                     <span className={`text-[10px] font-bold ${item.changePercent >= 0 ? 'text-green' : 'text-red'}`}>
@@ -114,21 +104,12 @@ export default function Watchlist() {
 
                         <div className="flex items-center gap-3">
                             <p className="text-xs font-mono font-semibold">${item.price.toFixed(item.symbol.includes('/') ? 2 : 2)}</p>
-                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button
-                                    onClick={() => openChart(item.symbol)}
-                                    className="p-1 text-muted hover:text-accent"
-                                    title="Pop-out Chart"
-                                >
-                                    <ExternalLink size={14} />
-                                </button>
-                                <button
-                                    onClick={() => removeSymbol(item.symbol)}
-                                    className="p-1 text-muted hover:text-red"
-                                >
-                                    <X size={14} />
-                                </button>
-                            </div>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); removeSymbol(item.symbol); }}
+                                className="p-1 text-muted opacity-0 group-hover:opacity-100 hover:text-red transition-all"
+                            >
+                                <X size={14} />
+                            </button>
                         </div>
                     </div>
                 ))}
