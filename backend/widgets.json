@@ -1,0 +1,38 @@
+{
+    "portfolio_overview": {
+        "name": "Portfolio Overview",
+        "description": "Real-time value and P&L of the management portfolio",
+        "category": "Management",
+        "type": "metric",
+        "endpoint": "widgets/portfolio",
+        "gridData": {
+            "w": 4,
+            "h": 2
+        },
+        "source": "Asset Manager Backend"
+    },
+    "market_sentiment": {
+        "name": "Market Sentiment",
+        "description": "AI analysis of current market sentiment",
+        "category": "AI Analyst",
+        "type": "markdown",
+        "endpoint": "widgets/sentiment",
+        "gridData": {
+            "w": 6,
+            "h": 4
+        },
+        "source": "Fundamental Agent"
+    },
+    "recent_activity": {
+        "name": "Recent Trading Activity",
+        "description": "List of latest trades executed by the desk",
+        "category": "Trading",
+        "type": "table",
+        "endpoint": "widgets/trades",
+        "gridData": {
+            "w": 8,
+            "h": 4
+        },
+        "source": "Trader Agent"
+    }
+}

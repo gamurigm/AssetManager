@@ -1,0 +1,37 @@
+[
+    {
+        "name": "Asset Manager AI",
+        "description": "Integrated management console with AI agents and real-time data",
+        "img": "",
+        "allowCustomization": true,
+        "tabs": {
+            "Dashboard": {
+                "id": "dashboard",
+                "name": "Dashboard",
+                "layout": [
+                    {
+                        "i": "portfolio_overview",
+                        "x": 0,
+                        "y": 0,
+                        "w": 4,
+                        "h": 2
+                    },
+                    {
+                        "i": "market_sentiment",
+                        "x": 4,
+                        "y": 0,
+                        "w": 8,
+                        "h": 4
+                    },
+                    {
+                        "i": "recent_activity",
+                        "x": 0,
+                        "y": 2,
+                        "w": 12,
+                        "h": 6
+                    }
+                ]
+            }
+        }
+    }
+]
