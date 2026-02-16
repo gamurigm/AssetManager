@@ -4,13 +4,12 @@ import AppLayout from "@/components/layout/AppLayout";
 import { useEffect, useState } from "react";
 import { TrendingUp, TrendingDown, DollarSign, BarChart3, ArrowUpRight, ArrowDownRight } from "lucide-react";
 
-const MOCK_HOLDINGS = [
-    { symbol: "AAPL", name: "Apple Inc.", shares: 45, price: 178.72, change: 2.34, changePercent: 1.32 },
-    { symbol: "MSFT", name: "Microsoft Corp.", shares: 30, price: 415.60, change: -1.20, changePercent: -0.29 },
-    { symbol: "GOOGL", name: "Alphabet Inc.", shares: 12, price: 173.98, change: 3.15, changePercent: 1.84 },
-    { symbol: "NVDA", name: "NVIDIA Corp.", shares: 20, price: 875.28, change: 15.40, changePercent: 1.79 },
-    { symbol: "AMZN", name: "Amazon.com Inc.", shares: 25, price: 185.07, change: -0.93, changePercent: -0.50 },
-    { symbol: "TSLA", name: "Tesla Inc.", shares: 15, price: 248.42, change: 5.16, changePercent: 2.12 },
+const INITIAL_HOLDINGS = [
+    { symbol: "AAPL", name: "Apple Inc.", shares: 45, price: 0, change: 0, changePercent: 0, source: "Loading..." },
+    { symbol: "MSFT", name: "Microsoft Corp.", shares: 30, price: 0, change: 0, changePercent: 0, source: "Loading..." },
+    { symbol: "BTC/USD", name: "Bitcoin", shares: 0.5, price: 0, change: 0, changePercent: 0, source: "Loading..." },
+    { symbol: "NVDA", name: "NVIDIA Corp.", shares: 20, price: 0, change: 0, changePercent: 0, source: "Loading..." },
+    { symbol: "EUR/USD", name: "Euro / US Dollar", shares: 5000, price: 0, change: 0, changePercent: 0, source: "Loading..." },
 ];
 
 const MOCK_TRANSACTIONS = [
@@ -21,9 +20,43 @@ const MOCK_TRANSACTIONS = [
 ];
 
 export default function ClientDashboard() {
-    const totalValue = MOCK_HOLDINGS.reduce((sum, h) => sum + h.shares * h.price, 0);
-    const totalPnL = MOCK_HOLDINGS.reduce((sum, h) => sum + h.shares * h.change, 0);
-    const pnlPercent = (totalPnL / (totalValue - totalPnL)) * 100;
+    const [holdings, setHoldings] = useState(INITIAL_HOLDINGS);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchPrices = async () => {
+            const updatedHoldings = await Promise.all(
+                holdings.map(async (h) => {
+                    try {
+                        const res = await fetch(`http://localhost:8000/api/v1/market/quote/${encodeURIComponent(h.symbol)}`);
+                        const data = await res.json();
+                        if (data && !data.error) {
+                            return {
+                                ...h,
+                                price: data.price,
+                                change: data.change || 0,
+                                changePercent: data.changePercentage || 0,
+                                source: data.source || "Unknown"
+                            };
+                        }
+                    } catch (e) {
+                        console.error(`Error fetching ${h.symbol}:`, e);
+                    }
+                    return h;
+                })
+            );
+            setHoldings(updatedHoldings);
+            setLoading(false);
+        };
+
+        fetchPrices();
+        const interval = setInterval(fetchPrices, 30000); // 30s refresh
+        return () => clearInterval(interval);
+    }, []);
+
+    const totalValue = holdings.reduce((sum, h) => sum + h.shares * h.price, 0);
+    const totalPnL = holdings.reduce((sum, h) => sum + h.shares * h.change, 0);
+    const pnlPercent = totalValue > 0 ? (totalPnL / (totalValue - totalPnL)) * 100 : 0;
 
     return (
         <AppLayout>
@@ -35,8 +68,8 @@ export default function ClientDashboard() {
                         <h1 className="text-3xl font-bold tracking-tight mt-1">My Portfolio</h1>
                     </div>
                     <div className="flex items-center gap-2">
-                        <span className="flex h-2 w-2 rounded-full bg-green animate-pulse" />
-                        <span className="text-xs text-muted font-medium">Markets Open</span>
+                        <span className={`flex h-2 w-2 rounded-full ${loading ? 'bg-yellow-400' : 'bg-green animate-pulse'}`} />
+                        <span className="text-xs text-muted font-medium">{loading ? 'Updating...' : 'Live Real-time Data'}</span>
                     </div>
                 </div>
 
@@ -57,7 +90,7 @@ export default function ClientDashboard() {
                     />
                     <StatCard
                         label="Holdings"
-                        value={MOCK_HOLDINGS.length.toString()}
+                        value={holdings.length.toString()}
                         icon={<BarChart3 size={18} />}
                         accent="purple"
                     />
@@ -72,49 +105,55 @@ export default function ClientDashboard() {
                 {/* Main Grid */}
                 <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                     {/* Holdings Table */}
-                    <div className="xl:col-span-2 bg-card border border-border rounded-2xl overflow-hidden">
-                        <div className="px-6 py-4 border-b border-border flex items-center justify-between">
+                    <div className="xl:col-span-2 bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
+                        <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card-hover/30">
                             <h2 className="text-base font-semibold">Holdings</h2>
-                            <span className="text-xs text-muted">{MOCK_HOLDINGS.length} positions</span>
+                            <span className="text-xs text-muted">{holdings.length} positions · Multi-Source</span>
                         </div>
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm">
                                 <thead>
-                                    <tr className="text-left text-muted text-xs border-b border-border">
+                                    <tr className="text-left text-muted text-xs border-b border-border bg-background/50">
                                         <th className="px-6 py-3 font-medium">Asset</th>
                                         <th className="px-4 py-3 font-medium text-right">Shares</th>
                                         <th className="px-4 py-3 font-medium text-right">Price</th>
                                         <th className="px-4 py-3 font-medium text-right">Value</th>
-                                        <th className="px-6 py-3 font-medium text-right">Change</th>
+                                        <th className="px-4 py-3 font-medium text-right">Change</th>
+                                        <th className="px-6 py-3 font-medium text-right">Source</th>
                                     </tr>
                                 </thead>
                                 <tbody className="stagger">
-                                    {MOCK_HOLDINGS.map((h) => (
-                                        <tr key={h.symbol} className="border-b border-border/50 hover:bg-card-hover transition-colors">
+                                    {holdings.map((h) => (
+                                        <tr key={h.symbol} className="border-b border-border/50 hover:bg-card-hover transition-colors group">
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center gap-3">
-                                                    <div className="h-9 w-9 rounded-lg bg-accent/10 flex items-center justify-center text-accent font-bold text-xs">
+                                                    <div className="h-9 w-9 rounded-lg bg-accent/10 flex items-center justify-center text-accent font-bold text-xs group-hover:scale-110 transition-transform">
                                                         {h.symbol.slice(0, 2)}
                                                     </div>
                                                     <div>
                                                         <p className="font-semibold">{h.symbol}</p>
-                                                        <p className="text-xs text-muted">{h.name}</p>
+                                                        <p className="text-xs text-muted truncate max-w-[120px]">{h.name}</p>
                                                     </div>
                                                 </div>
                                             </td>
-                                            <td className="px-4 py-4 text-right font-mono">{h.shares}</td>
-                                            <td className="px-4 py-4 text-right font-mono">${h.price.toFixed(2)}</td>
-                                            <td className="px-4 py-4 text-right font-mono font-semibold">
+                                            <td className="px-4 py-4 text-right font-mono text-xs">{h.shares}</td>
+                                            <td className="px-4 py-4 text-right font-mono font-medium">${h.price.toFixed(h.symbol.includes('/') ? 4 : 2)}</td>
+                                            <td className="px-4 py-4 text-right font-mono font-semibold text-accent">
                                                 ${(h.shares * h.price).toLocaleString("en-US", { minimumFractionDigits: 2 })}
                                             </td>
-                                            <td className="px-6 py-4 text-right">
-                                                <div className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-md ${h.change >= 0
-                                                        ? "text-green bg-green/10"
-                                                        : "text-red bg-red/10"
+                                            <td className="px-4 py-4 text-right">
+                                                <div className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${h.changePercent >= 0
+                                                    ? "text-green bg-green/10"
+                                                    : "text-red bg-red/10"
                                                     }`}>
-                                                    {h.change >= 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
-                                                    {h.changePercent >= 0 ? "+" : ""}{h.changePercent.toFixed(2)}%
+                                                    {h.changePercent >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                                                    {Math.abs(h.changePercent).toFixed(2)}%
                                                 </div>
+                                            </td>
+                                            <td className="px-6 py-4 text-right">
+                                                <span className="text-[10px] bg-background border border-border px-2 py-0.5 rounded-md text-muted font-mono">
+                                                    {h.source}
+                                                </span>
                                             </td>
                                         </tr>
                                     ))}
@@ -136,8 +175,8 @@ export default function ClientDashboard() {
                                 >
                                     <div className="flex items-center gap-3">
                                         <div className={`h-8 w-8 rounded-lg flex items-center justify-center text-xs font-bold ${tx.type === "BUY"
-                                                ? "bg-green/10 text-green"
-                                                : "bg-red/10 text-red"
+                                            ? "bg-green/10 text-green"
+                                            : "bg-red/10 text-red"
                                             }`}>
                                             {tx.type === "BUY" ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
                                         </div>
