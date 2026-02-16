@@ -69,4 +69,10 @@ class MarketDataService:
             
         return {"error": "Technical indicator unavailable (Limit reached?)"}
 
+    @staticmethod
+    async def get_historical(symbol: str, limit: int = 30) -> Dict[str, Any]:
+        """Unified method for historical EOD data."""
+        print(f"[MarketData] Fetching history for {symbol} from FMP")
+        return await fmp_service.get_historical(symbol, limit)
+
 market_data_service = MarketDataService()

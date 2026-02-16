@@ -80,3 +80,11 @@ class Transaction(Base):
 
     # Relationships
     portfolio: Mapped["Portfolio"] = relationship(back_populates="transactions")
+
+class WatchlistItem(Base):
+    __tablename__ = "watchlist_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    symbol: Mapped[str] = mapped_column(String(20))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

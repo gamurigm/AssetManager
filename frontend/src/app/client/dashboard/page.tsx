@@ -1,6 +1,7 @@
 "use client"
 
 import AppLayout from "@/components/layout/AppLayout";
+import Watchlist from "@/components/watchlist/Watchlist";
 import { useEffect, useState } from "react";
 import { TrendingUp, TrendingDown, DollarSign, BarChart3, ArrowUpRight, ArrowDownRight } from "lucide-react";
 
@@ -163,42 +164,9 @@ export default function ClientDashboard() {
                         </div>
                     </div>
 
-                    {/* Recent Transactions */}
-                    <div className="bg-card border border-border rounded-2xl overflow-hidden">
-                        <div className="px-6 py-4 border-b border-border">
-                            <h2 className="text-base font-semibold">Recent Activity</h2>
-                        </div>
-                        <div className="p-4 space-y-3 stagger">
-                            {MOCK_TRANSACTIONS.map((tx) => (
-                                <div
-                                    key={tx.id}
-                                    className="flex items-center justify-between p-3 rounded-xl bg-background hover:bg-card-hover transition-colors"
-                                >
-                                    <div className="flex items-center gap-3">
-                                        <div className={`h-8 w-8 rounded-lg flex items-center justify-center text-xs font-bold ${tx.type === "BUY"
-                                            ? "bg-green/10 text-green"
-                                            : "bg-red/10 text-red"
-                                            }`}>
-                                            {tx.type === "BUY" ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
-                                        </div>
-                                        <div>
-                                            <p className="text-sm font-semibold">
-                                                {tx.type} {tx.symbol}
-                                            </p>
-                                            <p className="text-xs text-muted">{tx.date} · {tx.time}</p>
-                                        </div>
-                                    </div>
-                                    <div className="text-right">
-                                        <p className="text-sm font-mono font-semibold">
-                                            {tx.shares} shares
-                                        </p>
-                                        <p className="text-xs text-muted font-mono">
-                                            @${tx.price.toFixed(2)}
-                                        </p>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
+                    {/* Watchlist Panel */}
+                    <div className="h-[500px] xl:h-auto">
+                        <Watchlist />
                     </div>
                 </div>
             </div>

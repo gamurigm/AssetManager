@@ -13,6 +13,14 @@ async def get_quote(symbol: str):
         raise HTTPException(status_code=404, detail=data.get("error", "Data not found"))
     return data
 
+@router.get("/historical/{symbol}")
+async def get_historical(symbol: str, limit: int = 30):
+    """Get historical data (OHLC) for a symbol."""
+    data = await market_data_service.get_historical(symbol, limit)
+    if not data or "error" in data:
+        raise HTTPException(status_code=404, detail=data.get("error", "Historical data not found"))
+    return data
+
 @router.get("/profile/{symbol}")
 async def get_profile(symbol: str):
     """Get company profile."""

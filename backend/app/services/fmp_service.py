@@ -44,6 +44,22 @@ class FMPService:
             return {"error": str(e)}
 
     @staticmethod
+    async def get_historical(symbol: str, limit: int = 30) -> Dict[str, Any]:
+        """Get historical price data (daily) using v3 API (Stable for historical)."""
+        url = f"https://financialmodelingprep.com/api/v3/historical-price-full/{symbol}"
+        params = {
+            "apikey": settings.FMP_API_KEY,
+            "timeseries": limit
+        }
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, params=params)
+                response.raise_for_status()
+                return response.json()
+        except Exception as e:
+            return {"error": str(e)}
+
+    @staticmethod
     async def search_ticker(query: str, limit: int = 10) -> List[Dict[str, Any]]:
         """Search for tickers using stable API."""
         url = f"{FMPService.BASE_URL}/search"

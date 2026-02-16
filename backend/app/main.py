@@ -18,7 +18,7 @@ logfire.configure(
 
 # App setup
 from .core.config import settings
-from .api.routes import auth, clients, portfolios, trading, agents, market_data, openbb_config
+from .api.routes import auth, clients, portfolios, trading, agents, market_data, openbb_config, watchlist
 
 # Socket.IO setup
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
@@ -43,7 +43,8 @@ app.include_router(portfolios.router, prefix=f"{settings.API_V1_STR}/portfolios"
 app.include_router(trading.router, prefix=f"{settings.API_V1_STR}/trading", tags=["trading"])
 app.include_router(agents.router, prefix=f"{settings.API_V1_STR}/agents", tags=["agents"])
 app.include_router(market_data.router, prefix=f"{settings.API_V1_STR}/market", tags=["market"])
-app.include_router(openbb_config.router, prefix="", tags=["openbb"]) # OpenBB Workspace expects root or specific paths for config
+app.include_router(watchlist.router, prefix=f"{settings.API_V1_STR}/watchlist", tags=["watchlist"])
+app.include_router(openbb_config.router, prefix="", tags=["openbb"])
 
 @app.get("/")
 async def root():
