@@ -3,19 +3,22 @@ import httpx
 from typing import List, Dict, Any
 
 class FMPService:
-    BASE_URL = "https://financialmodelingprep.com/api/v3"
+    BASE_URL = "https://financialmodelingprep.com/stable"
 
     @staticmethod
     async def get_quote(symbol: str) -> Dict[str, Any]:
-        """Get real-time quote for a symbol."""
-        url = f"{FMPService.BASE_URL}/quote/{symbol}"
-        params = {"apikey": settings.FMP_API_KEY}
+        """Get real-time quote for a symbol using stable API."""
+        url = f"{FMPService.BASE_URL}/quote"
+        params = {
+            "symbol": symbol,
+            "apikey": settings.FMP_API_KEY
+        }
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(url, params=params)
                 response.raise_for_status()
                 data = response.json()
-                if data:
+                if data and isinstance(data, list):
                     return data[0]
                 return {}
         except Exception as e:
@@ -23,15 +26,18 @@ class FMPService:
 
     @staticmethod
     async def get_profile(symbol: str) -> Dict[str, Any]:
-        """Get company profile."""
-        url = f"{FMPService.BASE_URL}/profile/{symbol}"
-        params = {"apikey": settings.FMP_API_KEY}
+        """Get company profile using stable API."""
+        url = f"{FMPService.BASE_URL}/profile"
+        params = {
+            "symbol": symbol,
+            "apikey": settings.FMP_API_KEY
+        }
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(url, params=params)
                 response.raise_for_status()
                 data = response.json()
-                if data:
+                if data and isinstance(data, list):
                     return data[0]
                 return {}
         except Exception as e:
@@ -39,7 +45,7 @@ class FMPService:
 
     @staticmethod
     async def search_ticker(query: str, limit: int = 10) -> List[Dict[str, Any]]:
-        """Search for tickers."""
+        """Search for tickers using stable API."""
         url = f"{FMPService.BASE_URL}/search"
         params = {
             "query": query,
