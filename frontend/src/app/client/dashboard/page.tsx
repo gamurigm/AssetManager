@@ -29,6 +29,7 @@ export default function ClientDashboard() {
                 holdings.map(async (h) => {
                     try {
                         const res = await fetch(`http://localhost:8000/api/v1/market/quote/${encodeURIComponent(h.symbol)}`);
+                        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
                         const data = await res.json();
                         if (data && !data.error) {
                             return {
