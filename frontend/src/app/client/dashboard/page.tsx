@@ -2,8 +2,8 @@
 
 import AppLayout from "@/components/layout/AppLayout";
 import Watchlist from "@/components/watchlist/Watchlist";
-import { useEffect, useState } from "react";
-import { TrendingUp, TrendingDown, DollarSign, BarChart3, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { useEffect, useState, useRef, useMemo } from "react";
+import { TrendingUp, TrendingDown, DollarSign, BarChart3, ArrowUpRight, ArrowDownRight, X } from "lucide-react";
 
 const INITIAL_HOLDINGS = [
     { symbol: "AAPL", name: "Apple Inc.", shares: 45, price: 0, change: 0, changePercent: 0, source: "Loading..." },
@@ -87,8 +87,8 @@ export default function ClientDashboard() {
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id)}
                             className={`group flex items-center gap-2 px-4 py-2 text-xs font-bold uppercase tracking-wider cursor-pointer transition-all rounded-t-xl border-t border-x border-transparent translate-y-[1px] ${activeTab === tab.id
-                                    ? "bg-background border-border text-accent"
-                                    : "text-muted hover:text-foreground hover:bg-card/50"
+                                ? "bg-background border-border text-accent"
+                                : "text-muted hover:text-foreground hover:bg-card/50"
                                 }`}
                         >
                             {tab.title}
@@ -228,8 +228,7 @@ export default function ClientDashboard() {
     );
 }
 
-import { createChart, ColorType } from "lightweight-charts";
-import { X } from "lucide-react";
+import { createChart, ColorType, CandlestickSeries } from "lightweight-charts";
 
 function InternalChart({ symbol }: { symbol: string }) {
     const chartContainerRef = useRef<HTMLDivElement>(null);
@@ -251,8 +250,7 @@ function InternalChart({ symbol }: { symbol: string }) {
             height: 600,
         });
 
-        // @ts-ignore
-        const candlestickSeries = chart.addCandlestickSeries({
+        const candlestickSeries = chart.addSeries(CandlestickSeries, {
             upColor: '#26a69d',
             downColor: '#ef5350',
             borderVisible: false,
