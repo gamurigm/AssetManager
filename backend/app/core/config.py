@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     
     # Financial Data
     FMP_API_KEY: str = os.getenv("FMP_API_KEY", "")
+    POLYGON_API_KEY: str = os.getenv("POLYGON_API_KEY", "")
+    ALPHA_VANTAGE_API_KEY: str = os.getenv("ALPHA_VANTAGE_API_KEY", "")
+    TWELVE_DATA_API_KEY: str = os.getenv("TWELVE_DATA_API_KEY", "")
     
     # Real-time
     SOCKET_IO_PORT: int = 8000

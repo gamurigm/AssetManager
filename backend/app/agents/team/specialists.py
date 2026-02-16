@@ -4,6 +4,7 @@ from .state import TeamContext
 from .base import TeamAgent
 from ...services.openbb_service import openbb_service
 from ...services.fmp_service import fmp_service
+from ...services.market_data import market_data_service
 from ...core.config import settings
 import asyncio
 
@@ -27,11 +28,32 @@ async def get_company_profile(ctx: RunContext[TeamContext], symbol: str) -> str:
     return f"{profile.get('companyName')} ({profile.get('sector')}): {description[:500]}..."
 
 # --- Tools for Quantitative Analyst ---
-async def get_stock_price(ctx: RunContext[TeamContext], symbol: str) -> str:
-    """Get real-time stock price, changes, and basic metrics."""
-    quote = await fmp_service.get_quote(symbol)
-    if not quote: return "Price data unavailable."
-    return f"{symbol}: ${quote.get('price')} (Change: {quote.get('changesPercentage')}%)"
+async def get_price(ctx: RunContext[TeamContext], symbol: str) -> str:
+    """
+    Get real-time OR historical price data.
+    Supports Stocks (AAPL), Crypto (BTC/USD), and Forex (EUR/USD).
+    Automatically selects the best data source (FMP, TwelveData, or Polygon).
+    """
+    data = await market_data_service.get_price(symbol)
+    if not data or "error" in data:
+        return f"Error retrieving data for {symbol}: {data.get('error', 'Unknown error')}"
+    
+    price = data.get('price')
+    source = data.get('source', 'Unknown')
+    change = data.get('change', 'N/A')
+    
+    return f"Symbol: {symbol}\nPrice: ${price}\nSource: {source}\nChange: {change}"
+
+async def get_technical_indicator(ctx: RunContext[TeamContext], symbol: str, indicator: str) -> str:
+    """
+    Get technical indicators (RSI, MACD, SMA, EMA).
+    Uses Alpha Vantage for calculation.
+    """
+    data = await market_data_service.get_technical_indicator(symbol, indicator)
+    if not data or "error" in data:
+        return f"Error retrieving {indicator} for {symbol}."
+        
+    return f"{indicator} for {symbol}: {data.get('value')} (Source: {data.get('source')})"
 
 # --- Tools for Risk Manager ---
 async def check_compliance(ctx: RunContext[TeamContext], trade_details: str) -> str:
@@ -69,7 +91,7 @@ quant_analyst = TeamAgent(
     name="Quantitative Analyst",
     role="Specialist in technical analysis, price data, and metrics",
     model_name=MIXTRAL_8X22B, # Use faster/larger context model for data
-    tools=[get_stock_price]
+    tools=[get_price, get_technical_indicator]
 )
 
 risk_manager = TeamAgent(
