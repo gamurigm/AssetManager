@@ -39,15 +39,11 @@ class TeamAgent:
             self.agent.tool(tool)
 
     async def run(self, message: str, context: TeamContext) -> str:
-        # Add user/orchestrator message to history handled by caller usually, 
-        # but let's log the attempt if valuable.
-        # context.add_message("user", message, "Orchestrator") # Caller usually does this
-        
         try:
             # Run the agent with dependencies
             result = await self.agent.run(message, deps=context)
             
-            # Extract output robustly across pydantic-ai versions
+            # Extract output robustly
             output = getattr(result, 'output', getattr(result, 'data', str(result)))
             
             # Add response to history
@@ -58,3 +54,20 @@ class TeamAgent:
             error_msg = f"Error in {self.name}: {str(e)}"
             context.add_message("system", error_msg, self.name)
             return error_msg
+
+    async def run_stream(self, message: str, context: TeamContext):
+        """Streams the response from the agent."""
+        try:
+            async with self.agent.run_stream(message, deps=context) as result:
+                async for message_chunk in result.stream_text(delta=True):
+                    yield message_chunk
+                
+                # After streaming is done, log the full message to context
+                full_message = result.get_data() if hasattr(result, 'get_data') else ""
+                if not full_message and hasattr(result, 'formatted_messages'):
+                    # Fallback to extract from messages if needed
+                    pass
+                
+                # Note: Handling final context update might need more care with run_stream
+        except Exception as e:
+            yield f"Error in {self.name} stream: {str(e)}"

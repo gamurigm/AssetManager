@@ -171,10 +171,14 @@ export default function ChatWidget() {
             const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: input, user_id: 1 })
+                body: JSON.stringify({
+                    message: input,
+                    user_id: 1,
+                    history: messages.map(m => ({ role: m.role, content: m.content }))
+                })
             });
 
-            if (selectedModel === "general") {
+            if (false) { // Old non-streaming logic for reference, disabled
                 const data = await response.json();
                 setMessages(prev => {
                     const updated = [...prev];
@@ -262,6 +266,10 @@ export default function ChatWidget() {
                     <header className={`${typeof window !== 'undefined' && window.innerWidth < 640 ? "px-4 py-3" : "px-6 py-4"} flex justify-between items-center border-b transition-colors
                         ${isDarkMode ? "bg-white/[0.03] border-white/5" : "bg-zinc-50 border-zinc-100"}`}>
                         <div className="flex items-center gap-3">
+                            <div className={`h-9 w-9 rounded-xl flex items-center justify-center text-white shadow-lg
+                                ${isDarkMode ? "bg-fuchsia-600" : "bg-indigo-600"}`}>
+                                <Terminal size={16} />
+                            </div>
                             <div className="flex flex-col">
                                 <h3 className={`font-bold text-base tracking-tight ${isDarkMode ? "text-white" : "text-zinc-900"}`}>
                                     Intelligence Core
@@ -310,6 +318,16 @@ export default function ChatWidget() {
                                             prose-strong:font-bold prose-code:px-1.5 prose-code:rounded-md
                                             ${isDarkMode ? "prose-strong:text-fuchsia-400 prose-code:text-emerald-400 prose-code:bg-emerald-400/5" : "prose-strong:text-indigo-600 prose-code:text-emerald-600 prose-code:bg-emerald-50"}
                                         `}>
+                                            {m.reasoning && (
+                                                <div className={`mb-4 p-3 rounded-xl border italic text-[11px] leading-relaxed
+                                                    ${isDarkMode ? "bg-white/[0.03] border-white/5 text-zinc-400" : "bg-zinc-50 border-zinc-100 text-zinc-500"}`}>
+                                                    <div className="flex items-center gap-2 mb-1.5 opacity-70">
+                                                        <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+                                                        <span className="font-bold uppercase tracking-widest text-[9px]">Internal Cognition</span>
+                                                    </div>
+                                                    {m.reasoning}
+                                                </div>
+                                            )}
                                             {m.content === "" && m.role === "assistant" && isLoading ? (
                                                 <div className="flex gap-2 items-center h-8 px-1">
                                                     <div className="w-2 h-2 bg-current rounded-full animate-bounce [animation-delay:-0.3s]"></div>

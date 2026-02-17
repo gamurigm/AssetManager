@@ -31,7 +31,7 @@ export default function ClientDashboard() {
             const updatedHoldings = await Promise.all(
                 holdings.map(async (h) => {
                     try {
-                        const res = await fetch(`http://localhost:8000/api/v1/market/quote/${encodeURIComponent(h.symbol)}`);
+                        const res = await fetch(`http://127.0.0.1:8000/api/v1/market/quote/${encodeURIComponent(h.symbol)}`);
                         if (!res.ok) {
                             console.warn(`Market data 404 for ${h.symbol}: ${res.status}`);
                             return h;
@@ -314,7 +314,7 @@ function InternalChart({ symbol }: { symbol: string }) {
 
         const fetchHistory = async () => {
             try {
-                const res = await fetch(`http://localhost:8000/api/v1/market/historical/${encodeURIComponent(symbol)}?limit=300`);
+                const res = await fetch(`http://127.0.0.1:8000/api/v1/market/historical/${encodeURIComponent(symbol)}?limit=300`);
                 const data = await res.json();
                 if (data.historical) {
                     const formattedData = data.historical.map((d: any) => ({

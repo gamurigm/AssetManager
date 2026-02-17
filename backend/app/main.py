@@ -10,11 +10,13 @@ import socketio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-# Configure Logfire (after .env is loaded)
+# Configure Logfire
 logfire.configure(
     token=os.getenv("LOGFIRE_TOKEN"),
     send_to_logfire='if-token-present'
 )
+logfire.instrument_pydantic() # Trace all Pydantic models
+logfire.instrument_openai()   # Trace all NVIDIA NIM calls
 
 # App setup
 from .core.config import settings
@@ -30,7 +32,7 @@ logfire.instrument_fastapi(app)
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*", "https://pro.openbb.co"],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

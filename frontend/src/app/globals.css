@@ -197,3 +197,14 @@ body {
 .stagger>*:nth-child(8) {
   animation-delay: 420ms;
 }
+
+/* Hide TradingView Attribution/Logo in Charts */
+a[href*="tradingview.com"],
+div[class*="tv-"] a,
+div[class*="tradingview-"] a,
+svg path[d^="M14 2H2v6h6v9h6V2"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}

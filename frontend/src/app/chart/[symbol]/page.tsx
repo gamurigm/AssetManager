@@ -37,7 +37,7 @@ export default function ChartWindow() {
         // Fetch historical data
         const fetchHistory = async () => {
             try {
-                const res = await fetch(`http://localhost:8000/api/v1/market/historical/${encodeURIComponent(symbol)}?limit=300`);
+                const res = await fetch(`http://127.0.0.1:8000/api/v1/market/historical/${encodeURIComponent(symbol)}?limit=300`);
                 const data = await res.json();
                 if (data.historical) {
                     const formattedData = data.historical.map((d: any) => ({

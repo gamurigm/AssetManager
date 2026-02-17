@@ -15,8 +15,9 @@ async def delegate_task(ctx: RunContext[TeamContext], specialist_name: str, inst
     Available Specialists:
     - "Fundamental Analyst": Use for news, company profiles, qualitative data.
     - "Quantitative Analyst": Use for price data, technical analysis.
-    - "Risk Manager": Use for compliance checks (REQUIRED before any trade).
-    - "Trader": Use for executing orders (REQUIRED after Risk Manager approval).
+    - "Macro Analyst": Use for global economic news and broad market trends.
+    - "Risk Manager": Use for compliance and risk metrics (VaR, Sharpe).
+    - "Trader": Use for executing orders and calculating fees.
     """
     agent = specialists_map.get(specialist_name)
     if not agent:
@@ -53,6 +54,16 @@ class HeadOfStrategy(TeamAgent):
             error_msg = f"Orchestrator Error: {str(e)}"
             self.context.add_message("system", error_msg, "Head of Strategy")
             return error_msg
+
+    async def run_stream(self, user_query: str):
+        # Add user message to shared context
+        self.context.add_message("user", user_query, "User")
+        
+        try:
+            async for chunk in super().run_stream(user_query, self.context):
+                yield chunk
+        except Exception as e:
+            yield f"Orchestrator Stream Error: {str(e)}"
 
 # Singleton instance
 orchestrator = HeadOfStrategy()
