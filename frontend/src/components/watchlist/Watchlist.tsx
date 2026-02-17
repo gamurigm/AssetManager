@@ -63,11 +63,12 @@ export default function Watchlist({ onSelectSymbol }: { onSelectSymbol: (s: stri
     };
 
     return (
-        <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col h-full">
-            <div className="px-5 py-4 border-b border-border flex items-center justify-between bg-card-hover/20">
+        <div className="flex flex-col h-full overflow-hidden">
+            {/* Minimalist Toolbar - No redundant title */}
+            <div className="px-5 py-2.5 border-b border-border/30 flex items-center justify-between gap-2 bg-card-hover/10 group">
                 <div className="flex items-center gap-2">
-                    <Star size={16} className="text-yellow-400 fill-yellow-400" />
-                    <h2 className="text-xs font-bold uppercase tracking-widest text-muted">Watchlist</h2>
+                    <Star size={12} className="text-accent fill-accent/20 animate-pulse" />
+                    <span className="text-[9px] font-black uppercase text-accent/60 tracking-[0.2em]">Market Feed</span>
                 </div>
                 <div className="flex items-center gap-2">
                     <input
@@ -75,11 +76,11 @@ export default function Watchlist({ onSelectSymbol }: { onSelectSymbol: (s: stri
                         value={newSymbol}
                         onChange={(e) => setNewSymbol(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && addSymbol()}
-                        placeholder="ADD TICKER"
-                        className="bg-background border border-border rounded-lg px-2 py-1 text-[10px] font-bold w-20 focus:outline-none focus:ring-1 focus:ring-accent placeholder:text-muted/50"
+                        placeholder="TICKER"
+                        className="bg-background/40 border border-border/40 rounded px-2 py-0.5 text-[10px] font-bold w-16 focus:outline-none focus:ring-1 focus:ring-accent transition-all placeholder:text-muted/30"
                     />
-                    <button onClick={addSymbol} className="p-1 hover:bg-accent/10 rounded-md text-accent transition-colors">
-                        <Plus size={16} />
+                    <button onClick={addSymbol} className="p-1 hover:bg-accent/20 rounded text-accent transition-all">
+                        <Plus size={14} />
                     </button>
                 </div>
             </div>

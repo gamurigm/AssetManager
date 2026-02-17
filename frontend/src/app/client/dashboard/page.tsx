@@ -2,8 +2,8 @@
 
 import AppLayout from "@/components/layout/AppLayout";
 import Watchlist from "@/components/watchlist/Watchlist";
-import { useEffect, useState, useRef, useMemo } from "react";
-import { TrendingUp, TrendingDown, DollarSign, BarChart3, ArrowUpRight, ArrowDownRight, X, PieChart as PieIcon, LayoutGrid, ChartPie } from "lucide-react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
+import { TrendingUp, TrendingDown, DollarSign, BarChart3, ArrowUpRight, ArrowDownRight, X, PieChart as PieIcon, LayoutGrid, ChartPie, ChevronDown, ChevronUp } from "lucide-react";
 import AssetTreemap from "@/components/charts/AssetTreemap";
 import SectorPieChart from "@/components/charts/SectorPieChart";
 import AllocationDonut from "@/components/charts/AllocationDonut";
@@ -33,6 +33,11 @@ export default function ClientDashboard() {
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState("portfolio");
     const [openTabs, setOpenTabs] = useState([{ id: "portfolio", title: "My Portfolio", symbol: null }]);
+    const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+    const togglePanel = (id: string) => {
+        setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
+    };
 
     useEffect(() => {
         const fetchPrices = async () => {
@@ -167,48 +172,51 @@ export default function ClientDashboard() {
                     ))}
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-6 lg:p-8 space-y-6">
+                <div className="flex-1 overflow-y-auto p-4 lg:px-8 lg:py-6 space-y-4">
                     {activeTab === "portfolio" ? (
                         <>
-                            {/* Header */}
-                            <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-                                <div>
-                                    <p className="text-accent text-xs font-bold uppercase tracking-[0.2em] mb-1">Portfolio Oversight</p>
-                                    <h1 className="text-3xl font-bold tracking-tight mt-1">Multi-Asset Mandate</h1>
+                            {/* Condensed Header */}
+                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-border/10 pb-3">
+                                <div className="flex items-center gap-3">
+                                    <div className="h-2 w-2 rounded-full bg-accent animate-pulse" />
+                                    <div>
+                                        <p className="text-muted text-[9px] font-black uppercase tracking-[0.4em]">Portfolio</p>
+                                        <h1 className="text-lg font-black tracking-tight mt-px">Asset Mandate Alpha</h1>
+                                    </div>
                                 </div>
-                                <div className="flex items-center gap-2">
-                                    <span className={`flex h-2 w-2 rounded-full ${loading ? 'bg-yellow-400' : 'bg-green animate-pulse'}`} />
-                                    <span className="text-xs text-muted font-medium">{loading ? 'Syncing...' : 'Live Real-time Feed'}</span>
+                                <div className="flex items-center gap-2 px-2 py-1 rounded-md border border-border/30 bg-card/40">
+                                    <span className={`flex h-1.5 w-1.5 rounded-full ${loading ? 'bg-yellow-400' : 'bg-green animate-pulse'}`} />
+                                    <span className="text-[9px] text-muted font-black tracking-widest uppercase">{loading ? 'Syncing...' : 'Live'}</span>
                                 </div>
                             </div>
 
                             {/* Stat Cards */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 stagger">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 stagger">
                                 <StatCard
-                                    label="Net Liquidation Value"
+                                    label="NAV (NET ASSETS)"
                                     value={`$${totalValue.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
-                                    icon={<DollarSign size={18} />}
+                                    icon={<DollarSign size={14} />}
                                     accent="blue"
                                 />
                                 <StatCard
-                                    label="YTD Unrealized P&L"
+                                    label="P&L (YTD)"
                                     value={`${totalPnL >= 0 ? "+" : ""}$${totalPnL.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
-                                    sub={`${pnlPercent >= 0 ? "+" : ""}${pnlPercent.toFixed(2)}% vs Bench.`}
-                                    icon={totalPnL >= 0 ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
+                                    sub={`${pnlPercent >= 0 ? "+" : ""}${pnlPercent.toFixed(2)}%`}
+                                    icon={totalPnL >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
                                     accent={totalPnL >= 0 ? "green" : "red"}
                                 />
                                 <StatCard
-                                    label="Portfolio VaR (95%)"
-                                    value="4.2%"
-                                    sub="Critical: 7.5%"
-                                    icon={<BarChart3 size={18} />}
+                                    label="VAR (RISK)"
+                                    value="4.20%"
+                                    sub="LIMIT 7.5%"
+                                    icon={<BarChart3 size={14} />}
                                     accent="purple"
                                 />
                                 <StatCard
-                                    label="Adjusted Beta"
+                                    label="BETA (S&P 500)"
                                     value="1.14"
-                                    sub="Aggressive Exposure"
-                                    icon={<TrendingUp size={18} />}
+                                    sub="HIGH VOL."
+                                    icon={<TrendingUp size={14} />}
                                     accent="emerald"
                                 />
                             </div>
@@ -216,184 +224,219 @@ export default function ClientDashboard() {
                             {/* Advanced Visualizations Row - Professional Stacked Layout */}
                             <div className="grid grid-cols-1 gap-6 animate-slide-up" style={{ animationDelay: '0.2s' }}>
                                 {/* Sector Allocation Chart - TOP */}
-                                <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col min-h-[450px]">
-                                    <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card-hover/20">
+                                <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['sector'] ? 'min-h-[50px]' : 'min-h-[450px]'}`}>
+                                    <div
+                                        onClick={() => togglePanel('sector')}
+                                        className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/20 cursor-pointer hover:bg-card-hover/40 transition-colors"
+                                    >
                                         <div className="flex items-center gap-2">
-                                            <ChartPie size={16} className="text-accent" />
-                                            <h2 className="text-sm font-bold uppercase tracking-widest text-muted">Portfolio Exposure by Business Sector</h2>
+                                            <ChartPie size={14} className="text-accent" />
+                                            <h2 className="text-xs font-black uppercase tracking-widest text-muted">Sector Exposure</h2>
                                         </div>
+                                        {collapsed['sector'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
                                     </div>
-                                    <div className="flex-1">
-                                        <SectorPieChart data={sectorData} />
-                                    </div>
+                                    {!collapsed['sector'] && (
+                                        <div className="flex-1 animate-in fade-in slide-in-from-top-2 duration-300">
+                                            <SectorPieChart data={sectorData} />
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Treemap Visualizer - BOTTOM */}
-                                <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col min-h-[400px]">
-                                    <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card-hover/20">
+                                <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['treemap'] ? 'min-h-[50px]' : 'min-h-[400px]'}`}>
+                                    <div
+                                        onClick={() => togglePanel('treemap')}
+                                        className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/20 cursor-pointer hover:bg-card-hover/40 transition-colors"
+                                    >
                                         <div className="flex items-center gap-2">
-                                            <LayoutGrid size={16} className="text-accent" />
-                                            <h2 className="text-sm font-bold uppercase tracking-widest text-muted">Asset Allocation Intensity (NAV Weighted)</h2>
+                                            <LayoutGrid size={14} className="text-accent" />
+                                            <h2 className="text-xs font-black uppercase tracking-widest text-muted">Allocation Intensity</h2>
                                         </div>
-                                        <span className="text-[10px] text-muted font-bold px-2 py-0.5 bg-background rounded border border-border">HI-DENSITY VIEW</span>
+                                        <div className="flex items-center gap-4">
+                                            <span className="hidden sm:block text-[9px] text-muted font-black px-2 py-0.5 bg-background rounded border border-border tracking-tighter uppercase">Hi-Density</span>
+                                            {collapsed['treemap'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
+                                        </div>
                                     </div>
-                                    <div className="p-4 flex-1">
-                                        <AssetTreemap data={treemapData} />
-                                    </div>
+                                    {!collapsed['treemap'] && (
+                                        <div className="p-4 flex-1 animate-in fade-in slide-in-from-top-2 duration-300">
+                                            <AssetTreemap data={treemapData} />
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
                             {/* Main Grid */}
                             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                                 {/* Holdings Table */}
-                                <div className="xl:col-span-2 bg-card border border-border rounded-2xl overflow-hidden shadow-sm transition-shadow">
-                                    <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card-hover/30">
-                                        <h2 className="text-base font-semibold">Holdings</h2>
-                                        <div className="flex items-center gap-2">
-                                            {holdings.length > activeHoldings.length && (
-                                                <span className="text-[10px] bg-yellow-400/10 text-yellow-400 px-2 py-0.5 rounded border border-yellow-400/20 animate-pulse">
-                                                    {holdings.length - activeHoldings.length} Syncing...
-                                                </span>
-                                            )}
-                                            <span className="text-xs text-muted font-bold">{activeHoldings.length} Active Positions</span>
+                                <div className={`xl:col-span-2 bg-card border border-border rounded-2xl overflow-hidden shadow-sm transition-all duration-300 ${collapsed['holdings'] ? 'h-[60px]' : ''}`}>
+                                    <div
+                                        onClick={() => togglePanel('holdings')}
+                                        className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/30 cursor-pointer hover:bg-card-hover/50 transition-colors"
+                                    >
+                                        <h2 className="text-xs font-black uppercase tracking-widest text-muted">Positions</h2>
+                                        <div className="flex items-center gap-4">
+                                            <div className="flex items-center gap-2">
+                                                {holdings.length > activeHoldings.length && (
+                                                    <div className="flex items-center gap-1.5 bg-yellow-400/5 px-2 py-0.5 rounded border border-yellow-400/20">
+                                                        <span className="h-1 w-1 rounded-full bg-yellow-400 animate-pulse" />
+                                                        <span className="text-[9px] text-yellow-400 font-black uppercase">{holdings.length - activeHoldings.length} Sync</span>
+                                                    </div>
+                                                )}
+                                                <span className="text-[10px] text-accent font-black">{activeHoldings.length} Active</span>
+                                            </div>
+                                            {collapsed['holdings'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
                                         </div>
                                     </div>
-                                    <div className="overflow-x-auto">
-                                        <table className="w-full text-sm">
-                                            <thead>
-                                                <tr className="text-left text-muted text-xs border-b border-border bg-background/50">
-                                                    <th className="px-6 py-3 font-medium">Asset</th>
-                                                    <th className="px-4 py-3 font-medium text-right">Shares</th>
-                                                    <th className="px-4 py-3 font-medium text-right">Price</th>
-                                                    <th className="px-4 py-3 font-medium text-right">Value</th>
-                                                    <th className="px-4 py-3 font-medium text-right">Change</th>
-                                                    <th className="px-6 py-3 font-medium text-right">Source</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="stagger">
-                                                {[...activeHoldings]
-                                                    .sort((a, b) => (b.shares * b.price) - (a.shares * a.price))
-                                                    .map((h) => {
-                                                        const changeValue = h.changePercent || 0;
+                                    {!collapsed['holdings'] && (
+                                        <div className="overflow-x-auto animate-in fade-in slide-in-from-top-2 duration-300">
+                                            <table className="w-full text-sm">
+                                                <thead>
+                                                    <tr className="text-left text-muted text-xs border-b border-border bg-background/50">
+                                                        <th className="px-6 py-3 font-medium">Asset</th>
+                                                        <th className="px-4 py-3 font-medium text-right">Shares</th>
+                                                        <th className="px-4 py-3 font-medium text-right">Price</th>
+                                                        <th className="px-4 py-3 font-medium text-right">Value</th>
+                                                        <th className="px-4 py-3 font-medium text-right">Change</th>
+                                                        <th className="px-6 py-3 font-medium text-right">Source</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="stagger">
+                                                    {[...activeHoldings]
+                                                        .sort((a, b) => (b.shares * b.price) - (a.shares * a.price))
+                                                        .map((h) => {
+                                                            const changeValue = h.changePercent || 0;
 
-                                                        // Accurate Heatmap Color matching Treemap
-                                                        const getHeatmapColor = (cv: number) => {
-                                                            if (cv > 5) return '#10b981'; if (cv > 2.5) return '#22c55e';
-                                                            if (cv > 1) return '#4ade80'; if (cv > 0.4) return '#86efac';
-                                                            if (cv > 0.1) return '#0b3d2e';
-                                                            if (cv >= -0.1 && cv <= 0.1) return '#374151';
-                                                            if (cv >= -0.4) return '#78350f'; if (cv >= -1.2) return '#facc15';
-                                                            if (cv >= -2.5) return '#fbbf24'; if (cv >= -4) return '#f97316';
-                                                            if (cv >= -6) return '#f43f5e'; return '#ef4444';
-                                                        };
+                                                            // Accurate Heatmap Color matching Treemap
+                                                            const getHeatmapColor = (cv: number) => {
+                                                                if (cv > 5) return '#10b981'; if (cv > 2.5) return '#22c55e';
+                                                                if (cv > 1) return '#4ade80'; if (cv > 0.4) return '#86efac';
+                                                                if (cv > 0.1) return '#0b3d2e';
+                                                                if (cv >= -0.1 && cv <= 0.1) return '#374151';
+                                                                if (cv >= -0.4) return '#78350f'; if (cv >= -1.2) return '#facc15';
+                                                                if (cv >= -2.5) return '#fbbf24'; if (cv >= -4) return '#f97316';
+                                                                if (cv >= -6) return '#f43f5e'; return '#ef4444';
+                                                            };
 
-                                                        const badgeColor = getHeatmapColor(changeValue);
-                                                        const isBright = ['#facc15', '#fbbf24', '#86efac'].includes(badgeColor);
+                                                            const badgeColor = getHeatmapColor(changeValue);
+                                                            const isBright = ['#facc15', '#fbbf24', '#86efac'].includes(badgeColor);
 
-                                                        return (
-                                                            <tr
-                                                                key={h.symbol}
-                                                                onClick={() => openSymbolTab(h.symbol)}
-                                                                className="border-b border-border/50 hover:bg-card-hover transition-colors group cursor-pointer"
-                                                            >
-                                                                <td className="px-6 py-4">
-                                                                    <div className="flex items-center gap-3">
+                                                            return (
+                                                                <tr
+                                                                    key={h.symbol}
+                                                                    onClick={() => openSymbolTab(h.symbol)}
+                                                                    className="border-b border-border/50 hover:bg-card-hover transition-colors group cursor-pointer"
+                                                                >
+                                                                    <td className="px-6 py-4">
+                                                                        <div className="flex items-center gap-3">
+                                                                            <div
+                                                                                className="h-9 w-9 rounded-lg flex items-center justify-center text-white font-bold text-xs group-hover:scale-110 transition-all shadow-sm"
+                                                                                style={{ backgroundColor: badgeColor }}
+                                                                            >
+                                                                                {h.symbol.slice(0, 2)}
+                                                                            </div>
+                                                                            <div>
+                                                                                <p className="font-semibold group-hover:text-accent transition-colors">{h.symbol}</p>
+                                                                                <p className="text-xs text-muted truncate max-w-[120px]">{h.name}</p>
+                                                                            </div>
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="px-4 py-4 text-right font-mono text-xs">{h.shares}</td>
+                                                                    <td className="px-4 py-4 text-right font-mono font-medium">${h.price.toFixed(h.symbol.includes('/') ? 4 : 2)}</td>
+                                                                    <td className="px-4 py-4 text-right font-mono font-semibold text-accent">
+                                                                        ${(h.shares * h.price).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                                                                    </td>
+                                                                    <td className="px-4 py-4 text-right">
                                                                         <div
-                                                                            className="h-9 w-9 rounded-lg flex items-center justify-center text-white font-bold text-xs group-hover:scale-110 transition-all shadow-sm"
-                                                                            style={{ backgroundColor: badgeColor }}
+                                                                            className="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-full shadow-sm"
+                                                                            style={{
+                                                                                backgroundColor: badgeColor,
+                                                                                color: isBright ? '#000000' : '#ffffff'
+                                                                            }}
                                                                         >
-                                                                            {h.symbol.slice(0, 2)}
+                                                                            {changeValue >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                                                                            {Math.abs(changeValue).toFixed(2)}%
                                                                         </div>
-                                                                        <div>
-                                                                            <p className="font-semibold group-hover:text-accent transition-colors">{h.symbol}</p>
-                                                                            <p className="text-xs text-muted truncate max-w-[120px]">{h.name}</p>
-                                                                        </div>
-                                                                    </div>
-                                                                </td>
-                                                                <td className="px-4 py-4 text-right font-mono text-xs">{h.shares}</td>
-                                                                <td className="px-4 py-4 text-right font-mono font-medium">${h.price.toFixed(h.symbol.includes('/') ? 4 : 2)}</td>
-                                                                <td className="px-4 py-4 text-right font-mono font-semibold text-accent">
-                                                                    ${(h.shares * h.price).toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                                                                </td>
-                                                                <td className="px-4 py-4 text-right">
-                                                                    <div
-                                                                        className="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-full shadow-sm"
-                                                                        style={{
-                                                                            backgroundColor: badgeColor,
-                                                                            color: isBright ? '#000000' : '#ffffff'
-                                                                        }}
-                                                                    >
-                                                                        {changeValue >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-                                                                        {Math.abs(changeValue).toFixed(2)}%
-                                                                    </div>
-                                                                </td>
-                                                                <td className="px-6 py-4 text-right">
-                                                                    <span className="text-[10px] bg-background border border-border px-2 py-0.5 rounded-md text-muted font-mono">
-                                                                        {h.source}
-                                                                    </span>
-                                                                </td>
-                                                            </tr>
-                                                        );
-                                                    })}
-                                            </tbody>
-                                        </table>
-                                    </div>
+                                                                    </td>
+                                                                    <td className="px-6 py-4 text-right">
+                                                                        <span className="text-[10px] bg-background border border-border px-2 py-0.5 rounded-md text-muted font-mono">
+                                                                            {h.source}
+                                                                        </span>
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Fee Analysis Panel */}
-                                <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col">
-                                    <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card-hover/30">
-                                        <h2 className="text-base font-semibold">Mandate Economics</h2>
-                                        <span className="text-[10px] text-muted font-black uppercase tracking-widest">Fiduciary Billing</span>
-                                    </div>
-                                    <div className="p-6 space-y-5 flex-1 overflow-y-auto">
-                                        <div className="space-y-3">
-                                            <div className="flex justify-between text-[11px]">
-                                                <span className="text-muted">Management Fee (2.75%)</span>
-                                                <span className="font-mono text-white">${(totalValue * 0.0275 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                            </div>
-                                            <div className="flex justify-between text-[11px]">
-                                                <span className="text-muted">Service Fee (0.75%)</span>
-                                                <span className="font-mono text-white">${(totalValue * 0.0075 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                            </div>
-                                            <div className="flex justify-between text-[11px]">
-                                                <span className="text-muted">Other Exp. & Interest (0.59%)</span>
-                                                <span className="font-mono text-white">${(totalValue * 0.0059 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                            </div>
-                                            <div className="flex justify-between text-[11px]">
-                                                <span className="text-muted">Reimbursements & Waivers</span>
-                                                <span className="font-mono text-green-400">-${(totalValue * 0.0059 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                            </div>
-                                            <div className="pt-2 border-t border-border/50 flex justify-between text-xs font-bold">
-                                                <span className="text-accent uppercase tracking-tighter">Total Net Expenses (3.50%)</span>
-                                                <span className="font-mono text-accent">~${(totalValue * 0.0350 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })} / mo</span>
-                                            </div>
-                                        </div>
-
-                                        <div className="space-y-2 pt-4 border-t border-border/20">
-                                            <div className="flex justify-between text-xs">
-                                                <span className="text-muted">High-Water Mark (HWM)</span>
-                                                <span className="font-mono text-white">${totalValue > 1250500 ? totalValue.toLocaleString() : "1,250,500.00"}</span>
-                                            </div>
-                                            <div className="p-3 rounded-lg bg-green/5 border border-green/10 flex items-center justify-between">
-                                                <span className="text-[10px] text-green font-bold uppercase tracking-tight">Accrued Perf. Fee (20% above HWM)</span>
-                                                <span className="text-sm font-black text-green font-mono">
-                                                    ${totalValue > 1250500 ? ((totalValue - 1250500) * 0.20).toFixed(2) : "0.00"}
-                                                </span>
-                                            </div>
-                                        </div>
-
-                                        <div className="mt-auto pt-4 border-t border-border/50">
-                                            <p className="text-[10px] text-muted leading-relaxed">
-                                                Fees are calculated based on the <span className="text-foreground">Net Asset Value (NAV)</span> at the end of each billing cycle. Performance fees are subject to HWM principles as per the investment mandate.
-                                            </p>
+                                <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['economics'] ? 'h-[50px]' : ''}`}>
+                                    <div
+                                        onClick={() => togglePanel('economics')}
+                                        className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/30 cursor-pointer hover:bg-card-hover/50 transition-colors"
+                                    >
+                                        <h2 className="text-xs font-black uppercase tracking-widest text-muted">Economics</h2>
+                                        <div className="flex items-center gap-4">
+                                            {collapsed['economics'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
                                         </div>
                                     </div>
+                                    {!collapsed['economics'] && (
+                                        <div className="p-6 space-y-5 flex-1 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-300">
+                                            <div className="space-y-3">
+                                                <div className="flex justify-between text-[11px]">
+                                                    <span className="text-muted">Management Fee (2.75%)</span>
+                                                    <span className="font-mono text-white">${(totalValue * 0.0275 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                </div>
+                                                <div className="flex justify-between text-[11px]">
+                                                    <span className="text-muted">Service Fee (0.75%)</span>
+                                                    <span className="font-mono text-white">${(totalValue * 0.0075 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                </div>
+                                                <div className="flex justify-between text-[11px]">
+                                                    <span className="text-muted">Other Exp. & Interest (0.59%)</span>
+                                                    <span className="font-mono text-white">${(totalValue * 0.0059 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                </div>
+                                                <div className="flex justify-between text-[11px]">
+                                                    <span className="text-muted">Reimbursements & Waivers</span>
+                                                    <span className="font-mono text-green-400">-${(totalValue * 0.0059 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                </div>
+                                                <div className="pt-2 border-t border-border/50 flex justify-between text-xs font-bold">
+                                                    <span className="text-accent uppercase tracking-tighter">Total Net Expenses (3.50%)</span>
+                                                    <span className="font-mono text-accent">~${(totalValue * 0.0350 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })} / mo</span>
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-2 pt-4 border-t border-border/20">
+                                                <div className="flex justify-between text-xs">
+                                                    <span className="text-muted">High-Water Mark (HWM)</span>
+                                                    <span className="font-mono text-white">${totalValue > 1250500 ? totalValue.toLocaleString() : "1,250,500.00"}</span>
+                                                </div>
+                                                <div className="p-3 rounded-lg bg-green/5 border border-green/10 flex items-center justify-between">
+                                                    <span className="text-[10px] text-green font-bold uppercase tracking-tight">Accrued Perf. Fee (20% above HWM)</span>
+                                                    <span className="text-sm font-black text-green font-mono">
+                                                        ${totalValue > 1250500 ? ((totalValue - 1250500) * 0.20).toFixed(2) : "0.00"}
+                                                    </span>
+                                                </div>
+                                            </div>
+
+                                            <div className="mt-auto pt-4 border-t border-border/50">
+                                                <p className="text-[10px] text-muted leading-relaxed">
+                                                    Fees are calculated based on the <span className="text-foreground">Net Asset Value (NAV)</span> at the end of each billing cycle. Performance fees are subject to HWM principles as per the investment mandate.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
 
-                                {/* Watchlist Panel */}
-                                <div className="h-[500px] xl:h-[600px] xl:col-span-2">
-                                    <Watchlist onSelectSymbol={openSymbolTab} />
+                                {/* Watchlist Panel - Always Visible */}
+                                <div className="xl:col-span-2 overflow-hidden h-[500px] xl:h-[600px] bg-card border border-border rounded-2xl flex flex-col shadow-sm">
+                                    <div className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/30">
+                                        <h2 className="text-xs font-black uppercase tracking-widest text-muted">Watchlist</h2>
+                                    </div>
+                                    <div className="flex-1 overflow-hidden">
+                                        <Watchlist onSelectSymbol={openSymbolTab} />
+                                    </div>
                                 </div>
                             </div>
                         </>
@@ -513,17 +556,17 @@ function StatCard({ label, value, sub, icon, accent }: {
         emerald: "text-emerald-400 bg-emerald-500/10",
     };
     return (
-        <div className="bg-card border border-border rounded-2xl p-5 hover:border-border-hover transition-all group relative overflow-hidden shadow-sm">
+        <div className="bg-card border border-border rounded-xl p-4 hover:border-accent/30 transition-all group relative overflow-hidden shadow-sm">
             <div className="shimmer absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" />
             <div className="relative z-10">
-                <div className="flex items-center justify-between mb-3">
-                    <span className="text-xs text-muted font-medium uppercase tracking-wider">{label}</span>
-                    <div className={`h-7 w-7 rounded-lg flex items-center justify-center ${colors[accent] || colors.blue}`}>
-                        {icon}
+                <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] text-muted font-black uppercase tracking-[0.1em]">{label}</span>
+                    <div className={`h-6 w-6 rounded-md flex items-center justify-center ${colors[accent] || colors.blue}`}>
+                        {React.cloneElement(icon as React.ReactElement, { size: 14 })}
                     </div>
                 </div>
-                <p className="text-2xl font-bold font-mono">{value}</p>
-                {sub && <p className={`text-xs font-semibold mt-1 ${accent === "red" ? "text-red" : "text-green"}`}>{sub}</p>}
+                <p className="text-xl font-black font-mono tracking-tighter">{value}</p>
+                {sub && <p className={`text-[10px] font-bold mt-0.5 ${accent === "red" ? "text-red" : "text-green"}`}>{sub}</p>}
             </div>
         </div>
     );
