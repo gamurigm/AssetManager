@@ -68,8 +68,8 @@ export default function Sidebar() {
         >
             {/* Logo */}
             <div className={`flex items-center gap-3 px-5 h-16 border-b shrink-0 ${isDarkMode ? "border-white/5" : "border-slate-100"}`}>
-                <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-accent via-blue-500 to-indigo-600 flex items-center justify-center text-white font-black text-sm shrink-0 shadow-[0_0_20px_-5px_#3b82f6] border border-white/10">
-                    MM
+                <div className="h-9 w-9 rounded-full overflow-hidden flex items-center justify-center shrink-0 shadow-[0_0_20px_-5px_#3b82f6] border border-white/10">
+                    <img src="/logoMM.png" alt="MMAM Logo" className="h-full w-full object-cover" />
                 </div>
                 {!collapsed && (
                     <span className={`text-sm font-black uppercase tracking-tighter truncate animate-fade-in ${isDarkMode ? "text-white/90" : "text-slate-800"}`}>

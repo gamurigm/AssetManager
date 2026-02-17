@@ -6,7 +6,8 @@ function createWindow(symbol = null) {
     const win = new BrowserWindow({
         width: symbol ? 600 : 1200,
         height: symbol ? 450 : 800,
-        title: symbol ? `Chart: ${symbol}` : "Asset Manager AI",
+        title: symbol ? `Chart: ${symbol}` : "MMAM Intelligence",
+        icon: path.join(__dirname, 'icon.png'),
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,

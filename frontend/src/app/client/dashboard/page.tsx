@@ -33,7 +33,7 @@ export default function ClientDashboard() {
     const { holdings, setHoldings, totalValue, totalPnL, pnlPercent } = usePortfolio();
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState("portfolio");
-    const [openTabs, setOpenTabs] = useState([{ id: "portfolio", title: "My Portfolio", symbol: null }]);
+    const [openTabs, setOpenTabs] = useState<{ id: string; title: string; symbol: string | null }[]>([{ id: "portfolio", title: "My Portfolio", symbol: null }]);
     const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
     const [watchlistVisible, setWatchlistVisible] = useState(true);
 
@@ -587,7 +587,7 @@ function StatCard({ label, value, sub, icon, accent }: {
                 <div className="flex items-center justify-between mb-2">
                     <span className="text-[10px] text-muted font-black uppercase tracking-[0.1em]">{label}</span>
                     <div className={`h-6 w-6 rounded-md flex items-center justify-center ${colors[accent] || colors.blue}`}>
-                        {React.cloneElement(icon as React.ReactElement, { size: 14 })}
+                        {React.cloneElement(icon as React.ReactElement<any>, { size: 14 })}
                     </div>
                 </div>
                 <p className="text-xl font-black font-mono tracking-tighter">{value}</p>
