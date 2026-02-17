@@ -3,7 +3,7 @@
 import AppLayout from "@/components/layout/AppLayout";
 import Watchlist from "@/components/watchlist/Watchlist";
 import React, { useEffect, useState, useRef, useMemo } from "react";
-import { TrendingUp, TrendingDown, DollarSign, BarChart3, ArrowUpRight, ArrowDownRight, X, PieChart as PieIcon, LayoutGrid, ChartPie, ChevronDown, ChevronUp } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, BarChart3, ArrowUpRight, ArrowDownRight, X, PieChart as PieIcon, LayoutGrid, ChartPie, ChevronDown, ChevronUp, Star } from "lucide-react";
 import AssetTreemap from "@/components/charts/AssetTreemap";
 import SectorPieChart from "@/components/charts/SectorPieChart";
 import AllocationDonut from "@/components/charts/AllocationDonut";
@@ -34,6 +34,7 @@ export default function ClientDashboard() {
     const [activeTab, setActiveTab] = useState("portfolio");
     const [openTabs, setOpenTabs] = useState([{ id: "portfolio", title: "My Portfolio", symbol: null }]);
     const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+    const [watchlistVisible, setWatchlistVisible] = useState(true);
 
     const togglePanel = (id: string) => {
         setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
@@ -172,279 +173,300 @@ export default function ClientDashboard() {
                     ))}
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-4 lg:px-8 lg:py-6 space-y-4">
-                    {activeTab === "portfolio" ? (
-                        <>
-                            {/* Condensed Header */}
-                            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-border/10 pb-3">
-                                <div className="flex items-center gap-3">
-                                    <div className="h-2 w-2 rounded-full bg-accent animate-pulse" />
-                                    <div>
-                                        <p className="text-muted text-[9px] font-black uppercase tracking-[0.4em]">Portfolio</p>
-                                        <h1 className="text-lg font-black tracking-tight mt-px">Asset Mandate Alpha</h1>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-2 px-2 py-1 rounded-md border border-border/30 bg-card/40">
-                                    <span className={`flex h-1.5 w-1.5 rounded-full ${loading ? 'bg-yellow-400' : 'bg-green animate-pulse'}`} />
-                                    <span className="text-[9px] text-muted font-black tracking-widest uppercase">{loading ? 'Syncing...' : 'Live'}</span>
-                                </div>
-                            </div>
-
-                            {/* Stat Cards */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 stagger">
-                                <StatCard
-                                    label="NAV (NET ASSETS)"
-                                    value={`$${totalValue.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
-                                    icon={<DollarSign size={14} />}
-                                    accent="blue"
-                                />
-                                <StatCard
-                                    label="P&L (YTD)"
-                                    value={`${totalPnL >= 0 ? "+" : ""}$${totalPnL.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
-                                    sub={`${pnlPercent >= 0 ? "+" : ""}${pnlPercent.toFixed(2)}%`}
-                                    icon={totalPnL >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-                                    accent={totalPnL >= 0 ? "green" : "red"}
-                                />
-                                <StatCard
-                                    label="VAR (RISK)"
-                                    value="4.20%"
-                                    sub="LIMIT 7.5%"
-                                    icon={<BarChart3 size={14} />}
-                                    accent="purple"
-                                />
-                                <StatCard
-                                    label="BETA (S&P 500)"
-                                    value="1.14"
-                                    sub="HIGH VOL."
-                                    icon={<TrendingUp size={14} />}
-                                    accent="emerald"
-                                />
-                            </div>
-
-                            {/* Advanced Visualizations Row - Professional Stacked Layout */}
-                            <div className="grid grid-cols-1 gap-6 animate-slide-up" style={{ animationDelay: '0.2s' }}>
-                                {/* Sector Allocation Chart - TOP */}
-                                <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['sector'] ? 'min-h-[50px]' : 'min-h-[450px]'}`}>
-                                    <div
-                                        onClick={() => togglePanel('sector')}
-                                        className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/20 cursor-pointer hover:bg-card-hover/40 transition-colors"
-                                    >
-                                        <div className="flex items-center gap-2">
-                                            <ChartPie size={14} className="text-accent" />
-                                            <h2 className="text-xs font-black uppercase tracking-widest text-muted">Sector Exposure</h2>
-                                        </div>
-                                        {collapsed['sector'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
-                                    </div>
-                                    {!collapsed['sector'] && (
-                                        <div className="flex-1 animate-in fade-in slide-in-from-top-2 duration-300">
-                                            <SectorPieChart data={sectorData} />
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Treemap Visualizer - BOTTOM */}
-                                <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['treemap'] ? 'min-h-[50px]' : 'min-h-[400px]'}`}>
-                                    <div
-                                        onClick={() => togglePanel('treemap')}
-                                        className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/20 cursor-pointer hover:bg-card-hover/40 transition-colors"
-                                    >
-                                        <div className="flex items-center gap-2">
-                                            <LayoutGrid size={14} className="text-accent" />
-                                            <h2 className="text-xs font-black uppercase tracking-widest text-muted">Allocation Intensity</h2>
-                                        </div>
-                                        <div className="flex items-center gap-4">
-                                            <span className="hidden sm:block text-[9px] text-muted font-black px-2 py-0.5 bg-background rounded border border-border tracking-tighter uppercase">Hi-Density</span>
-                                            {collapsed['treemap'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
+                <div className="flex-1 flex overflow-hidden">
+                    {/* Main Content Area */}
+                    <div className="flex-1 overflow-y-auto p-4 lg:px-8 lg:py-6 space-y-4">
+                        {activeTab === "portfolio" ? (
+                            <>
+                                {/* Condensed Header */}
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-border/10 pb-3">
+                                    <div className="flex items-center gap-3">
+                                        <div className="h-2 w-2 rounded-full bg-accent animate-pulse" />
+                                        <div>
+                                            <p className="text-muted text-[9px] font-black uppercase tracking-[0.4em]">Portfolio</p>
+                                            <h1 className="text-lg font-black tracking-tight mt-px">Asset Mandate Alpha</h1>
                                         </div>
                                     </div>
-                                    {!collapsed['treemap'] && (
-                                        <div className="p-4 flex-1 animate-in fade-in slide-in-from-top-2 duration-300">
-                                            <AssetTreemap data={treemapData} />
-                                        </div>
-                                    )}
+                                    <div className="flex items-center gap-2 px-2 py-1 rounded-md border border-border/30 bg-card/40">
+                                        <span className={`flex h-1.5 w-1.5 rounded-full ${loading ? 'bg-yellow-400' : 'bg-green animate-pulse'}`} />
+                                        <span className="text-[9px] text-muted font-black tracking-widest uppercase">{loading ? 'Syncing...' : 'Live'}</span>
+                                    </div>
                                 </div>
-                            </div>
 
-                            {/* Main Grid */}
-                            <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-                                {/* Holdings Table */}
-                                <div className={`xl:col-span-2 bg-card border border-border rounded-2xl overflow-hidden shadow-sm transition-all duration-300 ${collapsed['holdings'] ? 'h-[60px]' : ''}`}>
-                                    <div
-                                        onClick={() => togglePanel('holdings')}
-                                        className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/30 cursor-pointer hover:bg-card-hover/50 transition-colors"
-                                    >
-                                        <h2 className="text-xs font-black uppercase tracking-widest text-muted">Positions</h2>
-                                        <div className="flex items-center gap-4">
+                                {/* Stat Cards */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 stagger">
+                                    <StatCard
+                                        label="NAV (NET ASSETS)"
+                                        value={`$${totalValue.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
+                                        icon={<DollarSign size={14} />}
+                                        accent="blue"
+                                    />
+                                    <StatCard
+                                        label="P&L (YTD)"
+                                        value={`${totalPnL >= 0 ? "+" : ""}$${totalPnL.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
+                                        sub={`${pnlPercent >= 0 ? "+" : ""}${pnlPercent.toFixed(2)}%`}
+                                        icon={totalPnL >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
+                                        accent={totalPnL >= 0 ? "green" : "red"}
+                                    />
+                                    <StatCard
+                                        label="VAR (RISK)"
+                                        value="4.20%"
+                                        sub="LIMIT 7.5%"
+                                        icon={<BarChart3 size={14} />}
+                                        accent="purple"
+                                    />
+                                    <StatCard
+                                        label="BETA (S&P 500)"
+                                        value="1.14"
+                                        sub="HIGH VOL."
+                                        icon={<TrendingUp size={14} />}
+                                        accent="emerald"
+                                    />
+                                </div>
+
+                                {/* Advanced Visualizations Row - Professional Stacked Layout */}
+                                <div className="grid grid-cols-1 gap-6 animate-slide-up" style={{ animationDelay: '0.2s' }}>
+                                    {/* Sector Allocation Chart - TOP */}
+                                    <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['sector'] ? 'min-h-[50px]' : 'min-h-[450px]'}`}>
+                                        <div
+                                            onClick={() => togglePanel('sector')}
+                                            className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/20 cursor-pointer hover:bg-card-hover/40 transition-colors"
+                                        >
                                             <div className="flex items-center gap-2">
-                                                {holdings.length > activeHoldings.length && (
-                                                    <div className="flex items-center gap-1.5 bg-yellow-400/5 px-2 py-0.5 rounded border border-yellow-400/20">
-                                                        <span className="h-1 w-1 rounded-full bg-yellow-400 animate-pulse" />
-                                                        <span className="text-[9px] text-yellow-400 font-black uppercase">{holdings.length - activeHoldings.length} Sync</span>
-                                                    </div>
-                                                )}
-                                                <span className="text-[10px] text-accent font-black">{activeHoldings.length} Active</span>
+                                                <ChartPie size={14} className="text-accent" />
+                                                <h2 className="text-xs font-black uppercase tracking-widest text-muted">Sector Exposure</h2>
                                             </div>
-                                            {collapsed['holdings'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
+                                            {collapsed['sector'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
                                         </div>
+                                        {!collapsed['sector'] && (
+                                            <div className="flex-1 animate-in fade-in slide-in-from-top-2 duration-300">
+                                                <SectorPieChart data={sectorData} />
+                                            </div>
+                                        )}
                                     </div>
-                                    {!collapsed['holdings'] && (
-                                        <div className="overflow-x-auto animate-in fade-in slide-in-from-top-2 duration-300">
-                                            <table className="w-full text-sm">
-                                                <thead>
-                                                    <tr className="text-left text-muted text-xs border-b border-border bg-background/50">
-                                                        <th className="px-6 py-3 font-medium">Asset</th>
-                                                        <th className="px-4 py-3 font-medium text-right">Shares</th>
-                                                        <th className="px-4 py-3 font-medium text-right">Price</th>
-                                                        <th className="px-4 py-3 font-medium text-right">Value</th>
-                                                        <th className="px-4 py-3 font-medium text-right">Change</th>
-                                                        <th className="px-6 py-3 font-medium text-right">Source</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="stagger">
-                                                    {[...activeHoldings]
-                                                        .sort((a, b) => (b.shares * b.price) - (a.shares * a.price))
-                                                        .map((h) => {
-                                                            const changeValue = h.changePercent || 0;
 
-                                                            // Accurate Heatmap Color matching Treemap
-                                                            const getHeatmapColor = (cv: number) => {
-                                                                if (cv > 5) return '#10b981'; if (cv > 2.5) return '#22c55e';
-                                                                if (cv > 1) return '#4ade80'; if (cv > 0.4) return '#86efac';
-                                                                if (cv > 0.1) return '#0b3d2e';
-                                                                if (cv >= -0.1 && cv <= 0.1) return '#374151';
-                                                                if (cv >= -0.4) return '#78350f'; if (cv >= -1.2) return '#facc15';
-                                                                if (cv >= -2.5) return '#fbbf24'; if (cv >= -4) return '#f97316';
-                                                                if (cv >= -6) return '#f43f5e'; return '#ef4444';
-                                                            };
+                                    {/* Treemap Visualizer - BOTTOM */}
+                                    <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['treemap'] ? 'min-h-[50px]' : 'min-h-[400px]'}`}>
+                                        <div
+                                            onClick={() => togglePanel('treemap')}
+                                            className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/20 cursor-pointer hover:bg-card-hover/40 transition-colors"
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <LayoutGrid size={14} className="text-accent" />
+                                                <h2 className="text-xs font-black uppercase tracking-widest text-muted">Allocation Intensity</h2>
+                                            </div>
+                                            <div className="flex items-center gap-4">
+                                                <span className="hidden sm:block text-[9px] text-muted font-black px-2 py-0.5 bg-background rounded border border-border tracking-tighter uppercase">Hi-Density</span>
+                                                {collapsed['treemap'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
+                                            </div>
+                                        </div>
+                                        {!collapsed['treemap'] && (
+                                            <div className="p-4 flex-1 animate-in fade-in slide-in-from-top-2 duration-300">
+                                                <AssetTreemap data={treemapData} />
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
 
-                                                            const badgeColor = getHeatmapColor(changeValue);
-                                                            const isBright = ['#facc15', '#fbbf24', '#86efac'].includes(badgeColor);
+                                {/* Main Grid */}
+                                <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                                    {/* Holdings Table */}
+                                    <div className={`xl:col-span-2 bg-card border border-border rounded-2xl overflow-hidden shadow-sm transition-all duration-300 ${collapsed['holdings'] ? 'h-[60px]' : ''}`}>
+                                        <div
+                                            onClick={() => togglePanel('holdings')}
+                                            className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/30 cursor-pointer hover:bg-card-hover/50 transition-colors"
+                                        >
+                                            <h2 className="text-xs font-black uppercase tracking-widest text-muted">Positions</h2>
+                                            <div className="flex items-center gap-4">
+                                                <div className="flex items-center gap-2">
+                                                    {holdings.length > activeHoldings.length && (
+                                                        <div className="flex items-center gap-1.5 bg-yellow-400/5 px-2 py-0.5 rounded border border-yellow-400/20">
+                                                            <span className="h-1 w-1 rounded-full bg-yellow-400 animate-pulse" />
+                                                            <span className="text-[9px] text-yellow-400 font-black uppercase">{holdings.length - activeHoldings.length} Sync</span>
+                                                        </div>
+                                                    )}
+                                                    <span className="text-[10px] text-accent font-black">{activeHoldings.length} Active</span>
+                                                </div>
+                                                {collapsed['holdings'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
+                                            </div>
+                                        </div>
+                                        {!collapsed['holdings'] && (
+                                            <div className="overflow-x-auto animate-in fade-in slide-in-from-top-2 duration-300">
+                                                <table className="w-full text-sm">
+                                                    <thead>
+                                                        <tr className="text-left text-muted text-xs border-b border-border bg-background/50">
+                                                            <th className="px-6 py-3 font-medium">Asset</th>
+                                                            <th className="px-4 py-3 font-medium text-right">Shares</th>
+                                                            <th className="px-4 py-3 font-medium text-right">Price</th>
+                                                            <th className="px-4 py-3 font-medium text-right">Value</th>
+                                                            <th className="px-4 py-3 font-medium text-right">Change</th>
+                                                            <th className="px-6 py-3 font-medium text-right">Source</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="stagger">
+                                                        {[...activeHoldings]
+                                                            .sort((a, b) => (b.shares * b.price) - (a.shares * a.price))
+                                                            .map((h) => {
+                                                                const changeValue = h.changePercent || 0;
 
-                                                            return (
-                                                                <tr
-                                                                    key={h.symbol}
-                                                                    onClick={() => openSymbolTab(h.symbol)}
-                                                                    className="border-b border-border/50 hover:bg-card-hover transition-colors group cursor-pointer"
-                                                                >
-                                                                    <td className="px-6 py-4">
-                                                                        <div className="flex items-center gap-3">
+                                                                // Accurate Heatmap Color matching Treemap
+                                                                const getHeatmapColor = (cv: number) => {
+                                                                    if (cv > 5) return '#10b981'; if (cv > 2.5) return '#22c55e';
+                                                                    if (cv > 1) return '#4ade80'; if (cv > 0.4) return '#86efac';
+                                                                    if (cv > 0.1) return '#0b3d2e';
+                                                                    if (cv >= -0.1 && cv <= 0.1) return '#374151';
+                                                                    if (cv >= -0.4) return '#78350f'; if (cv >= -1.2) return '#facc15';
+                                                                    if (cv >= -2.5) return '#fbbf24'; if (cv >= -4) return '#f97316';
+                                                                    if (cv >= -6) return '#f43f5e'; return '#ef4444';
+                                                                };
+
+                                                                const badgeColor = getHeatmapColor(changeValue);
+                                                                const isBright = ['#facc15', '#fbbf24', '#86efac'].includes(badgeColor);
+
+                                                                return (
+                                                                    <tr
+                                                                        key={h.symbol}
+                                                                        onClick={() => openSymbolTab(h.symbol)}
+                                                                        className="border-b border-border/50 hover:bg-card-hover transition-colors group cursor-pointer"
+                                                                    >
+                                                                        <td className="px-6 py-4">
+                                                                            <div className="flex items-center gap-3">
+                                                                                <div
+                                                                                    className="h-9 w-9 rounded-lg flex items-center justify-center text-white font-bold text-xs group-hover:scale-110 transition-all shadow-sm"
+                                                                                    style={{ backgroundColor: badgeColor }}
+                                                                                >
+                                                                                    {h.symbol.slice(0, 2)}
+                                                                                </div>
+                                                                                <div>
+                                                                                    <p className="font-semibold group-hover:text-accent transition-colors">{h.symbol}</p>
+                                                                                    <p className="text-xs text-muted truncate max-w-[120px]">{h.name}</p>
+                                                                                </div>
+                                                                            </div>
+                                                                        </td>
+                                                                        <td className="px-4 py-4 text-right font-mono text-xs">{h.shares}</td>
+                                                                        <td className="px-4 py-4 text-right font-mono font-medium">${h.price.toFixed(h.symbol.includes('/') ? 4 : 2)}</td>
+                                                                        <td className="px-4 py-4 text-right font-mono font-semibold text-accent">
+                                                                            ${(h.shares * h.price).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                                                                        </td>
+                                                                        <td className="px-4 py-4 text-right">
                                                                             <div
-                                                                                className="h-9 w-9 rounded-lg flex items-center justify-center text-white font-bold text-xs group-hover:scale-110 transition-all shadow-sm"
-                                                                                style={{ backgroundColor: badgeColor }}
+                                                                                className="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-full shadow-sm"
+                                                                                style={{
+                                                                                    backgroundColor: badgeColor,
+                                                                                    color: isBright ? '#000000' : '#ffffff'
+                                                                                }}
                                                                             >
-                                                                                {h.symbol.slice(0, 2)}
+                                                                                {changeValue >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                                                                                {Math.abs(changeValue).toFixed(2)}%
                                                                             </div>
-                                                                            <div>
-                                                                                <p className="font-semibold group-hover:text-accent transition-colors">{h.symbol}</p>
-                                                                                <p className="text-xs text-muted truncate max-w-[120px]">{h.name}</p>
-                                                                            </div>
-                                                                        </div>
-                                                                    </td>
-                                                                    <td className="px-4 py-4 text-right font-mono text-xs">{h.shares}</td>
-                                                                    <td className="px-4 py-4 text-right font-mono font-medium">${h.price.toFixed(h.symbol.includes('/') ? 4 : 2)}</td>
-                                                                    <td className="px-4 py-4 text-right font-mono font-semibold text-accent">
-                                                                        ${(h.shares * h.price).toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                                                                    </td>
-                                                                    <td className="px-4 py-4 text-right">
-                                                                        <div
-                                                                            className="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-full shadow-sm"
-                                                                            style={{
-                                                                                backgroundColor: badgeColor,
-                                                                                color: isBright ? '#000000' : '#ffffff'
-                                                                            }}
-                                                                        >
-                                                                            {changeValue >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-                                                                            {Math.abs(changeValue).toFixed(2)}%
-                                                                        </div>
-                                                                    </td>
-                                                                    <td className="px-6 py-4 text-right">
-                                                                        <span className="text-[10px] bg-background border border-border px-2 py-0.5 rounded-md text-muted font-mono">
-                                                                            {h.source}
-                                                                        </span>
-                                                                    </td>
-                                                                </tr>
-                                                            );
-                                                        })}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Fee Analysis Panel */}
-                                <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['economics'] ? 'h-[50px]' : ''}`}>
-                                    <div
-                                        onClick={() => togglePanel('economics')}
-                                        className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/30 cursor-pointer hover:bg-card-hover/50 transition-colors"
-                                    >
-                                        <h2 className="text-xs font-black uppercase tracking-widest text-muted">Economics</h2>
-                                        <div className="flex items-center gap-4">
-                                            {collapsed['economics'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
-                                        </div>
+                                                                        </td>
+                                                                        <td className="px-6 py-4 text-right">
+                                                                            <span className="text-[10px] bg-background border border-border px-2 py-0.5 rounded-md text-muted font-mono">
+                                                                                {h.source}
+                                                                            </span>
+                                                                        </td>
+                                                                    </tr>
+                                                                );
+                                                            })}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        )}
                                     </div>
-                                    {!collapsed['economics'] && (
-                                        <div className="p-6 space-y-5 flex-1 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-300">
-                                            <div className="space-y-3">
-                                                <div className="flex justify-between text-[11px]">
-                                                    <span className="text-muted">Management Fee (2.75%)</span>
-                                                    <span className="font-mono text-white">${(totalValue * 0.0275 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                                </div>
-                                                <div className="flex justify-between text-[11px]">
-                                                    <span className="text-muted">Service Fee (0.75%)</span>
-                                                    <span className="font-mono text-white">${(totalValue * 0.0075 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                                </div>
-                                                <div className="flex justify-between text-[11px]">
-                                                    <span className="text-muted">Other Exp. & Interest (0.59%)</span>
-                                                    <span className="font-mono text-white">${(totalValue * 0.0059 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                                </div>
-                                                <div className="flex justify-between text-[11px]">
-                                                    <span className="text-muted">Reimbursements & Waivers</span>
-                                                    <span className="font-mono text-green-400">-${(totalValue * 0.0059 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                                </div>
-                                                <div className="pt-2 border-t border-border/50 flex justify-between text-xs font-bold">
-                                                    <span className="text-accent uppercase tracking-tighter">Total Net Expenses (3.50%)</span>
-                                                    <span className="font-mono text-accent">~${(totalValue * 0.0350 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })} / mo</span>
-                                                </div>
-                                            </div>
 
-                                            <div className="space-y-2 pt-4 border-t border-border/20">
-                                                <div className="flex justify-between text-xs">
-                                                    <span className="text-muted">High-Water Mark (HWM)</span>
-                                                    <span className="font-mono text-white">${totalValue > 1250500 ? totalValue.toLocaleString() : "1,250,500.00"}</span>
-                                                </div>
-                                                <div className="p-3 rounded-lg bg-green/5 border border-green/10 flex items-center justify-between">
-                                                    <span className="text-[10px] text-green font-bold uppercase tracking-tight">Accrued Perf. Fee (20% above HWM)</span>
-                                                    <span className="text-sm font-black text-green font-mono">
-                                                        ${totalValue > 1250500 ? ((totalValue - 1250500) * 0.20).toFixed(2) : "0.00"}
-                                                    </span>
-                                                </div>
-                                            </div>
-
-                                            <div className="mt-auto pt-4 border-t border-border/50">
-                                                <p className="text-[10px] text-muted leading-relaxed">
-                                                    Fees are calculated based on the <span className="text-foreground">Net Asset Value (NAV)</span> at the end of each billing cycle. Performance fees are subject to HWM principles as per the investment mandate.
-                                                </p>
+                                    {/* Fee Analysis Panel */}
+                                    <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['economics'] ? 'h-[50px]' : ''}`}>
+                                        <div
+                                            onClick={() => togglePanel('economics')}
+                                            className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/30 cursor-pointer hover:bg-card-hover/50 transition-colors"
+                                        >
+                                            <h2 className="text-xs font-black uppercase tracking-widest text-muted">Economics</h2>
+                                            <div className="flex items-center gap-4">
+                                                {collapsed['economics'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
                                             </div>
                                         </div>
-                                    )}
-                                </div>
+                                        {!collapsed['economics'] && (
+                                            <div className="p-6 space-y-5 flex-1 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-300">
+                                                <div className="space-y-3">
+                                                    <div className="flex justify-between text-[11px]">
+                                                        <span className="text-muted">Management Fee (2.75%)</span>
+                                                        <span className="font-mono text-white">${(totalValue * 0.0275 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                    </div>
+                                                    <div className="flex justify-between text-[11px]">
+                                                        <span className="text-muted">Service Fee (0.75%)</span>
+                                                        <span className="font-mono text-white">${(totalValue * 0.0075 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                    </div>
+                                                    <div className="flex justify-between text-[11px]">
+                                                        <span className="text-muted">Other Exp. & Interest (0.59%)</span>
+                                                        <span className="font-mono text-white">${(totalValue * 0.0059 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                    </div>
+                                                    <div className="flex justify-between text-[11px]">
+                                                        <span className="text-muted">Reimbursements & Waivers</span>
+                                                        <span className="font-mono text-green-400">-${(totalValue * 0.0059 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                    </div>
+                                                    <div className="pt-2 border-t border-border/50 flex justify-between text-xs font-bold">
+                                                        <span className="text-accent uppercase tracking-tighter">Total Net Expenses (3.50%)</span>
+                                                        <span className="font-mono text-accent">~${(totalValue * 0.0350 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })} / mo</span>
+                                                    </div>
+                                                </div>
 
-                                {/* Watchlist Panel - Always Visible */}
-                                <div className="xl:col-span-2 overflow-hidden h-[500px] xl:h-[600px] bg-card border border-border rounded-2xl flex flex-col shadow-sm">
-                                    <div className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/30">
-                                        <h2 className="text-xs font-black uppercase tracking-widest text-muted">Watchlist</h2>
+                                                <div className="space-y-2 pt-4 border-t border-border/20">
+                                                    <div className="flex justify-between text-xs">
+                                                        <span className="text-muted">High-Water Mark (HWM)</span>
+                                                        <span className="font-mono text-white">${totalValue > 1250500 ? totalValue.toLocaleString() : "1,250,500.00"}</span>
+                                                    </div>
+                                                    <div className="p-3 rounded-lg bg-green/5 border border-green/10 flex items-center justify-between">
+                                                        <span className="text-[10px] text-green font-bold uppercase tracking-tight">Accrued Perf. Fee (20% above HWM)</span>
+                                                        <span className="text-sm font-black text-green font-mono">
+                                                            ${totalValue > 1250500 ? ((totalValue - 1250500) * 0.20).toFixed(2) : "0.00"}
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="mt-auto pt-4 border-t border-border/50">
+                                                    <p className="text-[10px] text-muted leading-relaxed">
+                                                        Fees are calculated based on the <span className="text-foreground">Net Asset Value (NAV)</span> at the end of each billing cycle. Performance fees are subject to HWM principles as per the investment mandate.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
-                                    <div className="flex-1 overflow-hidden">
-                                        <Watchlist onSelectSymbol={openSymbolTab} />
-                                    </div>
+
+                                    {/* Watchlist Panel - Always Visible */}
+                                    {/* REMOVED from here */}
                                 </div>
+                            </>
+                        ) : (
+                            <div className="h-full min-h-[600px] rounded-2xl overflow-hidden border border-border bg-card">
+                                <InternalChart symbol={activeTab} />
                             </div>
-                        </>
-                    ) : (
-                        <div className="h-full min-h-[600px] rounded-2xl overflow-hidden border border-border bg-card">
-                            <InternalChart symbol={activeTab} />
+                        )}
+                    </div>
+
+                    {/* TradingView-style Watchlist Sidebar */}
+                    {watchlistVisible && (
+                        <div className="w-[300px] border-l border-border bg-card/10 animate-in slide-in-from-right duration-300 hidden xl:flex flex-col shadow-2xl z-20">
+                            <Watchlist onSelectSymbol={openSymbolTab} />
                         </div>
                     )}
+
+                    {/* Minimalist Vertical Toggle Bar */}
+                    <div className="w-[45px] border-l border-border bg-card/20 flex flex-col items-center py-4 gap-6 z-30">
+                        <button
+                            onClick={() => setWatchlistVisible(!watchlistVisible)}
+                            className={`p-2 rounded-lg transition-all ${watchlistVisible ? 'bg-accent/10 text-accent' : 'text-muted hover:text-foreground hover:bg-card/50'}`}
+                            title="Toggle Watchlist"
+                        >
+                            <Star size={18} className={watchlistVisible ? 'fill-accent' : ''} />
+                        </button>
+                        <div className="h-px w-6 bg-border" />
+                        <button className="text-muted hover:text-foreground transition-colors p-2 rounded-lg hover:bg-card/50">
+                            <ChartPie size={18} />
+                        </button>
+                        <button className="text-muted hover:text-foreground transition-colors p-2 rounded-lg hover:bg-card/50">
+                            <LayoutGrid size={18} />
+                        </button>
+                    </div>
                 </div>
             </div>
         </AppLayout>
