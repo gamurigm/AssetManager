@@ -3,13 +3,43 @@ from ..models.models import Portfolio
 
 class FeeService:
     @staticmethod
+    def calculate_total_expenses(portfolio: Portfolio, current_aum: float) -> Dict[str, float]:
+        """
+        Calculates the comprehensive annual fund operation expenses.
+        Based on the provided rates:
+        - Management Fee: 2.75%
+        - Service Fee: 0.75%
+        - Other Expenses: 0.59%
+        - Reimbursement/Waiver: (0.59%)
+        - Total Net: 3.50%
+        """
+        # Rates (Annual)
+        rates = {
+            "management_fee": 0.0275,
+            "service_fee": 0.0075,
+            "other_expenses": 0.0059,
+            "reimbursement": -0.0059
+        }
+        
+        # Monthly calculations
+        results = {}
+        for key, rate in rates.items():
+            results[key] = (current_aum * rate) / 12
+            
+        results["total_annual_gross"] = current_aum * 0.0409 / 12
+        results["total_annual_net"] = current_aum * 0.0350 / 12
+        
+        return results
+
+    @staticmethod
     def calculate_management_fee(portfolio: Portfolio, current_aum: float) -> float:
         """
-        Calculates the management fee based on the annual rate and current AUM.
-        Usually calculated daily or monthly and charged periodically.
-        For simplicity, returns the periodic amount assuming a monthly calculation.
+        Legacy method for backward compatibility. 
+        Calculates the management fee using the old 1% or the new 2.75% if updated.
         """
-        monthly_rate = portfolio.management_fee_rate / 12
+        # Using the portfolio's stored rate, but defaulting to the new 2.75% if it's 0.01
+        rate = portfolio.management_fee_rate if portfolio.management_fee_rate != 0.01 else 0.0275
+        monthly_rate = rate / 12
         return current_aum * monthly_rate
 
     @staticmethod

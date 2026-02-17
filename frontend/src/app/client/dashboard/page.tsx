@@ -3,16 +3,22 @@
 import AppLayout from "@/components/layout/AppLayout";
 import Watchlist from "@/components/watchlist/Watchlist";
 import { useEffect, useState, useRef, useMemo } from "react";
-import { TrendingUp, TrendingDown, DollarSign, BarChart3, ArrowUpRight, ArrowDownRight, X, PieChart as PieIcon, LayoutGrid } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, BarChart3, ArrowUpRight, ArrowDownRight, X, PieChart as PieIcon, LayoutGrid, ChartPie } from "lucide-react";
 import AssetTreemap from "@/components/charts/AssetTreemap";
+import SectorPieChart from "@/components/charts/SectorPieChart";
 import AllocationDonut from "@/components/charts/AllocationDonut";
 
 const INITIAL_HOLDINGS = [
-    { symbol: "AAPL", name: "Apple Inc.", shares: 45, price: 0, change: 0, changePercent: 0, source: "Loading..." },
-    { symbol: "MSFT", name: "Microsoft Corp.", shares: 30, price: 0, change: 0, changePercent: 0, source: "Loading..." },
-    { symbol: "BTC/USD", name: "Bitcoin", shares: 0.5, price: 0, change: 0, changePercent: 0, source: "Loading..." },
-    { symbol: "NVDA", name: "NVIDIA Corp.", shares: 20, price: 0, change: 0, changePercent: 0, source: "Loading..." },
-    { symbol: "EUR/USD", name: "Euro / US Dollar", shares: 5000, price: 0, change: 0, changePercent: 0, source: "Loading..." },
+    { symbol: "AAPL", name: "Apple Inc.", shares: 45, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Technology" },
+    { symbol: "MSFT", name: "Microsoft Corp.", shares: 30, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Technology" },
+    { symbol: "BTC/USD", name: "Bitcoin", shares: 0.5, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Digital Assets" },
+    { symbol: "NVDA", name: "NVIDIA Corp.", shares: 20, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Technology" },
+    { symbol: "EUR/USD", name: "Euro / US Dollar", shares: 5000, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "FX / Commodities" },
+    { symbol: "JPM", name: "JPMorgan Chase & Co.", shares: 25, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Financials" },
+    { symbol: "XOM", name: "Exxon Mobil Corp.", shares: 40, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Energy" },
+    { symbol: "PFE", name: "Pfizer Inc.", shares: 100, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Health Care" },
+    { symbol: "TSLA", name: "Tesla, Inc.", shares: 15, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Consumer Discretionary" },
+    { symbol: "AMZN", name: "Amazon.com, Inc.", shares: 20, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Consumer Discretionary" },
 ];
 
 const MOCK_TRANSACTIONS = [
@@ -82,31 +88,58 @@ export default function ClientDashboard() {
     const totalPnL = holdings.reduce((sum, h) => sum + h.shares * h.change, 0);
     const pnlPercent = totalValue > 0 ? (totalPnL / (totalValue - totalPnL)) * 100 : 0;
 
-    // Treemap Data
-    const treemapData = useMemo(() => {
-        return holdings
-            .filter(h => h.price > 0)
-            .map(h => ({
-                name: h.name,
-                symbol: h.symbol,
-                value: h.shares * h.price,
-                change: h.changePercent
-            }))
-            .sort((a, b) => b.value - a.value);
+    const SECTOR_COLORS: Record<string, string> = {
+        "Technology": "#3b82f6",
+        "Digital Assets": "#06b6d4",
+        "FX / Commodities": "#f97316",
+        "Financials": "#10b981",
+        "Energy": "#f59e0b",
+        "Health Care": "#ef4444",
+        "Consumer Discretionary": "#ec4899",
+    };
+
+    // Filtered Holdings - The source of truth for all charts and the table
+    const activeHoldings = useMemo(() => {
+        return holdings.filter(h => h.price > 0);
     }, [holdings]);
+
+    // Treemap Data - Derived from active holdings
+    const treemapData = useMemo(() => {
+        return activeHoldings
+            .map(h => {
+                const sector = (h as any).sector || "Other";
+                return {
+                    name: h.name,
+                    symbol: h.symbol,
+                    value: h.shares * h.price,
+                    change: h.changePercent,
+                    sector: sector,
+                    baseColor: SECTOR_COLORS[sector] || "#64748b"
+                };
+            })
+            .sort((a, b) => b.value - a.value);
+    }, [activeHoldings]);
 
     // Donut Data (By Class)
-    const allocationData = useMemo(() => {
-        const classes: Record<string, number> = {};
-        holdings.forEach(h => {
-            let category = "Equities";
-            if (h.symbol.includes("BTC") || h.symbol.includes("ETH")) category = "Digital Assets";
-            else if (h.symbol.includes("/")) category = "FX / Commodities";
+    const sectorData = useMemo(() => {
+        const sectors: Record<string, number> = {};
 
-            classes[category] = (classes[category] || 0) + (h.shares * h.price);
+        activeHoldings.forEach(h => {
+            const sector = (h as any).sector || "Other";
+            sectors[sector] = (sectors[sector] || 0) + (h.shares * h.price);
         });
-        return Object.entries(classes).map(([name, value]) => ({ name, value }));
-    }, [holdings]);
+
+        const totalVal = Object.values(sectors).reduce((a, b) => a + b, 0);
+
+        return Object.entries(sectors)
+            .filter(([_, value]) => value > 0)
+            .map(([name, value]) => ({
+                name,
+                value,
+                percent: totalVal > 0 ? (value / totalVal) * 100 : 0,
+                color: SECTOR_COLORS[name] || "#64748b"
+            }));
+    }, [activeHoldings]);
 
     return (
         <AppLayout>
@@ -180,31 +213,31 @@ export default function ClientDashboard() {
                                 />
                             </div>
 
-                            {/* Advanced Visualizations Row */}
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-slide-up" style={{ animationDelay: '0.2s' }}>
-                                {/* Allocation Donut */}
-                                <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col h-[380px]">
+                            {/* Advanced Visualizations Row - Professional Stacked Layout */}
+                            <div className="grid grid-cols-1 gap-6 animate-slide-up" style={{ animationDelay: '0.2s' }}>
+                                {/* Sector Allocation Chart - TOP */}
+                                <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col min-h-[450px]">
                                     <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card-hover/20">
                                         <div className="flex items-center gap-2">
-                                            <PieIcon size={16} className="text-accent" />
-                                            <h2 className="text-sm font-bold uppercase tracking-widest text-muted">Asset Allocation</h2>
+                                            <ChartPie size={16} className="text-accent" />
+                                            <h2 className="text-sm font-bold uppercase tracking-widest text-muted">Portfolio Exposure by Business Sector</h2>
                                         </div>
                                     </div>
-                                    <div className="p-4 flex-1 flex items-center justify-center overflow-hidden">
-                                        <AllocationDonut data={allocationData} />
+                                    <div className="flex-1">
+                                        <SectorPieChart data={sectorData} />
                                     </div>
                                 </div>
 
-                                {/* Treemap Visualizer */}
-                                <div className="lg:col-span-2 bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col h-[380px]">
+                                {/* Treemap Visualizer - BOTTOM */}
+                                <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col min-h-[400px]">
                                     <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card-hover/20">
                                         <div className="flex items-center gap-2">
                                             <LayoutGrid size={16} className="text-accent" />
-                                            <h2 className="text-sm font-bold uppercase tracking-widest text-muted">Portfolio Intensity (Treemap)</h2>
+                                            <h2 className="text-sm font-bold uppercase tracking-widest text-muted">Asset Allocation Intensity (NAV Weighted)</h2>
                                         </div>
-                                        <span className="text-[10px] text-muted font-bold px-2 py-0.5 bg-background rounded border border-border">VALUE WEIGHTED</span>
+                                        <span className="text-[10px] text-muted font-bold px-2 py-0.5 bg-background rounded border border-border">HI-DENSITY VIEW</span>
                                     </div>
-                                    <div className="p-2 flex-1 overflow-hidden">
+                                    <div className="p-4 flex-1">
                                         <AssetTreemap data={treemapData} />
                                     </div>
                                 </div>
@@ -216,7 +249,14 @@ export default function ClientDashboard() {
                                 <div className="xl:col-span-2 bg-card border border-border rounded-2xl overflow-hidden shadow-sm transition-shadow">
                                     <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card-hover/30">
                                         <h2 className="text-base font-semibold">Holdings</h2>
-                                        <span className="text-xs text-muted">{holdings.length} positions · Multi-Source</span>
+                                        <div className="flex items-center gap-2">
+                                            {holdings.length > activeHoldings.length && (
+                                                <span className="text-[10px] bg-yellow-400/10 text-yellow-400 px-2 py-0.5 rounded border border-yellow-400/20 animate-pulse">
+                                                    {holdings.length - activeHoldings.length} Syncing...
+                                                </span>
+                                            )}
+                                            <span className="text-xs text-muted font-bold">{activeHoldings.length} Active Positions</span>
+                                        </div>
                                     </div>
                                     <div className="overflow-x-auto">
                                         <table className="w-full text-sm">
@@ -231,44 +271,70 @@ export default function ClientDashboard() {
                                                 </tr>
                                             </thead>
                                             <tbody className="stagger">
-                                                {holdings.map((h) => (
-                                                    <tr
-                                                        key={h.symbol}
-                                                        onClick={() => openSymbolTab(h.symbol)}
-                                                        className="border-b border-border/50 hover:bg-card-hover transition-colors group cursor-pointer"
-                                                    >
-                                                        <td className="px-6 py-4">
-                                                            <div className="flex items-center gap-3">
-                                                                <div className="h-9 w-9 rounded-lg bg-accent/10 flex items-center justify-center text-accent font-bold text-xs group-hover:scale-110 transition-transform">
-                                                                    {h.symbol.slice(0, 2)}
-                                                                </div>
-                                                                <div>
-                                                                    <p className="font-semibold group-hover:text-accent transition-colors">{h.symbol}</p>
-                                                                    <p className="text-xs text-muted truncate max-w-[120px]">{h.name}</p>
-                                                                </div>
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-4 py-4 text-right font-mono text-xs">{h.shares}</td>
-                                                        <td className="px-4 py-4 text-right font-mono font-medium">${h.price.toFixed(h.symbol.includes('/') ? 4 : 2)}</td>
-                                                        <td className="px-4 py-4 text-right font-mono font-semibold text-accent">
-                                                            ${(h.shares * h.price).toLocaleString("en-US", { minimumFractionDigits: 2 })}
-                                                        </td>
-                                                        <td className="px-4 py-4 text-right">
-                                                            <div className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full ${h.changePercent >= 0
-                                                                ? "text-green bg-green/10"
-                                                                : "text-red bg-red/10"
-                                                                }`}>
-                                                                {h.changePercent >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-                                                                {Math.abs(h.changePercent).toFixed(2)}%
-                                                            </div>
-                                                        </td>
-                                                        <td className="px-6 py-4 text-right">
-                                                            <span className="text-[10px] bg-background border border-border px-2 py-0.5 rounded-md text-muted font-mono">
-                                                                {h.source}
-                                                            </span>
-                                                        </td>
-                                                    </tr>
-                                                ))}
+                                                {[...activeHoldings]
+                                                    .sort((a, b) => (b.shares * b.price) - (a.shares * a.price))
+                                                    .map((h) => {
+                                                        const changeValue = h.changePercent || 0;
+
+                                                        // Accurate Heatmap Color matching Treemap
+                                                        const getHeatmapColor = (cv: number) => {
+                                                            if (cv > 5) return '#10b981'; if (cv > 2.5) return '#22c55e';
+                                                            if (cv > 1) return '#4ade80'; if (cv > 0.4) return '#86efac';
+                                                            if (cv > 0.1) return '#0b3d2e';
+                                                            if (cv >= -0.1 && cv <= 0.1) return '#374151';
+                                                            if (cv >= -0.4) return '#78350f'; if (cv >= -1.2) return '#facc15';
+                                                            if (cv >= -2.5) return '#fbbf24'; if (cv >= -4) return '#f97316';
+                                                            if (cv >= -6) return '#f43f5e'; return '#ef4444';
+                                                        };
+
+                                                        const badgeColor = getHeatmapColor(changeValue);
+                                                        const isBright = ['#facc15', '#fbbf24', '#86efac'].includes(badgeColor);
+
+                                                        return (
+                                                            <tr
+                                                                key={h.symbol}
+                                                                onClick={() => openSymbolTab(h.symbol)}
+                                                                className="border-b border-border/50 hover:bg-card-hover transition-colors group cursor-pointer"
+                                                            >
+                                                                <td className="px-6 py-4">
+                                                                    <div className="flex items-center gap-3">
+                                                                        <div
+                                                                            className="h-9 w-9 rounded-lg flex items-center justify-center text-white font-bold text-xs group-hover:scale-110 transition-all shadow-sm"
+                                                                            style={{ backgroundColor: badgeColor }}
+                                                                        >
+                                                                            {h.symbol.slice(0, 2)}
+                                                                        </div>
+                                                                        <div>
+                                                                            <p className="font-semibold group-hover:text-accent transition-colors">{h.symbol}</p>
+                                                                            <p className="text-xs text-muted truncate max-w-[120px]">{h.name}</p>
+                                                                        </div>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-4 py-4 text-right font-mono text-xs">{h.shares}</td>
+                                                                <td className="px-4 py-4 text-right font-mono font-medium">${h.price.toFixed(h.symbol.includes('/') ? 4 : 2)}</td>
+                                                                <td className="px-4 py-4 text-right font-mono font-semibold text-accent">
+                                                                    ${(h.shares * h.price).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                                                                </td>
+                                                                <td className="px-4 py-4 text-right">
+                                                                    <div
+                                                                        className="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-full shadow-sm"
+                                                                        style={{
+                                                                            backgroundColor: badgeColor,
+                                                                            color: isBright ? '#000000' : '#ffffff'
+                                                                        }}
+                                                                    >
+                                                                        {changeValue >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
+                                                                        {Math.abs(changeValue).toFixed(2)}%
+                                                                    </div>
+                                                                </td>
+                                                                <td className="px-6 py-4 text-right">
+                                                                    <span className="text-[10px] bg-background border border-border px-2 py-0.5 rounded-md text-muted font-mono">
+                                                                        {h.source}
+                                                                    </span>
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
                                             </tbody>
                                         </table>
                                     </div>
@@ -280,25 +346,40 @@ export default function ClientDashboard() {
                                         <h2 className="text-base font-semibold">Mandate Economics</h2>
                                         <span className="text-[10px] text-muted font-black uppercase tracking-widest">Fiduciary Billing</span>
                                     </div>
-                                    <div className="p-6 space-y-6 flex-1">
-                                        <div className="space-y-2">
-                                            <div className="flex justify-between text-xs">
-                                                <span className="text-muted">Management Fee (1.0% p.a.)</span>
-                                                <span className="font-mono text-accent">${(totalValue * 0.01 / 12).toFixed(2)} / mo</span>
+                                    <div className="p-6 space-y-5 flex-1 overflow-y-auto">
+                                        <div className="space-y-3">
+                                            <div className="flex justify-between text-[11px]">
+                                                <span className="text-muted">Management Fee (2.75%)</span>
+                                                <span className="font-mono text-white">${(totalValue * 0.0275 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                             </div>
-                                            <div className="w-full bg-background rounded-full h-1.5 overflow-hidden">
-                                                <div className="h-full bg-accent w-1/4" />
+                                            <div className="flex justify-between text-[11px]">
+                                                <span className="text-muted">Service Fee (0.75%)</span>
+                                                <span className="font-mono text-white">${(totalValue * 0.0075 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                            </div>
+                                            <div className="flex justify-between text-[11px]">
+                                                <span className="text-muted">Other Exp. & Interest (0.59%)</span>
+                                                <span className="font-mono text-white">${(totalValue * 0.0059 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                            </div>
+                                            <div className="flex justify-between text-[11px]">
+                                                <span className="text-muted">Reimbursements & Waivers</span>
+                                                <span className="font-mono text-green-400">-${(totalValue * 0.0059 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                            </div>
+                                            <div className="pt-2 border-t border-border/50 flex justify-between text-xs font-bold">
+                                                <span className="text-accent uppercase tracking-tighter">Total Net Expenses (3.50%)</span>
+                                                <span className="font-mono text-accent">~${(totalValue * 0.0350 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })} / mo</span>
                                             </div>
                                         </div>
 
-                                        <div className="space-y-2">
+                                        <div className="space-y-2 pt-4 border-t border-border/20">
                                             <div className="flex justify-between text-xs">
                                                 <span className="text-muted">High-Water Mark (HWM)</span>
-                                                <span className="font-mono text-white">$1,250,500.00</span>
+                                                <span className="font-mono text-white">${totalValue > 1250500 ? totalValue.toLocaleString() : "1,250,500.00"}</span>
                                             </div>
                                             <div className="p-3 rounded-lg bg-green/5 border border-green/10 flex items-center justify-between">
-                                                <span className="text-[10px] text-green font-bold uppercase">Performance Fee Accrued</span>
-                                                <span className="text-sm font-black text-green font-mono">+$1,420.50</span>
+                                                <span className="text-[10px] text-green font-bold uppercase tracking-tight">Accrued Perf. Fee (20% above HWM)</span>
+                                                <span className="text-sm font-black text-green font-mono">
+                                                    ${totalValue > 1250500 ? ((totalValue - 1250500) * 0.20).toFixed(2) : "0.00"}
+                                                </span>
                                             </div>
                                         </div>
 
