@@ -16,3 +16,8 @@ openai
 requests
 asyncpg
 logfire[fastapi]
+yfinance
+diskcache
+numpy
+scipy
+pandas

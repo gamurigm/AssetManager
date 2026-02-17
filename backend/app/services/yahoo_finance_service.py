@@ -40,15 +40,34 @@ class YahooFinanceService:
 
     @staticmethod
     async def get_quote(symbol: str) -> Dict[str, Any]:
-        """Get current price info using yfinance."""
+        """Get current price info using yfinance. More robust than .info"""
         try:
             ticker = yf.Ticker(symbol)
-            info = ticker.info
+            # Fetch the most recent 1-day bar
+            hist = ticker.history(period="1d")
+            
+            if hist.empty:
+                # Fallback to info if history fails
+                info = ticker.info
+                return {
+                    "price": info.get("regularMarketPrice") or info.get("currentPrice"),
+                    "change": info.get("regularMarketChange"),
+                    "changePercentage": info.get("regularMarketChangePercent"),
+                    "source": "Yahoo Finance (Info Fallback)"
+                }
+            
+            latest = hist.iloc[-1]
+            prev_close = ticker.info.get("previousClose") or latest["Open"]
+            price = float(latest["Close"])
+            change = price - prev_close
+            pct_change = (change / prev_close) * 100 if prev_close else 0
+            
             return {
-                "price": info.get("regularMarketPrice") or info.get("currentPrice"),
-                "change": info.get("regularMarketChange"),
-                "changePercentage": info.get("regularMarketChangePercent"),
-                "source": "Yahoo Finance"
+                "price": price,
+                "change": change,
+                "changePercentage": pct_change,
+                "volume": int(latest["Volume"]),
+                "source": "Yahoo Finance (Live)"
             }
         except Exception as e:
             return {"error": str(e)}

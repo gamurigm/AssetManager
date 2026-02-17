@@ -32,7 +32,10 @@ export default function ClientDashboard() {
                 holdings.map(async (h) => {
                     try {
                         const res = await fetch(`http://localhost:8000/api/v1/market/quote/${encodeURIComponent(h.symbol)}`);
-                        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+                        if (!res.ok) {
+                            console.warn(`Market data 404 for ${h.symbol}: ${res.status}`);
+                            return h;
+                        }
                         const data = await res.json();
                         if (data && !data.error) {
                             return {
@@ -91,7 +94,7 @@ export default function ClientDashboard() {
                                 : "text-muted hover:text-foreground hover:bg-card/50"
                                 }`}
                         >
-                            {tab.title}
+                            {tab.id === "portfolio" ? "Portfolio Alpha" : tab.title}
                             {tab.id !== "portfolio" && (
                                 <X
                                     size={12}
@@ -109,39 +112,41 @@ export default function ClientDashboard() {
                             {/* Header */}
                             <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
                                 <div>
-                                    <p className="text-muted text-sm font-medium">Markets are active</p>
-                                    <h1 className="text-3xl font-bold tracking-tight mt-1">Institutional Dashboard</h1>
+                                    <p className="text-accent text-xs font-bold uppercase tracking-[0.2em] mb-1">Portfolio Oversight</p>
+                                    <h1 className="text-3xl font-bold tracking-tight mt-1">Multi-Asset Mandate</h1>
                                 </div>
                                 <div className="flex items-center gap-2">
                                     <span className={`flex h-2 w-2 rounded-full ${loading ? 'bg-yellow-400' : 'bg-green animate-pulse'}`} />
-                                    <span className="text-xs text-muted font-medium">{loading ? 'Updating...' : 'Live Real-time Data'}</span>
+                                    <span className="text-xs text-muted font-medium">{loading ? 'Syncing...' : 'Live Real-time Feed'}</span>
                                 </div>
                             </div>
 
-                            {/* Stats Cards */}
+                            {/* Stat Cards */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 stagger">
                                 <StatCard
-                                    label="Total Value"
+                                    label="Net Liquidation Value"
                                     value={`$${totalValue.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
                                     icon={<DollarSign size={18} />}
                                     accent="blue"
                                 />
                                 <StatCard
-                                    label="Today's P&L"
+                                    label="YTD Unrealized P&L"
                                     value={`${totalPnL >= 0 ? "+" : ""}$${totalPnL.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
-                                    sub={`${pnlPercent >= 0 ? "+" : ""}${pnlPercent.toFixed(2)}%`}
+                                    sub={`${pnlPercent >= 0 ? "+" : ""}${pnlPercent.toFixed(2)}% vs Bench.`}
                                     icon={totalPnL >= 0 ? <TrendingUp size={18} /> : <TrendingDown size={18} />}
                                     accent={totalPnL >= 0 ? "green" : "red"}
                                 />
                                 <StatCard
-                                    label="Active Positions"
-                                    value={holdings.length.toString()}
+                                    label="Portfolio VaR (95%)"
+                                    value="4.2%"
+                                    sub="Critical: 7.5%"
                                     icon={<BarChart3 size={18} />}
                                     accent="purple"
                                 />
                                 <StatCard
-                                    label="Portfolio Health"
-                                    value="Optimal"
+                                    label="Adjusted Beta"
+                                    value="1.14"
+                                    sub="Aggressive Exposure"
                                     icon={<TrendingUp size={18} />}
                                     accent="emerald"
                                 />
@@ -150,7 +155,7 @@ export default function ClientDashboard() {
                             {/* Main Grid */}
                             <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                                 {/* Holdings Table */}
-                                <div className="xl:col-span-2 bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
+                                <div className="xl:col-span-2 bg-card border border-border rounded-2xl overflow-hidden shadow-sm transition-shadow">
                                     <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card-hover/30">
                                         <h2 className="text-base font-semibold">Holdings</h2>
                                         <span className="text-xs text-muted">{holdings.length} positions · Multi-Source</span>
@@ -211,8 +216,44 @@ export default function ClientDashboard() {
                                     </div>
                                 </div>
 
+                                {/* Fee Analysis Panel */}
+                                <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col">
+                                    <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card-hover/30">
+                                        <h2 className="text-base font-semibold">Mandate Economics</h2>
+                                        <span className="text-[10px] text-muted font-black uppercase tracking-widest">Fiduciary Billing</span>
+                                    </div>
+                                    <div className="p-6 space-y-6 flex-1">
+                                        <div className="space-y-2">
+                                            <div className="flex justify-between text-xs">
+                                                <span className="text-muted">Management Fee (1.0% p.a.)</span>
+                                                <span className="font-mono text-accent">${(totalValue * 0.01 / 12).toFixed(2)} / mo</span>
+                                            </div>
+                                            <div className="w-full bg-background rounded-full h-1.5 overflow-hidden">
+                                                <div className="h-full bg-accent w-1/4" />
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <div className="flex justify-between text-xs">
+                                                <span className="text-muted">High-Water Mark (HWM)</span>
+                                                <span className="font-mono text-white">$1,250,500.00</span>
+                                            </div>
+                                            <div className="p-3 rounded-lg bg-green/5 border border-green/10 flex items-center justify-between">
+                                                <span className="text-[10px] text-green font-bold uppercase">Performance Fee Accrued</span>
+                                                <span className="text-sm font-black text-green font-mono">+$1,420.50</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="mt-auto pt-4 border-t border-border/50">
+                                            <p className="text-[10px] text-muted leading-relaxed">
+                                                Fees are calculated based on the <span className="text-foreground">Net Asset Value (NAV)</span> at the end of each billing cycle. Performance fees are subject to HWM principles as per the investment mandate.
+                                            </p>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 {/* Watchlist Panel */}
-                                <div className="h-[500px] xl:h-[600px]">
+                                <div className="h-[500px] xl:h-[600px] xl:col-span-2">
                                     <Watchlist onSelectSymbol={openSymbolTab} />
                                 </div>
                             </div>
@@ -233,29 +274,42 @@ import { createChart, ColorType, CandlestickSeries } from "lightweight-charts";
 function InternalChart({ symbol }: { symbol: string }) {
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const [loading, setLoading] = useState(true);
+    const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+
+    useEffect(() => {
+        const checkTheme = () => {
+            setTheme(document.documentElement.classList.contains('light') ? 'light' : 'dark');
+        };
+        checkTheme();
+
+        const observer = new MutationObserver(checkTheme);
+        observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+        return () => observer.disconnect();
+    }, []);
 
     useEffect(() => {
         if (!chartContainerRef.current) return;
 
+        const isLight = theme === 'light';
         const chart = createChart(chartContainerRef.current, {
             layout: {
                 background: { type: ColorType.Solid, color: 'transparent' },
-                textColor: '#d1d1d1',
+                textColor: isLight ? '#3f3f46' : '#d1d1d1',
             },
             grid: {
-                vertLines: { color: '#1f1f1f' },
-                horzLines: { color: '#1f1f1f' },
+                vertLines: { color: isLight ? '#f4f4f5' : '#1f1f1f' },
+                horzLines: { color: isLight ? '#f4f4f5' : '#1f1f1f' },
             },
             width: chartContainerRef.current.clientWidth,
             height: 600,
         });
 
         const candlestickSeries = chart.addSeries(CandlestickSeries, {
-            upColor: '#26a69d',
-            downColor: '#ef5350',
+            upColor: '#22c55e',
+            downColor: '#ef4444',
             borderVisible: false,
-            wickUpColor: '#26a69d',
-            wickDownColor: '#ef5350',
+            wickUpColor: '#22c55e',
+            wickDownColor: '#ef4444',
         });
 
         const fetchHistory = async () => {
@@ -320,7 +374,7 @@ function StatCard({ label, value, sub, icon, accent }: {
         emerald: "text-emerald-400 bg-emerald-500/10",
     };
     return (
-        <div className="bg-card border border-border rounded-2xl p-5 hover:border-border-hover transition-all group relative overflow-hidden">
+        <div className="bg-card border border-border rounded-2xl p-5 hover:border-border-hover transition-all group relative overflow-hidden shadow-sm">
             <div className="shimmer absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" />
             <div className="relative z-10">
                 <div className="flex items-center justify-between mb-3">

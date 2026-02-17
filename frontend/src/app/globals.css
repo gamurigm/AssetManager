@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 :root {
   --background: #09090b;
@@ -12,6 +13,22 @@
   --green: #22c55e;
   --red: #ef4444;
   --muted: #71717a;
+  --scrollbar: #27272a;
+  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+}
+
+:root[class~="light"] {
+  --background: #f4f4f5;
+  --foreground: #09090b;
+  --card: #ffffff;
+  --card-hover: #fafafa;
+  --border: #e4e4e7;
+  --border-hover: #d4d4d8;
+  --accent: #3b82f6;
+  --accent-hover: #1d4ed8;
+  --muted: #52525b;
+  --scrollbar: #d4d4d8;
+  --shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.08);
 }
 
 @theme inline {
@@ -28,11 +45,15 @@
   --color-muted: var(--muted);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --shadow-sm: var(--shadow);
 }
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: #27272a transparent;
+  scrollbar-color: var(--scrollbar) transparent;
+  transition-property: background-color, border-color, color, fill, stroke, box-shadow;
+  transition-duration: 0.3s;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 body {
@@ -43,23 +64,49 @@ body {
 
 /* Animations */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes slideInLeft {
-  from { opacity: 0; transform: translateX(-12px); }
-  to { opacity: 1; transform: translateX(0); }
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.3); }
-  50% { box-shadow: 0 0 20px 4px rgba(59, 130, 246, 0.15); }
+
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.3);
+  }
+
+  50% {
+    box-shadow: 0 0 20px 4px rgba(59, 130, 246, 0.15);
+  }
 }
 
 @keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
 }
 
 .animate-fade-in {
@@ -75,20 +122,78 @@ body {
 }
 
 .shimmer {
-  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.03) 50%, transparent 100%);
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.03) 50%, transparent 100%);
   background-size: 200% 100%;
   animation: shimmer 2s ease-in-out infinite;
 }
 
+@keyframes shockwave {
+  0% {
+    transform: scale(0.8);
+    opacity: 0.8;
+  }
+
+  100% {
+    transform: scale(3.5);
+    opacity: 0;
+  }
+}
+
+@keyframes stellar-breathing {
+
+  0%,
+  100% {
+    transform: scale(1);
+    filter: brightness(1) blur(0px);
+  }
+
+  50% {
+    transform: scale(1.15);
+    filter: brightness(1.3) blur(1px);
+  }
+}
+
+.animate-shockwave {
+  animation: shockwave 3s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+.animate-stellar {
+  animation: stellar-breathing 4s ease-in-out infinite;
+}
+
 /* Stagger children */
-.stagger > * {
+.stagger>* {
   animation: fadeIn 0.4s ease-out both;
 }
-.stagger > *:nth-child(1) { animation-delay: 0ms; }
-.stagger > *:nth-child(2) { animation-delay: 60ms; }
-.stagger > *:nth-child(3) { animation-delay: 120ms; }
-.stagger > *:nth-child(4) { animation-delay: 180ms; }
-.stagger > *:nth-child(5) { animation-delay: 240ms; }
-.stagger > *:nth-child(6) { animation-delay: 300ms; }
-.stagger > *:nth-child(7) { animation-delay: 360ms; }
-.stagger > *:nth-child(8) { animation-delay: 420ms; }
+
+.stagger>*:nth-child(1) {
+  animation-delay: 0ms;
+}
+
+.stagger>*:nth-child(2) {
+  animation-delay: 60ms;
+}
+
+.stagger>*:nth-child(3) {
+  animation-delay: 120ms;
+}
+
+.stagger>*:nth-child(4) {
+  animation-delay: 180ms;
+}
+
+.stagger>*:nth-child(5) {
+  animation-delay: 240ms;
+}
+
+.stagger>*:nth-child(6) {
+  animation-delay: 300ms;
+}
+
+.stagger>*:nth-child(7) {
+  animation-delay: 360ms;
+}
+
+.stagger>*:nth-child(8) {
+  animation-delay: 420ms;
+}

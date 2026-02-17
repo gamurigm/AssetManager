@@ -34,12 +34,12 @@ export default function ManagerDashboard() {
                 {/* Header */}
                 <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
                     <div>
-                        <p className="text-muted text-sm font-medium">Asset Manager</p>
-                        <h1 className="text-3xl font-bold tracking-tight mt-1">AUM Overview</h1>
+                        <p className="text-accent text-xs font-bold uppercase tracking-[0.2em] mb-1">Institutional Intelligence</p>
+                        <h1 className="text-3xl font-bold tracking-tight mt-1">Global AUM Overview</h1>
                     </div>
                     <div className="flex items-center gap-3">
                         <div className="px-3 py-1.5 bg-card rounded-lg border border-border text-xs text-muted">
-                            Last updated: <span className="text-foreground font-medium">just now</span>
+                            System Status: <span className="text-green font-bold uppercase">Optimal</span>
                         </div>
                     </div>
                 </div>
@@ -47,30 +47,30 @@ export default function ManagerDashboard() {
                 {/* Stats */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 stagger">
                     <AUMStatCard
-                        label="Total AUM"
+                        label="Total Assets"
                         value={`$${(totalAUM / 1000000).toFixed(1)}M`}
-                        sub="+8.2% YTD"
+                        sub="+8.2% vs Benchmark"
                         icon={<Briefcase size={18} />}
                         color="blue"
                     />
                     <AUMStatCard
-                        label="Active Clients"
+                        label="Active Portfolios"
                         value="147"
-                        sub="+12 this month"
+                        sub="+12 new mandates MTD"
                         icon={<Users size={18} />}
                         color="purple"
                     />
                     <AUMStatCard
-                        label="Avg. Return"
+                        label="Weighted Return"
                         value="14.7%"
-                        sub="vs benchmark 11.2%"
+                        sub="Alpha: +3.5%"
                         icon={<TrendingUp size={18} />}
                         color="green"
                     />
                     <AUMStatCard
-                        label="Revenue (MTD)"
+                        label="Management Fees"
                         value="$42.8K"
-                        sub="+3.1% vs last month"
+                        sub="Projected Q1: $135K"
                         icon={<DollarSign size={18} />}
                         color="emerald"
                     />
@@ -78,7 +78,7 @@ export default function ManagerDashboard() {
 
                 <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
                     {/* AUM Breakdown */}
-                    <div className="xl:col-span-2 bg-card border border-border rounded-2xl overflow-hidden">
+                    <div className="xl:col-span-2 bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
                         <div className="px-6 py-4 border-b border-border flex items-center justify-between">
                             <h2 className="text-base font-semibold">Asset Allocation</h2>
                             <span className="text-xs text-muted">{MOCK_AUM_BREAKDOWN.length} categories</span>
@@ -117,12 +117,51 @@ export default function ManagerDashboard() {
 
                     {/* Sidebar: Top Performers + Alerts */}
                     <div className="space-y-6">
+                        {/* Risk Exposure */}
+                        <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
+                            <div className="px-6 py-4 border-b border-border">
+                                <h3 className="text-sm font-semibold flex items-center gap-2">
+                                    <Activity size={14} className="text-red" />
+                                    Aggregate Risk Exposure
+                                </h3>
+                            </div>
+                            <div className="p-6 space-y-4">
+                                <div className="space-y-1">
+                                    <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider">
+                                        <span className="text-blue-400">Low Risk (VaR &lt; 2%)</span>
+                                        <span>45%</span>
+                                    </div>
+                                    <div className="h-1.5 w-full bg-background rounded-full overflow-hidden">
+                                        <div className="h-full bg-blue-400 w-[45%]" />
+                                    </div>
+                                </div>
+                                <div className="space-y-1">
+                                    <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider">
+                                        <span className="text-yellow-400">Moderate (VaR 2-5%)</span>
+                                        <span>38%</span>
+                                    </div>
+                                    <div className="h-1.5 w-full bg-background rounded-full overflow-hidden">
+                                        <div className="h-full bg-yellow-400 w-[38%]" />
+                                    </div>
+                                </div>
+                                <div className="space-y-1">
+                                    <div className="flex justify-between text-[10px] font-bold uppercase tracking-wider">
+                                        <span className="text-red">High Risk (VaR &gt; 5%)</span>
+                                        <span>17%</span>
+                                    </div>
+                                    <div className="h-1.5 w-full bg-background rounded-full overflow-hidden">
+                                        <div className="h-full bg-red w-[17%]" />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         {/* Top Performers */}
-                        <div className="bg-card border border-border rounded-2xl overflow-hidden">
+                        <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
                             <div className="px-6 py-4 border-b border-border">
                                 <h3 className="text-sm font-semibold flex items-center gap-2">
                                     <TrendingUp size={14} className="text-green" />
-                                    Top Performers
+                                    Mandate Alpha
                                 </h3>
                             </div>
                             <div className="p-4 space-y-2 stagger">
@@ -137,7 +176,7 @@ export default function ManagerDashboard() {
                                             </div>
                                             <div>
                                                 <p className="text-sm font-semibold">{p.symbol}</p>
-                                                <p className="text-[10px] text-muted">{p.client}</p>
+                                                <p className="text-[10px] text-muted truncate max-w-[80px]">{p.client}</p>
                                             </div>
                                         </div>
                                         <span className="text-sm font-mono font-semibold text-green">
@@ -149,7 +188,7 @@ export default function ManagerDashboard() {
                         </div>
 
                         {/* Alerts */}
-                        <div className="bg-card border border-border rounded-2xl overflow-hidden">
+                        <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
                             <div className="px-6 py-4 border-b border-border">
                                 <h3 className="text-sm font-semibold flex items-center gap-2">
                                     <Activity size={14} className="text-accent" />
@@ -189,7 +228,7 @@ function AUMStatCard({ label, value, sub, icon, color }: {
         emerald: "text-emerald-400 bg-emerald-500/10",
     };
     return (
-        <div className="bg-card border border-border rounded-2xl p-5 hover:border-border-hover transition-all group relative overflow-hidden">
+        <div className="bg-card border border-border rounded-2xl p-5 hover:border-border-hover transition-all group relative overflow-hidden shadow-sm">
             <div className="shimmer absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" />
             <div className="relative z-10">
                 <div className="flex items-center justify-between mb-3">

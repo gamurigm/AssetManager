@@ -68,7 +68,7 @@ export default function TradingPage() {
 
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                     {/* Watchlist */}
-                    <div className="lg:col-span-3 bg-card border border-border rounded-2xl overflow-hidden">
+                    <div className="lg:col-span-3 bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
                         <div className="p-4 border-b border-border">
                             <div className="relative">
                                 <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
@@ -109,7 +109,7 @@ export default function TradingPage() {
                     {/* Chart Placeholder + Order Book */}
                     <div className="lg:col-span-5 space-y-6">
                         {/* Chart */}
-                        <div className="bg-card border border-border rounded-2xl overflow-hidden">
+                        <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
                             <div className="px-6 py-4 border-b border-border flex items-center justify-between">
                                 <div className="flex items-center gap-3">
                                     <h2 className="text-base font-semibold">{symbol}</h2>
@@ -147,7 +147,7 @@ export default function TradingPage() {
                         </div>
 
                         {/* Order Book */}
-                        <div className="bg-card border border-border rounded-2xl overflow-hidden">
+                        <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
                             <div className="px-6 py-3 border-b border-border">
                                 <h3 className="text-sm font-semibold">Order Book</h3>
                             </div>
@@ -189,7 +189,7 @@ export default function TradingPage() {
                     </div>
 
                     {/* Order Form */}
-                    <div className="lg:col-span-4 bg-card border border-border rounded-2xl p-6 space-y-5 h-fit">
+                    <div className="lg:col-span-4 bg-card border border-border rounded-2xl p-6 space-y-5 h-fit shadow-sm">
                         <h2 className="text-base font-semibold">Place Order</h2>
 
                         {/* Buy/Sell Toggle */}
@@ -197,8 +197,8 @@ export default function TradingPage() {
                             <button
                                 onClick={() => setSide("buy")}
                                 className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition-all ${side === "buy"
-                                        ? "bg-green text-white shadow-lg shadow-green/20"
-                                        : "text-muted hover:text-foreground"
+                                    ? "bg-green text-white shadow-lg shadow-green/20"
+                                    : "text-muted hover:text-foreground"
                                     }`}
                             >
                                 Buy
@@ -206,8 +206,8 @@ export default function TradingPage() {
                             <button
                                 onClick={() => setSide("sell")}
                                 className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition-all ${side === "sell"
-                                        ? "bg-red text-white shadow-lg shadow-red/20"
-                                        : "text-muted hover:text-foreground"
+                                    ? "bg-red text-white shadow-lg shadow-red/20"
+                                    : "text-muted hover:text-foreground"
                                     }`}
                             >
                                 Sell
@@ -223,8 +223,8 @@ export default function TradingPage() {
                                         key={t}
                                         onClick={() => setOrderType(t)}
                                         className={`flex-1 py-2 rounded-lg text-xs font-semibold capitalize transition-all border ${orderType === t
-                                                ? "border-accent text-accent bg-accent/5"
-                                                : "border-border text-muted hover:border-border-hover"
+                                            ? "border-accent text-accent bg-accent/5"
+                                            : "border-border text-muted hover:border-border-hover"
                                             }`}
                                     >
                                         {t}
@@ -287,8 +287,8 @@ export default function TradingPage() {
                         <button
                             onClick={handleTrade}
                             className={`w-full py-3.5 rounded-xl font-bold text-sm transition-all shadow-lg ${side === "buy"
-                                    ? "bg-green hover:bg-green/90 text-white shadow-green/20"
-                                    : "bg-red hover:bg-red/90 text-white shadow-red/20"
+                                ? "bg-green hover:bg-green/90 text-white shadow-green/20"
+                                : "bg-red hover:bg-red/90 text-white shadow-red/20"
                                 }`}
                         >
                             {side === "buy" ? "Buy" : "Sell"} {symbol}

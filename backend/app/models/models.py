@@ -10,6 +10,10 @@ class UserRole(enum.Enum):
     CLIENT = "client"
     MANAGER = "manager"
 
+class MandateType(enum.Enum):
+    DISCRETIONARY = "discretionary"
+    ADVISED = "advised"
+
 class User(Base):
     __tablename__ = "users"
 
@@ -43,6 +47,13 @@ class Portfolio(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     client_id: Mapped[int] = mapped_column(ForeignKey("clients.id"))
     name: Mapped[str] = mapped_column(String(100))
+    mandate_type: Mapped[MandateType] = mapped_column(SQLEnum(MandateType), default=MandateType.DISCRETIONARY)
+    
+    # Fee Structure
+    management_fee_rate: Mapped[float] = mapped_column(Float, default=0.01) # Default 1%
+    performance_fee_rate: Mapped[float] = mapped_column(Float, default=0.20) # Default 20%
+    high_water_mark: Mapped[float] = mapped_column(Float, default=0.0)
+    
     total_value: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
