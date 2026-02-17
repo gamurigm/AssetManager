@@ -3,7 +3,9 @@
 import AppLayout from "@/components/layout/AppLayout";
 import Watchlist from "@/components/watchlist/Watchlist";
 import { useEffect, useState, useRef, useMemo } from "react";
-import { TrendingUp, TrendingDown, DollarSign, BarChart3, ArrowUpRight, ArrowDownRight, X } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, BarChart3, ArrowUpRight, ArrowDownRight, X, PieChart as PieIcon, LayoutGrid } from "lucide-react";
+import AssetTreemap from "@/components/charts/AssetTreemap";
+import AllocationDonut from "@/components/charts/AllocationDonut";
 
 const INITIAL_HOLDINGS = [
     { symbol: "AAPL", name: "Apple Inc.", shares: 45, price: 0, change: 0, changePercent: 0, source: "Loading..." },
@@ -80,6 +82,32 @@ export default function ClientDashboard() {
     const totalPnL = holdings.reduce((sum, h) => sum + h.shares * h.change, 0);
     const pnlPercent = totalValue > 0 ? (totalPnL / (totalValue - totalPnL)) * 100 : 0;
 
+    // Treemap Data
+    const treemapData = useMemo(() => {
+        return holdings
+            .filter(h => h.price > 0)
+            .map(h => ({
+                name: h.name,
+                symbol: h.symbol,
+                value: h.shares * h.price,
+                change: h.changePercent
+            }))
+            .sort((a, b) => b.value - a.value);
+    }, [holdings]);
+
+    // Donut Data (By Class)
+    const allocationData = useMemo(() => {
+        const classes: Record<string, number> = {};
+        holdings.forEach(h => {
+            let category = "Equities";
+            if (h.symbol.includes("BTC") || h.symbol.includes("ETH")) category = "Digital Assets";
+            else if (h.symbol.includes("/")) category = "FX / Commodities";
+
+            classes[category] = (classes[category] || 0) + (h.shares * h.price);
+        });
+        return Object.entries(classes).map(([name, value]) => ({ name, value }));
+    }, [holdings]);
+
     return (
         <AppLayout>
             <div className="flex flex-col h-full bg-background animate-fade-in">
@@ -150,6 +178,36 @@ export default function ClientDashboard() {
                                     icon={<TrendingUp size={18} />}
                                     accent="emerald"
                                 />
+                            </div>
+
+                            {/* Advanced Visualizations Row */}
+                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-slide-up" style={{ animationDelay: '0.2s' }}>
+                                {/* Allocation Donut */}
+                                <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col h-[380px]">
+                                    <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card-hover/20">
+                                        <div className="flex items-center gap-2">
+                                            <PieIcon size={16} className="text-accent" />
+                                            <h2 className="text-sm font-bold uppercase tracking-widest text-muted">Asset Allocation</h2>
+                                        </div>
+                                    </div>
+                                    <div className="p-4 flex-1 flex items-center justify-center overflow-hidden">
+                                        <AllocationDonut data={allocationData} />
+                                    </div>
+                                </div>
+
+                                {/* Treemap Visualizer */}
+                                <div className="lg:col-span-2 bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col h-[380px]">
+                                    <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card-hover/20">
+                                        <div className="flex items-center gap-2">
+                                            <LayoutGrid size={16} className="text-accent" />
+                                            <h2 className="text-sm font-bold uppercase tracking-widest text-muted">Portfolio Intensity (Treemap)</h2>
+                                        </div>
+                                        <span className="text-[10px] text-muted font-bold px-2 py-0.5 bg-background rounded border border-border">VALUE WEIGHTED</span>
+                                    </div>
+                                    <div className="p-2 flex-1 overflow-hidden">
+                                        <AssetTreemap data={treemapData} />
+                                    </div>
+                                </div>
                             </div>
 
                             {/* Main Grid */}
