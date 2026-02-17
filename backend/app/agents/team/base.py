@@ -21,20 +21,24 @@ class TeamAgent:
         else:
             self.model = model_name
 
-        self.agent = Agent(
-            self.model,
-            system_prompt=(
+        self.agent = Agent(self.model, deps_type=TeamContext)
+
+        @self.agent.system_prompt
+        def dynamic_system_prompt(ctx: RunContext[TeamContext]) -> str:
+            portfolio_info = ""
+            if "current_portfolio" in ctx.deps.scratchpad:
+                p = ctx.deps.scratchpad["current_portfolio"]
+                portfolio_info = f"\n\n[REAL-TIME PORTFOLIO DATA]\nTotal Value: ${p.get('total_value', 0):,.2f}\nTotal P&L: ${p.get('total_pnl', 0):,.2f} ({p.get('pnl_percent', 0):.2f}%)\nAssets: {p.get('holdings', [])}"
+
+            return (
                 f"You are the {name}, a {role} in an Asset Management Team. "
                 "Your expertise is STRICTLY LIMITED to financial markets, investments, trading, economics, and asset management. "
-                "You are PROHIBITED from discussing or answering questions about any other topics, including but not limited to: "
-                "general knowledge, entertainment, cooking, sports, personal advice, or creative writing. "
-                "If a user asks about a non-financial topic, you must politely decline and state: "
-                "'I am a specialized financial AI, I can only assist with investment and market-related queries.' "
+                "You are PROHIBITED from discussing or answering questions about any other topics. "
+                "If a user asks about a non-financial topic, you must politely decline. "
                 "You collaborate with other agents via a shared context. "
                 "Keep responses concise and professional."
-            ),
-            deps_type=TeamContext
-        )
+                f"{portfolio_info}"
+            )
         for tool in tools:
             self.agent.tool(tool)
 

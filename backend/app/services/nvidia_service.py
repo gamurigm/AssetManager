@@ -15,11 +15,16 @@ class NvidiaService:
     )
 
     @staticmethod
-    def _prepare_messages(message: str, history: Optional[List[dict]] = None) -> List[dict]:
-        messages = [{"role": "system", "content": NvidiaService.FINANCIAL_SYSTEM_PROMPT}]
+    def _prepare_messages(message: str, history: Optional[List[dict]] = None, portfolio: Optional[dict] = None) -> List[dict]:
+        system_content = NvidiaService.FINANCIAL_SYSTEM_PROMPT
+        if portfolio:
+            p = portfolio
+            portfolio_info = f"\n\n[REAL-TIME PORTFOLIO DATA]\nTotal Value: ${p.get('total_value', 0):,.2f}\nTotal P&L: ${p.get('total_pnl', 0):,.2f} ({p.get('pnl_percent', 0):.2f}%)\nAssets: {p.get('holdings', [])}"
+            system_content += portfolio_info
+
+        messages = [{"role": "system", "content": system_content}]
         if history:
             for msg in history:
-                # Map roles correctly to OpenAI/NIM standards
                 role = msg.get("role", "user")
                 content = msg.get("content", "")
                 if content:
@@ -28,7 +33,7 @@ class NvidiaService:
         return messages
 
     @staticmethod
-    def chat_mistral_large(message: str, history: Optional[List[dict]] = None) -> AsyncGenerator[str, None]:
+    def chat_mistral_large(message: str, history: Optional[List[dict]] = None, portfolio: Optional[dict] = None) -> AsyncGenerator[str, None]:
         invoke_url = "https://integrate.api.nvidia.com/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {settings.NVIDIA_MISTRAL_LARGE_KEY}",
@@ -36,7 +41,7 @@ class NvidiaService:
         }
         payload = {
             "model": "mistralai/mistral-large-3-675b-instruct-2512",
-            "messages": NvidiaService._prepare_messages(message, history),
+            "messages": NvidiaService._prepare_messages(message, history, portfolio),
             "max_tokens": 2048,
             "temperature": 0.15,
             "top_p": 1.00,
@@ -60,14 +65,14 @@ class NvidiaService:
                         continue
 
     @staticmethod
-    def chat_mixtral_8x22b(message: str, history: Optional[List[dict]] = None) -> AsyncGenerator[str, None]:
+    def chat_mixtral_8x22b(message: str, history: Optional[List[dict]] = None, portfolio: Optional[dict] = None) -> AsyncGenerator[str, None]:
         client = OpenAI(
             base_url="https://integrate.api.nvidia.com/v1",
             api_key=settings.NVIDIA_MIXTRAL_8X22B_KEY
         )
         completion = client.chat.completions.create(
             model="mistralai/mixtral-8x22b-instruct-v0.1",
-            messages=NvidiaService._prepare_messages(message, history),
+            messages=NvidiaService._prepare_messages(message, history, portfolio),
             temperature=0.5,
             top_p=1,
             max_tokens=1024,
@@ -81,14 +86,14 @@ class NvidiaService:
                 yield content
 
     @staticmethod
-    def chat_glm5(message: str, history: Optional[List[dict]] = None) -> AsyncGenerator[dict, None]:
+    def chat_glm5(message: str, history: Optional[List[dict]] = None, portfolio: Optional[dict] = None) -> AsyncGenerator[dict, None]:
         client = OpenAI(
             base_url="https://integrate.api.nvidia.com/v1",
             api_key=settings.NVIDIA_GLM5_KEY
         )
         completion = client.chat.completions.create(
             model="z-ai/glm5",
-            messages=NvidiaService._prepare_messages(message, history),
+            messages=NvidiaService._prepare_messages(message, history, portfolio),
             temperature=1,
             top_p=1,
             max_tokens=16384,

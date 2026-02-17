@@ -3,6 +3,7 @@ from .specialists import specialists_map
 from .base import TeamAgent
 from pydantic_ai import RunContext
 from typing import Optional
+import json
 
 # --- Orchestrator Definition ---
 # Uses GLM-5 or similar high-reasoning model for planning
@@ -55,7 +56,14 @@ class HeadOfStrategy(TeamAgent):
             self.context.add_message("system", error_msg, "Head of Strategy")
             return error_msg
 
-    async def run_stream(self, user_query: str):
+    async def run_stream(self, user_query: str, portfolio: Optional[dict] = None):
+        # Update shared context with real-time portfolio data if available
+        if portfolio:
+            self.context.update_scratchpad("current_portfolio", portfolio)
+            # Add a hidden system message just for this turn to inform the agent
+            p_info = json.dumps(portfolio, indent=2)
+            self.context.add_message("system", f"REAL-TIME PORTFOLIO DATA:\n{p_info}", "System Monitor")
+
         # Add user message to shared context
         self.context.add_message("user", user_query, "User")
         

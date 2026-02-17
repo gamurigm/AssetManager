@@ -13,11 +13,12 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Asset Manager — Intelligent Core",
-  description: "AI-powered asset management platform with NVIDIA NIM, real-time analytics, and automated trading.",
+  title: "MMAM — Intelligence Core",
+  description: "Murillo Medina Asset Management: AI-powered terminal with NVIDIA NIM, real-time analytics, and automated trading.",
 };
 
 import ChatWidget from "@/components/ai/ChatWidget";
+import { PortfolioProvider } from "@/context/PortfolioContext";
 
 export default function RootLayout({
   children,
@@ -29,8 +30,10 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
-        {children}
-        <ChatWidget />
+        <PortfolioProvider>
+          {children}
+          <ChatWidget />
+        </PortfolioProvider>
       </body>
     </html>
   );

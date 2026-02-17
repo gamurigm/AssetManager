@@ -20,10 +20,12 @@ import {
     Moon,
     ShieldCheck
 } from "lucide-react";
+import { usePortfolio } from "@/context/PortfolioContext";
 
 type Model = "general" | "mistral" | "mixtral" | "glm5";
 
 export default function ChatWidget() {
+    const { holdings, totalValue, totalPnL, pnlPercent } = usePortfolio();
     const [isOpen, setIsOpen] = useState(false);
     const [isMaximized, setIsMaximized] = useState(false);
     const [isDarkMode, setIsDarkMode] = useState(true);
@@ -174,7 +176,14 @@ export default function ChatWidget() {
                 body: JSON.stringify({
                     message: input,
                     user_id: 1,
-                    history: messages.map(m => ({ role: m.role, content: m.content }))
+                    history: messages.map(m => ({ role: m.role, content: m.content })),
+                    portfolio: {
+                        holdings: holdings.filter(h => h.price > 0),
+                        total_value: totalValue,
+                        total_pnl: totalPnL,
+                        pnl_percent: pnlPercent,
+                        timestamp: new Date().toISOString()
+                    }
                 })
             });
 

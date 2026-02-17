@@ -7,6 +7,7 @@ import { TrendingUp, TrendingDown, DollarSign, BarChart3, ArrowUpRight, ArrowDow
 import AssetTreemap from "@/components/charts/AssetTreemap";
 import SectorPieChart from "@/components/charts/SectorPieChart";
 import AllocationDonut from "@/components/charts/AllocationDonut";
+import { usePortfolio } from "@/context/PortfolioContext";
 
 const INITIAL_HOLDINGS = [
     { symbol: "AAPL", name: "Apple Inc.", shares: 45, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Technology" },
@@ -29,7 +30,7 @@ const MOCK_TRANSACTIONS = [
 ];
 
 export default function ClientDashboard() {
-    const [holdings, setHoldings] = useState(INITIAL_HOLDINGS);
+    const { holdings, setHoldings, totalValue, totalPnL, pnlPercent } = usePortfolio();
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState("portfolio");
     const [openTabs, setOpenTabs] = useState([{ id: "portfolio", title: "My Portfolio", symbol: null }]);
@@ -41,9 +42,15 @@ export default function ClientDashboard() {
     };
 
     useEffect(() => {
+        // Initialize if empty
+        if (holdings.length === 0) {
+            setHoldings(INITIAL_HOLDINGS);
+        }
+
         const fetchPrices = async () => {
+            const currentHoldings = holdings.length > 0 ? holdings : INITIAL_HOLDINGS;
             const updatedHoldings = await Promise.all(
-                holdings.map(async (h) => {
+                currentHoldings.map(async (h) => {
                     try {
                         const res = await fetch(`http://127.0.0.1:8000/api/v1/market/quote/${encodeURIComponent(h.symbol)}`);
                         if (!res.ok) {
@@ -89,10 +96,6 @@ export default function ClientDashboard() {
         setOpenTabs(newTabs);
         if (activeTab === id) setActiveTab("portfolio");
     };
-
-    const totalValue = holdings.reduce((sum, h) => sum + h.shares * h.price, 0);
-    const totalPnL = holdings.reduce((sum, h) => sum + h.shares * h.change, 0);
-    const pnlPercent = totalValue > 0 ? (totalPnL / (totalValue - totalPnL)) * 100 : 0;
 
     const SECTOR_COLORS: Record<string, string> = {
         "Technology": "#3b82f6",
