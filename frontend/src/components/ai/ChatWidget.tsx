@@ -262,10 +262,6 @@ export default function ChatWidget() {
                     <header className={`${typeof window !== 'undefined' && window.innerWidth < 640 ? "px-4 py-3" : "px-6 py-4"} flex justify-between items-center border-b transition-colors
                         ${isDarkMode ? "bg-white/[0.03] border-white/5" : "bg-zinc-50 border-zinc-100"}`}>
                         <div className="flex items-center gap-3">
-                            <div className={`h-9 w-9 rounded-xl flex items-center justify-center text-white shadow-lg
-                                ${isDarkMode ? "bg-fuchsia-600" : "bg-indigo-600"}`}>
-                                <Terminal size={16} />
-                            </div>
                             <div className="flex flex-col">
                                 <h3 className={`font-bold text-base tracking-tight ${isDarkMode ? "text-white" : "text-zinc-900"}`}>
                                     Intelligence Core

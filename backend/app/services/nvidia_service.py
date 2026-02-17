@@ -5,6 +5,15 @@ from ..core.config import settings
 from typing import AsyncGenerator, Optional
 
 class NvidiaService:
+    FINANCIAL_SYSTEM_PROMPT = (
+        "You are a specialized Financial Intelligence Assistant for an Asset Management platform. "
+        "Your expertise is STRICTLY LIMITED to financial markets, investments, trading, economics, and asset management. "
+        "You are PROHIBITED from discussing or answering questions about any other topics, including but not limited to: "
+        "general knowledge, entertainment, cooking, sports, personal advice, or creative writing. "
+        "If a user asks about a non-financial topic, you must politely decline and state: "
+        "'I am a specialized financial AI, I can only assist with investment and market-related queries.'"
+    )
+
     @staticmethod
     def chat_mistral_large(message: str) -> AsyncGenerator[str, None]:
         invoke_url = "https://integrate.api.nvidia.com/v1/chat/completions"
@@ -14,7 +23,10 @@ class NvidiaService:
         }
         payload = {
             "model": "mistralai/mistral-large-3-675b-instruct-2512",
-            "messages": [{"role": "user", "content": message}],
+            "messages": [
+                {"role": "system", "content": NvidiaService.FINANCIAL_SYSTEM_PROMPT},
+                {"role": "user", "content": message}
+            ],
             "max_tokens": 2048,
             "temperature": 0.15,
             "top_p": 1.00,
@@ -45,7 +57,10 @@ class NvidiaService:
         )
         completion = client.chat.completions.create(
             model="mistralai/mixtral-8x22b-instruct-v0.1",
-            messages=[{"role": "user", "content": message}],
+            messages=[
+                {"role": "system", "content": NvidiaService.FINANCIAL_SYSTEM_PROMPT},
+                {"role": "user", "content": message}
+            ],
             temperature=0.5,
             top_p=1,
             max_tokens=1024,
@@ -66,7 +81,10 @@ class NvidiaService:
         )
         completion = client.chat.completions.create(
             model="z-ai/glm5",
-            messages=[{"role": "user", "content": message}],
+            messages=[
+                {"role": "system", "content": NvidiaService.FINANCIAL_SYSTEM_PROMPT},
+                {"role": "user", "content": message}
+            ],
             temperature=1,
             top_p=1,
             max_tokens=16384,
