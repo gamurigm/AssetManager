@@ -25,6 +25,8 @@ async def delegate_task(ctx: RunContext[TeamContext], specialist_name: str, inst
         return f"Error: Specialist '{specialist_name}' not found."
     
     # Log delegation in context
+    from app.core.logging import logger
+    logger.info(f"Delegating task to {specialist_name}: {instruction[:100]}...")
     ctx.deps.add_message("system", f"Delegating to {specialist_name}: {instruction}", "Head of Strategy")
     
     # Run the specialist

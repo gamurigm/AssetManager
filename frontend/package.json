@@ -4,11 +4,11 @@
   "private": true,
   "main": "electron/main.js",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 3309",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "electron": "concurrently \"npm run dev\" \"wait-on http://localhost:3000 && electron .\""
+    "electron": "concurrently \"npm run dev\" \"wait-on http://localhost:3309 && electron .\""
   },
   "dependencies": {
     "@tailwindcss/typography": "^0.5.19",

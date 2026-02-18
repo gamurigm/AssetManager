@@ -8,13 +8,15 @@ import AssetTreemap from "@/components/charts/AssetTreemap";
 import SectorPieChart from "@/components/charts/SectorPieChart";
 import AllocationDonut from "@/components/charts/AllocationDonut";
 import { usePortfolio } from "@/context/PortfolioContext";
+import { logger } from "@/lib/logger";
 
 const INITIAL_HOLDINGS = [
     { symbol: "AAPL", name: "Apple Inc.", shares: 45, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Technology" },
     { symbol: "MSFT", name: "Microsoft Corp.", shares: 30, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Technology" },
     { symbol: "BTC/USD", name: "Bitcoin", shares: 0.5, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Digital Assets" },
     { symbol: "NVDA", name: "NVIDIA Corp.", shares: 20, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Technology" },
-    { symbol: "EUR/USD", name: "Euro / US Dollar", shares: 5000, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "FX / Commodities" },
+    { symbol: "EUR/USD", name: "Euro / US Dollar", shares: 5000, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Forex" },
+    { symbol: "GC=F", name: "Gold Futures", shares: 10, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Commodities" },
     { symbol: "JPM", name: "JPMorgan Chase & Co.", shares: 25, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Financials" },
     { symbol: "XOM", name: "Exxon Mobil Corp.", shares: 40, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Energy" },
     { symbol: "PFE", name: "Pfizer Inc.", shares: 100, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Health Care" },
@@ -42,6 +44,10 @@ export default function ClientDashboard() {
     };
 
     useEffect(() => {
+        logger.info("Dashboard", "Terminal Main Dashboard initialized");
+    }, []);
+
+    useEffect(() => {
         // Initialize if empty
         if (holdings.length === 0) {
             setHoldings(INITIAL_HOLDINGS);
@@ -52,7 +58,7 @@ export default function ClientDashboard() {
             const updatedHoldings = await Promise.all(
                 currentHoldings.map(async (h) => {
                     try {
-                        const res = await fetch(`http://127.0.0.1:8000/api/v1/market/quote/${encodeURIComponent(h.symbol)}`);
+                        const res = await fetch(`http://127.0.0.1:8282/api/v1/market/quote/${encodeURIComponent(h.symbol)}`);
                         if (!res.ok) {
                             console.warn(`Market data 404 for ${h.symbol}: ${res.status}`);
                             return h;
@@ -78,7 +84,7 @@ export default function ClientDashboard() {
         };
 
         fetchPrices();
-        const interval = setInterval(fetchPrices, 30000);
+        const interval = setInterval(fetchPrices, 60000);
         return () => clearInterval(interval);
     }, []);
 
@@ -100,7 +106,8 @@ export default function ClientDashboard() {
     const SECTOR_COLORS: Record<string, string> = {
         "Technology": "#3b82f6",
         "Digital Assets": "#06b6d4",
-        "FX / Commodities": "#f97316",
+        "Forex": "#f97316",
+        "Commodities": "#eab308",
         "Financials": "#10b981",
         "Energy": "#f59e0b",
         "Health Care": "#ef4444",
@@ -312,19 +319,22 @@ export default function ClientDashboard() {
                                                             .map((h) => {
                                                                 const changeValue = h.changePercent || 0;
 
-                                                                // Accurate Heatmap Color matching Treemap
+                                                                // Synchronized Heatmap Color matching Treemap
                                                                 const getHeatmapColor = (cv: number) => {
-                                                                    if (cv > 5) return '#10b981'; if (cv > 2.5) return '#22c55e';
-                                                                    if (cv > 1) return '#4ade80'; if (cv > 0.4) return '#86efac';
-                                                                    if (cv > 0.1) return '#0b3d2e';
-                                                                    if (cv >= -0.1 && cv <= 0.1) return '#374151';
-                                                                    if (cv >= -0.4) return '#78350f'; if (cv >= -1.2) return '#facc15';
-                                                                    if (cv >= -2.5) return '#fbbf24'; if (cv >= -4) return '#f97316';
-                                                                    if (cv >= -6) return '#f43f5e'; return '#ef4444';
+                                                                    if (cv > 5) return '#065f46';
+                                                                    if (cv > 2.5) return '#10b981';
+                                                                    if (cv > 1) return '#4ade80';
+                                                                    if (cv >= 0.5) return '#fde047';
+                                                                    if (cv >= 0.1) return '#facc15';
+                                                                    if (cv > -0.1) return '#71717a';
+                                                                    if (cv >= -0.5) return '#fbbf24';
+                                                                    if (cv >= -1) return '#f97316';
+                                                                    if (cv >= -3) return '#f43f5e';
+                                                                    return '#ef4444';
                                                                 };
 
                                                                 const badgeColor = getHeatmapColor(changeValue);
-                                                                const isBright = ['#facc15', '#fbbf24', '#86efac'].includes(badgeColor);
+                                                                const isBright = ['#fde047', '#facc15', '#fbbf24', '#4ade80'].includes(badgeColor);
 
                                                                 return (
                                                                     <tr
@@ -482,6 +492,7 @@ function InternalChart({ symbol }: { symbol: string }) {
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const [loading, setLoading] = useState(true);
     const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+    const [quote, setQuote] = useState<{ price: number; changePercentage: number } | null>(null);
 
     useEffect(() => {
         const checkTheme = () => {
@@ -519,12 +530,13 @@ function InternalChart({ symbol }: { symbol: string }) {
             wickDownColor: '#ef4444',
         });
 
-        const fetchHistory = async () => {
+        const fetchData = async () => {
             try {
-                const res = await fetch(`http://127.0.0.1:8000/api/v1/market/historical/${encodeURIComponent(symbol)}?limit=300`);
-                const data = await res.json();
-                if (data.historical) {
-                    const formattedData = data.historical.map((d: any) => ({
+                // Fetch Historical Data
+                const histRes = await fetch(`http://127.0.0.1:8282/api/v1/market/historical/${encodeURIComponent(symbol)}?limit=300`);
+                const histData = await histRes.json();
+                if (histData.historical) {
+                    const formattedData = histData.historical.map((d: any) => ({
                         time: d.date,
                         open: d.open,
                         high: d.high,
@@ -536,30 +548,50 @@ function InternalChart({ symbol }: { symbol: string }) {
                     chart.timeScale().fitContent();
                     setLoading(false);
                 }
+
+                // Fetch Quote for header (Mandatory: Daily Change)
+                const quoteRes = await fetch(`http://127.0.0.1:8282/api/v1/market/quote/${encodeURIComponent(symbol)}`);
+                const q = await quoteRes.json();
+                if (q && !q.error) {
+                    setQuote({ price: q.price, changePercentage: q.changePercentage });
+                }
             } catch (e) {
-                console.error("Failed to fetch history", e);
+                console.error("Failed to fetch data", e);
             }
         };
 
-        fetchHistory();
+        fetchData();
         const handleResize = () => chart.applyOptions({ width: chartContainerRef.current?.clientWidth || 800 });
         window.addEventListener('resize', handleResize);
         return () => {
             window.removeEventListener('resize', handleResize);
             chart.remove();
         };
-    }, [symbol]);
+    }, [symbol, theme]);
 
     return (
         <div className="flex flex-col h-full">
             <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card-hover/20">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-4">
                     <div className="h-8 w-8 rounded-lg bg-accent/20 flex items-center justify-center text-accent text-xs font-bold">
                         {symbol.slice(0, 2)}
                     </div>
-                    <h2 className="text-xl font-bold">{symbol} <span className="text-muted text-sm font-normal">/ Historical Performance</span></h2>
+                    <div className="flex flex-col">
+                        <h2 className="text-xl font-bold leading-none">{symbol}</h2>
+                        <span className="text-muted text-[10px] uppercase font-bold tracking-widest mt-1">Institutional Performance</span>
+                    </div>
+
+                    {quote && (
+                        <div className="flex items-center gap-3 ml-4 pl-4 border-l border-border">
+                            <span className="text-xl font-mono font-black">${quote.price.toFixed(2)}</span>
+                            <div className={`flex items-center gap-1 text-xs font-black px-2 py-0.5 rounded-md ${quote.changePercentage >= 0 ? "bg-green/20 text-green" : "bg-red/20 text-red"}`}>
+                                {quote.changePercentage >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                                {quote.changePercentage.toFixed(2)}%
+                            </div>
+                        </div>
+                    )}
                 </div>
-                {loading && <span className="text-xs animate-pulse text-accent font-mono">Loading Data...</span>}
+                {loading && <span className="text-xs animate-pulse text-accent font-mono uppercase tracking-tighter">Syncing...</span>}
             </div>
             <div ref={chartContainerRef} className="flex-1 w-full" />
         </div>

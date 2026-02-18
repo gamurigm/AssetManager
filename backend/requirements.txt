@@ -18,6 +18,7 @@ asyncpg
 logfire[fastapi]
 yfinance
 diskcache
+duckdb
 numpy
 scipy
 pandas

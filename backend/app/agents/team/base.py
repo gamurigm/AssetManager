@@ -43,35 +43,34 @@ class TeamAgent:
             self.agent.tool(tool)
 
     async def run(self, message: str, context: TeamContext) -> str:
-        try:
-            # Run the agent with dependencies
-            result = await self.agent.run(message, deps=context)
-            
-            # Extract output robustly
-            output = getattr(result, 'output', getattr(result, 'data', str(result)))
-            
-            # Add response to history
-            context.add_message("assistant", output, self.name)
-            
-            return output
-        except Exception as e:
-            error_msg = f"Error in {self.name}: {str(e)}"
-            context.add_message("system", error_msg, self.name)
-            return error_msg
+        import logfire
+        with logfire.span(f"{self.name} processing: {message[:50]}...", agent=self.name, role=self.role):
+            try:
+                # Run the agent with dependencies
+                result = await self.agent.run(message, deps=context)
+                
+                # Extract output robustly
+                output = getattr(result, 'output', getattr(result, 'data', str(result)))
+                
+                # Add response to history
+                context.add_message("assistant", output, self.name)
+                
+                logfire.info(f"{self.name} response completed", character_count=len(output))
+                return output
+            except Exception as e:
+                error_msg = f"Error in {self.name}: {str(e)}"
+                logfire.error(f"Agent {self.name} failed", error=str(e))
+                context.add_message("system", error_msg, self.name)
+                return error_msg
 
     async def run_stream(self, message: str, context: TeamContext):
         """Streams the response from the agent."""
-        try:
-            async with self.agent.run_stream(message, deps=context) as result:
-                async for message_chunk in result.stream_text(delta=True):
-                    yield message_chunk
-                
-                # After streaming is done, log the full message to context
-                full_message = result.get_data() if hasattr(result, 'get_data') else ""
-                if not full_message and hasattr(result, 'formatted_messages'):
-                    # Fallback to extract from messages if needed
-                    pass
-                
-                # Note: Handling final context update might need more care with run_stream
-        except Exception as e:
-            yield f"Error in {self.name} stream: {str(e)}"
+        import logfire
+        with logfire.span(f"{self.name} streaming: {message[:50]}...", agent=self.name):
+            try:
+                async with self.agent.run_stream(message, deps=context) as result:
+                    async for message_chunk in result.stream_text(delta=True):
+                        yield message_chunk
+            except Exception as e:
+                logfire.error(f"Agent {self.name} stream failed", error=str(e))
+                yield f"Error in {self.name} stream: {str(e)}"

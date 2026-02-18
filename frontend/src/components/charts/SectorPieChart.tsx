@@ -65,11 +65,21 @@ const renderCustomizedLabel = (props: any) => {
 };
 
 export default function SectorPieChart({ data }: { data: SectorData[] }) {
+    const [isMounted, setIsMounted] = React.useState(false);
+
+    React.useEffect(() => {
+        setIsMounted(true);
+    }, []);
+
+    if (!isMounted) {
+        return <div className="w-full h-[350px] bg-accent/5 rounded-xl animate-pulse" />;
+    }
+
     return (
         <div className="flex flex-col md:flex-row items-center gap-12 w-full h-full p-6">
             {/* Pie Chart Section */}
             <div className="w-full md:w-3/5 h-[350px] relative">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                     <PieChart>
                         <Pie
                             data={data}

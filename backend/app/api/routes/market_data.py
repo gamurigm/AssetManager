@@ -1,9 +1,19 @@
 from fastapi import APIRouter, HTTPException, Query
 from ...services.fmp_service import fmp_service
 from ...services.market_data import market_data_service
+from ...core.rate_limiter import get_all_statuses
+from ...services.duckdb_store import duckdb_store
 from typing import List, Dict, Any
 
 router = APIRouter()
+
+@router.get("/system/status")
+async def system_status():
+    """Real-time monitoring: API rate limits + DuckDB stats."""
+    return {
+        "rate_limits": get_all_statuses(),
+        "database": duckdb_store.get_stats(),
+    }
 
 @router.get("/quote/{symbol:path}")
 async def get_quote(symbol: str):
@@ -81,39 +91,33 @@ async def udf_history(
     """
     UDF History endpoint.
     Returns bars in the format: {s: "ok", t: [], o: [], h: [], l: [], c: [], v: []}
+    Now routes through MarketDataService (DuckDB + Rate Limiting).
     """
-    # Convert resolution to Yahoo Finance period/interval
-    # For now, we simplify to Daily if not specified
-    res_map = {"D": "1d", "1D": "1d", "W": "1wk", "M": "1mo"}
-    interval = res_map.get(resolution, "1d")
-    
-    # We use our Yahoo Finance service
-    yf_symbol = symbol.replace("/", "-")
-    data = await yahoo_finance_service.get_historical(yf_symbol, period="max", interval=interval)
-    
-    if "error" in data or not data.get("historical"):
+    import datetime
+
+    data = await market_data_service.get_historical(symbol, limit=1000)
+
+    if not data or "error" in data or not data.get("historical"):
         return {"s": "no_data"}
 
     # Filter by time and format for UDF
     t, o, h, l, c, v = [], [], [], [], [], []
-    import datetime
-    
+
     for bar in data["historical"]:
-        # Convert date "YYYY-MM-DD" to unix timestamp
         dt = datetime.datetime.strptime(bar["date"], "%Y-%m-%d")
         ts = int(dt.timestamp())
-        
+
         if from_time <= ts <= to_time:
             t.append(ts)
             o.append(bar["open"])
             h.append(bar["high"])
             l.append(bar["low"])
             c.append(bar["close"])
-            v.append(bar["volume"])
+            v.append(bar.get("volume", 0))
 
     if not t:
         return {"s": "no_data"}
-        
+
     return {
         "s": "ok",
         "t": t, "o": o, "h": h, "l": l, "c": c, "v": v
