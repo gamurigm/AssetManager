@@ -127,3 +127,8 @@ backend/data/*.db
 backend/.env
 frontend/.env*
 !frontend/.env.example
+
+# --- Root Markdown Files ---
+/*.md
+!/README.md
+
