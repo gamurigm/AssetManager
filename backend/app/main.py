@@ -34,7 +34,7 @@ except ImportError:
 
 # App setup
 from .core.config import settings
-from .api.routes import auth, clients, portfolios, trading, agents, market_data, openbb_config, watchlist
+from .api.routes import auth, clients, portfolios, trading, agents, market_data, openbb_config, watchlist, analytics
 
 # Socket.IO setup
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
@@ -69,6 +69,7 @@ app.include_router(trading.router, prefix=f"{settings.API_V1_STR}/trading", tags
 app.include_router(agents.router, prefix=f"{settings.API_V1_STR}/agents", tags=["agents"])
 app.include_router(market_data.router, prefix=f"{settings.API_V1_STR}/market", tags=["market"])
 app.include_router(watchlist.router, prefix=f"{settings.API_V1_STR}/watchlist", tags=["watchlist"])
+app.include_router(analytics.router, prefix=f"{settings.API_V1_STR}/analytics", tags=["analytics"])
 app.include_router(openbb_config.router, prefix="", tags=["openbb"])
 
 @app.get("/")

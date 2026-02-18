@@ -22,3 +22,5 @@ duckdb
 numpy
 scipy
 pandas
+hmmlearn
+scikit-learn

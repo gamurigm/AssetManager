@@ -80,13 +80,56 @@ class HeadOfStrategy(TeamAgent):
             self.context.add_message("system", error_msg, "Head of Strategy")
             return error_msg
 
-    async def run_stream(self, user_query: str, portfolio: Optional[dict] = None):
+    async def run_stream(self, user_query: str, portfolio: Optional[dict] = None, market_regime: Optional[dict] = None):
         # Update shared context with real-time portfolio data if available
+        system_context_parts = []
+
         if portfolio:
             self.context.update_scratchpad("current_portfolio", portfolio)
-            # Add a hidden system message just for this turn to inform the agent
-            p_info = json.dumps(portfolio, indent=2)
-            self.context.add_message("system", f"REAL-TIME PORTFOLIO DATA:\n{p_info}", "System Monitor")
+            
+            # Format portfolio as a readable Markdown table for the LLM
+            holdings = portfolio.get("holdings", [])
+            total_val = portfolio.get("total_value", 0)
+            pnl = portfolio.get("total_pnl", 0)
+            pct = portfolio.get("pnl_percent", 0)
+            
+            table_rows = []
+            for h in holdings:
+                sym = h.get("symbol", "N/A")
+                shares = h.get("shares", 0)
+                price = h.get("price", 0)
+                val = shares * price
+                chg = h.get("changePercent", 0)
+                table_rows.append(f"| {sym} | {shares} | ${price:,.2f} | ${val:,.2f} | {chg:+.2f}% |")
+
+            table_str = "\n".join(table_rows)
+            system_context_parts.append(f"""
+## 📊 REAL-TIME PORTFOLIO SNAPSHOT
+**Total AUM:** ${total_val:,.2f}
+**Total PnL:** ${pnl:,.2f} ({pct:+.2f}%)
+
+| Asset | Shares | Price | Value | Change |
+| :--- | :--- | :--- | :--- | :--- |
+{table_str}
+""")
+
+        if market_regime:
+             self.context.update_scratchpad("market_regime", market_regime)
+             r = market_regime
+             symbol = r.get("symbol", "Unknown")
+             analysis = r.get("regime_analysis", {})
+             curr_regime = analysis.get("current_regime", "Unknown")
+             
+             system_context_parts.append(f"""
+## 🧠 MARKET REGIME ANALYSIS ({symbol})
+**Current State:** {curr_regime}
+**Details:** {json.dumps(analysis, indent=2)}
+""")
+
+        if system_context_parts:
+             full_context = "\n".join(system_context_parts)
+             # Add a hidden system message just for this turn to inform the agent
+             self.context.add_message("system", full_context, "System Monitor")
 
         # Add user message to shared context
         self.context.add_message("user", user_query, "User")
