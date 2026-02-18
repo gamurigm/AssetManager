@@ -26,12 +26,18 @@ const PortfolioContext = createContext<PortfolioContextType | undefined>(undefin
 export function PortfolioProvider({ children }: { children: ReactNode }) {
     const [holdings, setHoldings] = useState<Holding[]>([]);
 
+    const updateHoldings = (newHoldings: Holding[]) => {
+        const timestamp = new Date().toLocaleTimeString();
+        console.log(`[${timestamp}] [PORTFOLIO] Updating holdings data | Assets: ${newHoldings.length}`);
+        setHoldings(newHoldings);
+    };
+
     const totalValue = holdings.reduce((sum, h) => sum + h.shares * h.price, 0);
     const totalPnL = holdings.reduce((sum, h) => sum + h.shares * h.change, 0);
     const pnlPercent = totalValue > 0 ? (totalPnL / (totalValue - totalPnL)) * 100 : 0;
 
     return (
-        <PortfolioContext.Provider value={{ holdings, totalValue, totalPnL, pnlPercent, setHoldings }}>
+        <PortfolioContext.Provider value={{ holdings, totalValue, totalPnL, pnlPercent, setHoldings: updateHoldings }}>
             {children}
         </PortfolioContext.Provider>
     );

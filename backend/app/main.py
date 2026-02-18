@@ -11,12 +11,26 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 # Configure Logfire
-logfire.configure(
-    token=os.getenv("LOGFIRE_TOKEN"),
-    send_to_logfire='if-token-present'
-)
+token = os.getenv("LOGFIRE_TOKEN")
+if token:
+    logfire.configure(
+        token=token,
+        send_to_logfire='always' # Be explicit to ensure it sends
+    )
+    logfire.info("Logfire initialized successfully for MMAM")
+else:
+    logfire.configure(send_to_logfire='never')
+    print("WARNING: LOGFIRE_TOKEN not found in environment.")
+
 logfire.instrument_pydantic() # Trace all Pydantic models
 logfire.instrument_openai()   # Trace all NVIDIA NIM calls
+try:
+    # Attempt to instrument pydantic-ai if the plugin is available
+    import pydantic_ai
+    # Pydantic-AI often uses logfire internally or can be instrumented via the standard methods
+    # but some versions have specific calls
+except ImportError:
+    pass
 
 # App setup
 from .core.config import settings
@@ -38,6 +52,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Custom Logging Middleware
+from .core.logging import LoggingMiddleware
+app.add_middleware(LoggingMiddleware)
+
 # Routes
 app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["auth"])
 app.include_router(clients.router, prefix=f"{settings.API_V1_STR}/clients", tags=["clients"])
@@ -50,16 +68,19 @@ app.include_router(openbb_config.router, prefix="", tags=["openbb"])
 
 @app.get("/")
 async def root():
-    return {"message": "AI Asset Manager Backend Running", "version": "1.0.0"}
+    logfire.info("Root endpoint accessed via diagnostic check")
+    return {"message": "MMAM Intelligence Core Running", "version": "1.0.0", "logging": "enabled"}
 
 # Socket.IO events
+from .core.logging import logger
+
 @sio.event
 async def connect(sid, environ):
-    print(f"Client connected: {sid}")
+    logger.info(f"Socket Client connected: {sid}")
 
 @sio.event
 async def disconnect(sid):
-    print(f"Client disconnected: {sid}")
+    logger.info(f"Socket Client disconnected: {sid}")
 
 # Store sio reference for use in routes
 app.state.sio = sio

@@ -23,9 +23,19 @@ const CustomTooltip = ({ active, payload }: any) => {
 };
 
 export default function AllocationDonut({ data }: { data: AllocationData[] }) {
+    const [isMounted, setIsMounted] = React.useState(false);
+
+    React.useEffect(() => {
+        setIsMounted(true);
+    }, []);
+
+    if (!isMounted) {
+        return <div className="w-full h-full min-h-[250px] bg-accent/5 rounded-xl animate-pulse" />;
+    }
+
     return (
         <div className="w-full h-full min-h-[250px] relative">
-            <ResponsiveContainer width="100%" height="100%">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                 <PieChart>
                     <Pie
                         data={data}
