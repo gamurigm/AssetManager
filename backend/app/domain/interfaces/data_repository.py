@@ -30,3 +30,14 @@ class IHistoricalRepository(ABC):
     def get_stats(self) -> Dict[str, Any]:
         """Return storage statistics (total candles, symbols, size)."""
         ...
+
+    @abstractmethod
+    def get_latest_date(self, symbol: str) -> Optional[str]:
+        """Get the date of the latest candle stored for a symbol."""
+        ...
+
+    @abstractmethod
+    def get_count(self, symbol: str) -> int:
+        """Get the total number of candles stored for a symbol."""
+        ...
+

@@ -39,7 +39,7 @@ export default function ChartWindow() {
         // Fetch data
         const fetchData = async () => {
             try {
-                const res = await fetch(`http://127.0.0.1:8000/api/v1/market/historical/${encodeURIComponent(symbol)}?limit=300`);
+                const res = await fetch(`http://localhost:8282/api/v1/market/historical/${encodeURIComponent(symbol)}?limit=10000`);
                 const data = await res.json();
                 if (data.historical) {
                     const formattedData = data.historical.map((d: any) => ({
@@ -56,7 +56,7 @@ export default function ChartWindow() {
                 }
 
                 // Fetch Daily Quote
-                const qRes = await fetch(`http://127.0.0.1:8000/api/v1/market/quote/${encodeURIComponent(symbol)}`);
+                const qRes = await fetch(`http://localhost:8282/api/v1/market/quote/${encodeURIComponent(symbol)}`);
                 const q = await qRes.json();
                 if (q && !q.error) {
                     setQuote({ price: q.price, changePercentage: q.changePercentage });

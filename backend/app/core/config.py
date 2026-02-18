@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     NVIDIA_MISTRAL_LARGE_KEY: str = os.getenv("NVIDIA_MISTRAL_LARGE_KEY", "")
     NVIDIA_MIXTRAL_8X22B_KEY: str = os.getenv("NVIDIA_MIXTRAL_8X22B_KEY", "")
     NVIDIA_GLM5_KEY: str = os.getenv("NVIDIA_GLM5_KEY", "")
+    NVIDIA_DEEPSEEK_KEY: str = os.getenv("NVIDIA_DEEPSEEK_KEY", "")
+    NVIDIA_NEMOTRON_KEY: str = os.getenv("NVIDIA_NEMOTRON_KEY", "")
     NIM_MODEL_NAME: str = os.getenv("NIM_MODEL_NAME", "qwen/qwen3.5-397b-a17b")
     
     # Financial Data

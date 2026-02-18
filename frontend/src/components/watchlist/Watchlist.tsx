@@ -31,7 +31,7 @@ export default function Watchlist({ onSelectSymbol }: { onSelectSymbol: (s: stri
             const data = await Promise.all(
                 symbols.map(async (s) => {
                     try {
-                        const res = await fetch(`http://127.0.0.1:8000/api/v1/market/quote/${encodeURIComponent(s)}`);
+                        const res = await fetch(`http://127.0.0.1:8282/api/v1/market/quote/${encodeURIComponent(s)}`);
                         const d = await res.json();
                         return {
                             symbol: s,

@@ -55,31 +55,36 @@ export default function ClientDashboard() {
 
         const fetchPrices = async () => {
             const currentHoldings = holdings.length > 0 ? holdings : INITIAL_HOLDINGS;
-            const updatedHoldings = await Promise.all(
-                currentHoldings.map(async (h) => {
-                    try {
-                        const res = await fetch(`http://127.0.0.1:8282/api/v1/market/quote/${encodeURIComponent(h.symbol)}`);
-                        if (!res.ok) {
-                            console.warn(`Market data 404 for ${h.symbol}: ${res.status}`);
-                            return h;
-                        }
-                        const data = await res.json();
-                        if (data && !data.error) {
-                            return {
-                                ...h,
-                                price: data.price,
-                                change: data.change || 0,
-                                changePercent: data.changePercentage || 0,
-                                source: data.source || "Unknown"
-                            };
-                        }
-                    } catch (e) {
-                        console.error(`Error fetching ${h.symbol}:`, e);
+            // Create a copy to mutate
+            let newHoldings = [...currentHoldings];
+
+            // Load sequentially to respect API/Browser limits
+            for (let i = 0; i < newHoldings.length; i++) {
+                const h = newHoldings[i];
+                try {
+                    const res = await fetch(`http://127.0.0.1:8282/api/v1/market/quote/${encodeURIComponent(h.symbol)}`);
+                    if (!res.ok) {
+                        console.warn(`404: ${h.symbol}`);
+                        continue;
                     }
-                    return h;
-                })
-            );
-            setHoldings(updatedHoldings);
+
+                    const data = await res.json();
+                    if (data && !data.error) {
+                        newHoldings[i] = {
+                            ...h,
+                            price: data.price,
+                            change: data.change || 0,
+                            // Backend returns snake_case 'change_percent'
+                            changePercent: data.change_percent !== undefined ? data.change_percent : (data.changePercentage || 0),
+                            source: data.source || "Unknown"
+                        };
+                        // Update state incrementally so user sees progress
+                        setHoldings([...newHoldings]);
+                    }
+                } catch (e) {
+                    console.error(`Error ${h.symbol}:`, e);
+                }
+            }
             setLoading(false);
         };
 
@@ -533,9 +538,12 @@ function InternalChart({ symbol }: { symbol: string }) {
         const fetchData = async () => {
             try {
                 // Fetch Historical Data
-                const histRes = await fetch(`http://127.0.0.1:8282/api/v1/market/historical/${encodeURIComponent(symbol)}?limit=300`);
+                const histRes = await fetch(`http://127.0.0.1:8282/api/v1/market/historical/${encodeURIComponent(symbol)}?limit=10000`);
+                console.log(`[Chart] Fetching history for ${symbol}... Status: ${histRes.status}`);
                 const histData = await histRes.json();
-                if (histData.historical) {
+                console.log(`[Chart] Data for ${symbol}:`, histData);
+
+                if (histData.historical && histData.historical.length > 0) {
                     const formattedData = histData.historical.map((d: any) => ({
                         time: d.date,
                         open: d.open,

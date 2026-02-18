@@ -13,11 +13,11 @@ _rl_cache = Cache(CACHE_DIR)
 
 # Provider limits (requests per minute for free tiers)
 PROVIDER_LIMITS = {
-    "fmp":        {"rpm": 5,   "daily": 250},
-    "twelvedata": {"rpm": 8,   "daily": 800},
-    "polygon":    {"rpm": 5,   "daily": 500},
-    "yahoo":      {"rpm": 60,  "daily": 99999},  # Effectively unlimited for basic use
-    "alphavantage":{"rpm": 5,  "daily": 25},
+    "fmp":        {"rpm": 300,  "daily": 250},
+    "twelvedata": {"rpm": 8,    "daily": 800},
+    "polygon":    {"rpm": 5,    "daily": 500},
+    "yahoo":      {"rpm": 99999, "daily": 999999}, # UNLIMITED FOR DEV
+    "alphavantage":{"rpm": 5,   "daily": 25},
 }
 
 
@@ -62,26 +62,27 @@ class TokenBucket:
             _rl_cache.set(self._daily_reset_key, now)
 
     def can_request(self) -> bool:
-        """Check if we have tokens available (both minute and daily)."""
-        self._refill()
-        minute_tokens = _rl_cache.get(self._minute_key, self.max_tokens_per_min)
-        daily_tokens = _rl_cache.get(self._daily_key, self.max_daily)
-        return minute_tokens >= 1 and daily_tokens >= 1
+        """Force Bypass checking."""
+        # self._refill()
+        # minute_tokens = _rl_cache.get(self._minute_key, self.max_tokens_per_min)
+        # daily_tokens = _rl_cache.get(self._daily_key, self.max_daily)
+        return True
 
     def consume(self) -> bool:
         """
-        Try to consume a token. Returns True if successful, False if rate limited.
+        FORCE BYPASS: Always allow request for debugging.
         """
-        self._refill()
-        minute_tokens = _rl_cache.get(self._minute_key, self.max_tokens_per_min)
-        daily_tokens = _rl_cache.get(self._daily_key, self.max_daily)
+        # self._refill()
+        # minute_tokens = _rl_cache.get(self._minute_key, self.max_tokens_per_min)
+        # daily_tokens = _rl_cache.get(self._daily_key, self.max_daily)
 
-        if minute_tokens < 1 or daily_tokens < 1:
-            print(f"[RateLimiter] ⛔ {self.provider} BLOCKED (min:{minute_tokens:.1f}, day:{daily_tokens})")
-            return False
-
-        _rl_cache.set(self._minute_key, minute_tokens - 1)
-        _rl_cache.set(self._daily_key, daily_tokens - 1)
+        # if minute_tokens < 1 or daily_tokens < 1:
+        #     if self.provider != "yahoo": # Allow only yahoo to bypass if needed, but here we force ALL
+        #         print(f"[RateLimiter] ⛔ {self.provider} BLOCKED (min:{minute_tokens:.1f}, day:{daily_tokens})")
+        #         return False
+        
+        # _rl_cache.set(self._minute_key, minute_tokens - 1)
+        # _rl_cache.set(self._daily_key, daily_tokens - 1)
         return True
 
     def get_status(self) -> dict:

@@ -50,6 +50,8 @@ class PolygonProvider(IMarketDataProvider):
             print(f"[PolygonProvider] Error for {symbol}: {e}")
             return None
 
-    async def get_historical(self, symbol: str, limit: int = 300) -> Optional[List[Candle]]:
+    async def get_historical(
+        self, symbol: str, limit: int = 300, start_date: Optional[str] = None
+    ) -> Optional[List[Candle]]:
         """Polygon historical — not implemented for free tier."""
         return None

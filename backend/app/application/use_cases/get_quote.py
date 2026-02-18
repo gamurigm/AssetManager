@@ -37,17 +37,22 @@ class GetQuoteUseCase:
         # 2. Cascade through providers
         for provider in self._providers:
             bucket = get_bucket(provider.name)
+            
+            # Direct request (Rate limits bypassed in rate_limiter.py)
             if not bucket.can_request():
                 print(f"[GetQuote] ⛔ {provider.name} rate limited for {symbol}")
                 continue
 
             bucket.consume()
-            print(f"[GetQuote] ✅ {symbol} → {provider.name}")
-            quote = await provider.get_quote(symbol)
-
-            if quote:
-                result = quote.to_dict()
-                _cache.set(cache_key, result, expire=QUOTE_TTL)
-                return result
+            
+            try:
+                quote = await provider.get_quote(symbol)
+                if quote:
+                    result = quote.to_dict()
+                    _cache.set(cache_key, result, expire=QUOTE_TTL)
+                    return result
+            except Exception as e:
+                print(f"[GetQuote] ⚠️ Error with {provider.name}: {e}")
+                continue
 
         return {"error": f"All providers exhausted or rate limited for {symbol}."}

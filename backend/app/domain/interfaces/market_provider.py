@@ -26,7 +26,9 @@ class IMarketDataProvider(ABC):
         ...
 
     @abstractmethod
-    async def get_historical(self, symbol: str, limit: int = 300) -> Optional[List[Candle]]:
+    async def get_historical(
+        self, symbol: str, limit: int = 300, start_date: Optional[str] = None
+    ) -> Optional[List[Candle]]:
         """Fetch historical OHLCV data. Returns None on failure."""
         ...
 

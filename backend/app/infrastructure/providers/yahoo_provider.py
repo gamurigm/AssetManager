@@ -25,65 +25,83 @@ class YahooProvider(IMarketDataProvider):
             if any(c in symbol for c in fiat):
                 return symbol.replace("/", "") + "=X"
             return symbol.replace("/", "-")
-        return symbol.replace("=", "-")
+        # Do not replace '=' here, as Yahoo uses it for futures (e.g., GC=F)
+        return symbol
 
     async def get_quote(self, symbol: str) -> Optional[Quote]:
         try:
             yf_sym = self.normalize_symbol(symbol)
             ticker = yf.Ticker(yf_sym)
-            hist = ticker.history(period="1d")
+            
+            # Fetch 5 days to ensure we have previous close
+            hist = ticker.history(period="5d")
 
             if hist.empty:
-                info = ticker.info
-                price = info.get("regularMarketPrice") or info.get("currentPrice")
-                if not price:
-                    return None
-                return Quote(
-                    symbol=symbol,
-                    price=float(price),
-                    change=float(info.get("regularMarketChange", 0)),
-                    change_percent=float(info.get("regularMarketChangePercent", 0)),
-                    source="Yahoo Finance (Info)",
-                )
-
+                return None
+            
             latest = hist.iloc[-1]
-            prev_close = ticker.info.get("previousClose") or float(latest["Open"])
             price = float(latest["Close"])
-            change = price - prev_close
-            pct = (change / prev_close) * 100 if prev_close else 0
+            
+            # Calculate change without .info
+            if len(hist) > 1:
+                prev_close = float(hist.iloc[-2]["Close"])
+                change = price - prev_close
+                pct_change = (change / prev_close) * 100
+            else:
+                change = 0.0
+                pct_change = 0.0
 
             return Quote(
                 symbol=symbol,
                 price=price,
                 change=change,
-                change_percent=pct,
+                change_percent=pct_change,
                 volume=int(latest["Volume"]),
-                source="Yahoo Finance (Live)",
+                source=f"Yahoo Finance ({'Live' if len(hist)>1 else 'Snapshot'})",
             )
         except Exception as e:
             print(f"[YahooProvider] Error for {symbol}: {e}")
             return None
+        except Exception as e:
+            print(f"[YahooProvider] Error for {symbol}: {e}")
+            return None
 
-    async def get_historical(self, symbol: str, limit: int = 300) -> Optional[List[Candle]]:
+    async def get_historical(
+        self, symbol: str, limit: int = 300, start_date: Optional[str] = None
+    ) -> Optional[List[Candle]]:
         try:
             yf_sym = self.normalize_symbol(symbol)
             ticker = yf.Ticker(yf_sym)
-            hist = ticker.history(period="1mo", interval="1d")
+            
+            if start_date:
+                # Incremental sync: fetch from last date to now
+                hist = ticker.history(start=start_date, interval="1d")
+            else:
+                # Bootstrap: fetch full history
+                hist = ticker.history(period="max", interval="1d")
 
             if hist.empty:
                 return None
 
-            return [
-                Candle(
-                    date=date.strftime("%Y-%m-%d"),
-                    open=float(row["Open"]),
-                    high=float(row["High"]),
-                    low=float(row["Low"]),
-                    close=float(row["Close"]),
-                    volume=int(row["Volume"]),
-                )
-                for date, row in hist.iterrows()
-            ]
+            # Clean data: Replace NaNs with last valid value or 0
+            hist = hist.ffill().fillna(0)
+
+            candles = []
+            for date, row in hist.iterrows():
+                try:
+                    candles.append(Candle(
+                        date=date.strftime("%Y-%m-%d"),
+                        open=float(row["Open"]),
+                        high=float(row["High"]),
+                        low=float(row["Low"]),
+                        close=float(row["Close"]),
+                        volume=int(row["Volume"]),
+                    ))
+                except Exception:
+                    continue # Skip malformed rows
+            
+            print(f"[YahooProvider] {symbol} fetched {len(candles)} bars (Start: {candles[0].date if candles else 'N/A'})")
+            return candles
         except Exception as e:
             print(f"[YahooProvider] Historical error for {symbol}: {e}")
             return None

@@ -55,13 +55,21 @@ class FMPProvider(IMarketDataProvider):
             print(f"[FMPProvider] Error for {symbol}: {e}")
             return None
 
-    async def get_historical(self, symbol: str, limit: int = 300) -> Optional[List[Candle]]:
+    async def get_historical(
+        self, symbol: str, limit: int = 300, start_date: Optional[str] = None
+    ) -> Optional[List[Candle]]:
         try:
             fmp_sym = self.normalize_symbol(symbol)
+            params = {"apikey": settings.FMP_API_KEY}
+            if start_date:
+                params["from"] = start_date
+            else:
+                params["timeseries"] = limit
+
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.get(
                     f"{self.V3_URL}/historical-price-full/{fmp_sym}",
-                    params={"apikey": settings.FMP_API_KEY, "timeseries": limit},
+                    params=params,
                 )
                 resp.raise_for_status()
                 data = resp.json()

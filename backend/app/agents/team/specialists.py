@@ -16,6 +16,8 @@ import asyncio
 MISTRAL_LARGE = "mistralai/mistral-large-3-675b-instruct-2512"
 MIXTRAL_8X22B = "mistralai/mixtral-8x22b-instruct-v0.1"
 GLM5 = "z-ai/glm5"
+DEEPSEEK_V3 = "deepseek-ai/deepseek-v3.2"
+NEMOTRON_253B = "nvidia/llama-3.1-nemotron-ultra-253b-v1"
 
 # --- Tools for Fundamental Analyst ---
 async def get_market_news(ctx: RunContext[TeamContext], limit: int = 5) -> str:
@@ -116,7 +118,7 @@ import time
 fundamental_analyst = TeamAgent(
     name="Fundamental Analyst",
     role="Specialist in qualitative analysis, news, and company fundamentals",
-    model_name=MISTRAL_LARGE,
+    model_name=NEMOTRON_253B,
     tools=[get_market_news, get_company_profile]
 )
 
@@ -137,7 +139,7 @@ risk_manager = TeamAgent(
 macro_analyst = TeamAgent(
     name="Macro Analyst",
     role="Specialist in global economics and macro trends",
-    model_name=MISTRAL_LARGE,
+    model_name=NEMOTRON_253B,
     tools=[get_macro_indicators]
 )
 
