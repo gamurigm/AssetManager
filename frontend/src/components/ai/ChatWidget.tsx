@@ -167,8 +167,8 @@ export default function ChatWidget() {
 
         try {
             const endpoint = selectedModel === "general"
-                ? "http://127.0.0.1:8000/api/v1/agents/chat"
-                : `http://127.0.0.1:8000/api/v1/agents/chat/${selectedModel}`;
+                ? "http://127.0.0.1:8282/api/v1/agents/chat"
+                : `http://127.0.0.1:8282/api/v1/agents/chat/${selectedModel}`;
 
             const response = await fetch(endpoint, {
                 method: 'POST',

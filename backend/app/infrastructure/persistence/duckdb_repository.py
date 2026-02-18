@@ -69,12 +69,19 @@ class DuckDBRepository(IHistoricalRepository):
             return 0
         conn = self._conn()
         try:
-            for c in candles:
-                conn.execute("""
-                    INSERT OR REPLACE INTO ohlcv (symbol, date, open, high, low, close, volume, source, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                """, [symbol, c.date, c.open, c.high, c.low, c.close, c.volume, source])
+            # Using executemany for performance
+            data = [
+                (symbol, c.date, c.open, c.high, c.low, c.close, c.volume, source)
+                for c in candles
+            ]
+            conn.executemany("""
+                INSERT OR REPLACE INTO ohlcv (symbol, date, open, high, low, close, volume, source, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            """, data)
             return len(candles)
+        except Exception as e:
+            print(f"[DuckDB] Upsert error for {symbol}: {e}")
+            return 0
         finally:
             conn.close()
 
@@ -87,3 +94,24 @@ class DuckDBRepository(IHistoricalRepository):
             return {"total_candles": total, "total_symbols": symbols, "db_size_mb": round(size, 2)}
         finally:
             conn.close()
+
+    def get_latest_date(self, symbol: str) -> Optional[str]:
+        conn = self._conn()
+        try:
+            res = conn.execute(
+                "SELECT CAST(MAX(date) AS VARCHAR) FROM ohlcv WHERE symbol = ?", [symbol]
+            ).fetchone()
+            return res[0] if res and res[0] else None
+        finally:
+            conn.close()
+
+    def get_count(self, symbol: str) -> int:
+        conn = self._conn()
+        try:
+            res = conn.execute(
+                "SELECT COUNT(*) FROM ohlcv WHERE symbol = ?", [symbol]
+            ).fetchone()
+            return res[0] if res else 0
+        finally:
+            conn.close()
+

@@ -46,6 +46,8 @@ class TwelveDataProvider(IMarketDataProvider):
             print(f"[TwelveDataProvider] Error for {symbol}: {e}")
             return None
 
-    async def get_historical(self, symbol: str, limit: int = 300) -> Optional[List[Candle]]:
+    async def get_historical(
+        self, symbol: str, limit: int = 300, start_date: Optional[str] = None
+    ) -> Optional[List[Candle]]:
         """TwelveData historical — not implemented for free tier, returns None."""
         return None

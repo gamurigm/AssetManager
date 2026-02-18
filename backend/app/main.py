@@ -22,7 +22,7 @@ else:
     logfire.configure(send_to_logfire='never')
     print("WARNING: LOGFIRE_TOKEN not found in environment.")
 
-logfire.instrument_pydantic() # Trace all Pydantic models
+# logfire.instrument_pydantic() # Trace all Pydantic models (Disabled for console cleanliness)
 logfire.instrument_openai()   # Trace all NVIDIA NIM calls
 try:
     # Attempt to instrument pydantic-ai if the plugin is available
@@ -46,7 +46,12 @@ logfire.instrument_fastapi(app)
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3309", 
+        "http://127.0.0.1:3309",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -90,4 +95,4 @@ sio_app = socketio.ASGIApp(sio, app)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:sio_app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("app.main:sio_app", host="0.0.0.0", port=8282, reload=True)

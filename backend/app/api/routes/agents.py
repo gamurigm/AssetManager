@@ -81,3 +81,29 @@ async def chat_glm5(request: ChatRequest):
             yield chunk
 
     return StreamingResponse(generate(), media_type="application/x-ndjson")
+
+
+@router.post("/chat/deepseek")
+async def chat_deepseek(request: ChatRequest):
+    """Direct chat with DeepSeek V3.2 (reasoning mode) via Strategy Pattern."""
+    provider = llm_providers["deepseek"]
+    context = _build_portfolio_context(request.portfolio)
+
+    def generate():
+        for chunk in provider.stream_chat(request.message, request.history, context):
+            yield chunk
+
+    return StreamingResponse(generate(), media_type="application/x-ndjson")
+
+
+@router.post("/chat/nemotron")
+async def chat_nemotron(request: ChatRequest):
+    """Direct chat with Nemotron Ultra 253B via Strategy Pattern."""
+    provider = llm_providers["nemotron"]
+    context = _build_portfolio_context(request.portfolio)
+
+    def generate():
+        for chunk in provider.stream_chat(request.message, request.history, context):
+            yield chunk
+
+    return StreamingResponse(generate(), media_type="text/plain")

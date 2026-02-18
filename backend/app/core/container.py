@@ -10,7 +10,10 @@ from ..infrastructure.providers import (
     YahooProvider, FMPProvider, TwelveDataProvider, PolygonProvider, AlphaVantageProvider,
 )
 from ..infrastructure.persistence import DuckDBRepository
-from ..infrastructure.ai import MistralLargeProvider, MixtralProvider, GLM5Provider
+from ..infrastructure.ai import (
+    MistralLargeProvider, MixtralProvider, GLM5Provider,
+    DeepSeekProvider, NemotronProvider,
+)
 from ..application.use_cases import GetQuoteUseCase, GetHistoricalUseCase
 
 
@@ -32,11 +35,15 @@ duckdb_repo = DuckDBRepository()
 mistral_provider = MistralLargeProvider()
 mixtral_provider = MixtralProvider()
 glm5_provider = GLM5Provider()
+deepseek_provider = DeepSeekProvider()
+nemotron_provider = NemotronProvider()
 
 llm_providers = {
     "mistral": mistral_provider,
     "mixtral": mixtral_provider,
     "glm5": glm5_provider,
+    "deepseek": deepseek_provider,
+    "nemotron": nemotron_provider,
 }
 
 # --- Use Cases (wired with dependencies) ---

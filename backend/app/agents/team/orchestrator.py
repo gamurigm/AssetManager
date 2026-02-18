@@ -8,18 +8,16 @@ import json
 # --- Orchestrator Definition ---
 # Uses GLM-5 or similar high-reasoning model for planning
 
-ORCHESTRATOR_MODEL = "z-ai/glm5"
+ORCHESTRATOR_MODEL = "deepseek-ai/deepseek-v3.2"
+
+import asyncio
+from typing import List, Dict
+
+# ... existing imports ...
 
 async def delegate_task(ctx: RunContext[TeamContext], specialist_name: str, instruction: str) -> str:
-    """
-    Delegate a subtask to a specialist agent.
-    Available Specialists:
-    - "Fundamental Analyst": Use for news, company profiles, qualitative data.
-    - "Quantitative Analyst": Use for price data, technical analysis.
-    - "Macro Analyst": Use for global economic news and broad market trends.
-    - "Risk Manager": Use for compliance and risk metrics (VaR, Sharpe).
-    - "Trader": Use for executing orders and calculating fees.
-    """
+    """Delegate a single subtask (Sequential)."""
+    # ... existing implementation ...
     agent = specialists_map.get(specialist_name)
     if not agent:
         return f"Error: Specialist '{specialist_name}' not found."
@@ -29,11 +27,35 @@ async def delegate_task(ctx: RunContext[TeamContext], specialist_name: str, inst
     logger.info(f"Delegating task to {specialist_name}: {instruction[:100]}...")
     ctx.deps.add_message("system", f"Delegating to {specialist_name}: {instruction}", "Head of Strategy")
     
-    # Run the specialist
-    # Note: agent.run returns the output string directly because TeamAgent wraps it
     result = await agent.run(instruction, ctx.deps)
-    
     return f"Response from {specialist_name}: {result}"
+
+
+async def delegate_parallel_tasks(ctx: RunContext[TeamContext], tasks: List[Dict[str, str]]) -> str:
+    """
+    Delegate multiple subtasks to run in PARALLEL.
+    Input format: [{"specialist": "Fundamental Analyst", "instruction": "Check news..."}, ...]
+    """
+    from app.core.logging import logger
+    
+    async def run_single(task):
+        spec_name = task.get("specialist")
+        instr = task.get("instruction")
+        agent = specialists_map.get(spec_name)
+        if not agent:
+            return f"{spec_name}: Specialist not found."
+        
+        logger.info(f"PARALLEL Delegation to {spec_name}: {instr[:50]}...")
+        ctx.deps.add_message("system", f"Parallel delegation to {spec_name}: {instr}", "Head of Strategy")
+        
+        try:
+            res = await agent.run(instr, ctx.deps)
+            return f"--- Response from {spec_name} ---\n{res}"
+        except Exception as e:
+            return f"Error from {spec_name}: {str(e)}"
+
+    results = await asyncio.gather(*(run_single(t) for t in tasks))
+    return "\n\n".join(results)
 
 class HeadOfStrategy(TeamAgent):
     def __init__(self):
@@ -41,7 +63,7 @@ class HeadOfStrategy(TeamAgent):
             "Head of Strategy",
             "Orchestrator lead responsible for planning and delegating tasks",
             ORCHESTRATOR_MODEL,
-            tools=[delegate_task]
+            tools=[delegate_task, delegate_parallel_tasks]
         )
         self.context = TeamContext()
 
