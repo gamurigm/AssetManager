@@ -1,7 +1,7 @@
 # 🏛️ MMAM — Intelligence Core
 ### Murillo Medina Asset Management
 
-![MMAM Hero Prestige](./Gemini_Generated_Image_5fux9i5fux9i5fux.png)
+![MMAM Hero Prestige](./assets/images/hero_intelligence.png)
 *A state-of-the-art AI-powered infrastructure for institutional-grade asset management.*
 
 ---
@@ -9,7 +9,7 @@
 ## 💎 The Vision
 **MMAM** is not just a dashboard; it is a high-frequency intelligence engine. Driven by the **MMAM Strategic Hub**, the platform integrates advanced agentic orchestration with low-latency execution to provide a unified command center for modern capital management.
 
-![MMAM Strategic Hub](./Gemini_Generated_Image_pulm6rpulm6rpulm.png)
+![MMAM Strategic Hub](./assets/images/strategic_hub.png)
 
 ## 🧠 Intelligence Architecture
 Our system leverages the **NVIDIA NIM** ecosystem through a sophisticated Multi-Agent Team:
@@ -18,7 +18,7 @@ Our system leverages the **NVIDIA NIM** ecosystem through a sophisticated Multi-
 - **Risk Manager**: Live VaR calculations and fiduciary compliance monitoring.
 - **Fiduciary Billing**: Automated mandate economics and fee transparent management.
 
-![MMAM Data Abyss](./Gemini_Generated_Image_fjxu5hfjxu5hfjxu.png)
+![MMAM Data Abyss](./assets/images/data_abyss.png)
 
 ## 🏗️ Technical Stack
 | Layer | Technology |
@@ -63,6 +63,12 @@ npm run dev
 - **Cyber-Terminal Sidebar**: Rebranded to **MMAM Intelligence**, featuring a transparent glassmorphism design (`backdrop-blur-2xl`) and neon-blue accents.
 - **Theme-Aware Logic**: Fully responsive UI that adapts its neon glow and legibility between **Deep Dark** and **Institutional Light** modes.
 - **Real-Time Dashboards**: Interactive charts and treemaps for sector analysis and asset allocation.
+
+![Dashboard Preview](./assets/images/dashboard_snapshot_1.png)
+*Real-time asset allocation and performance monitoring.*
+
+![Treemap Visualization](./assets/images/dashboard_snapshot_2.png)
+*Advanced sector heatmap with real-time price action.*
 
 ### 🤖 AI Sync & Coordination
 - **Portfolio-Aware Chat**: The AI assistant now consumes real-time data of holdings, total value, and P&L. Every message sent to the chat carries the latest "snapshot" of the user's wealth.
