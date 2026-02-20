@@ -34,7 +34,7 @@ except ImportError:
 
 # App setup
 from .core.config import settings
-from .api.routes import auth, clients, portfolios, trading, agents, market_data, openbb_config, watchlist, analytics
+from .api.routes import auth, clients, portfolios, trading, agents, market_data, openbb_config, watchlist, analytics, simulation
 
 # Socket.IO setup
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
@@ -62,6 +62,11 @@ from .core.logging import LoggingMiddleware
 app.add_middleware(LoggingMiddleware)
 
 # Routes
+from fastapi.staticfiles import StaticFiles
+reports_path = os.path.join(os.getcwd(), "reports")
+os.makedirs(reports_path, exist_ok=True)
+app.mount("/view-reports", StaticFiles(directory=reports_path), name="reports")
+
 app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["auth"])
 app.include_router(clients.router, prefix=f"{settings.API_V1_STR}/clients", tags=["clients"])
 app.include_router(portfolios.router, prefix=f"{settings.API_V1_STR}/portfolios", tags=["portfolios"])
@@ -70,6 +75,7 @@ app.include_router(agents.router, prefix=f"{settings.API_V1_STR}/agents", tags=[
 app.include_router(market_data.router, prefix=f"{settings.API_V1_STR}/market", tags=["market"])
 app.include_router(watchlist.router, prefix=f"{settings.API_V1_STR}/watchlist", tags=["watchlist"])
 app.include_router(analytics.router, prefix=f"{settings.API_V1_STR}/analytics", tags=["analytics"])
+app.include_router(simulation.router, prefix=f"{settings.API_V1_STR}/simulation", tags=["simulation"])
 app.include_router(openbb_config.router, prefix="", tags=["openbb"])
 
 @app.get("/")

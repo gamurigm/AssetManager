@@ -10,6 +10,7 @@ from .alpha_vantage_service import alpha_vantage_service
 from .polygon_service import polygon_service
 from .yahoo_finance_service import yahoo_finance_service
 from .duckdb_store import duckdb_store
+from .intraday_repository import intraday_repository, DuckDBIntradayRepository
 from ..core.rate_limiter import get_bucket
 
 import time
@@ -165,6 +166,61 @@ class MarketDataService:
                 return fmp_data
 
         return {"error": f"Historical data unavailable for {symbol}."}
+
+    @staticmethod
+    async def get_intraday(
+        symbol: str,
+        interval: str = "1m",
+        period: str = "5d",
+        start: str = None,
+        end: str = None,
+    ) -> dict:
+        """
+        Unified intraday OHLCV with DuckDB persistence.
+        Cascade:  DuckDB (instant)  →  Yahoo Finance  →  persist to DuckDB
+        Returns:
+            { "symbol", "interval", "candles": [CandleRow], "source" }
+        """
+        # 1. Try local DuckDB (instant, free)
+        if intraday_repository.has_data(symbol, interval,
+                                        start or "2000-01-01",
+                                        end or "2099-01-01"):
+            print(f"[MarketData] DuckDB intraday HIT for {symbol} {interval}")
+            candles = intraday_repository.get(symbol, interval, start, end)
+            return {"symbol": symbol, "interval": interval, "candles": candles,
+                    "source": "DuckDB (Intraday)"}
+
+        # 2. Try Polygon (Bulk Download - 50k candles per request)
+        print(f"[MarketData] DuckDB intraday MISS for {symbol} {interval}. Fetching from Polygon...")
+        poly_bucket = get_bucket("polygon")
+        if poly_bucket.can_request() and (start and end):
+            poly_bucket.consume()
+            poly_sym = MarketDataService._normalize_symbol(symbol, "polygon")
+            poly_result = await polygon_service.get_intraday(poly_sym, interval, start, end)
+            if poly_result and "candles" in poly_result:
+                # Persist massive batch to DuckDB
+                intraday_repository.save(symbol, interval, poly_result["candles"], source="polygon")
+                poly_result["source"] = "Polygon.io -> DuckDB (Intraday Bulk)"
+                return poly_result
+            if poly_result and "error" in poly_result:
+                print(f"[MarketData] Polygon intraday error for {symbol}: {poly_result['error']}")
+
+        # 3. Fallback to Yahoo Finance (7-day max for M1)
+        print(f"[MarketData] Falling back to Yahoo Finance for {symbol} {interval}...")
+        yf_bucket = get_bucket("yahoo")
+        if yf_bucket.can_request():
+            yf_bucket.consume()
+            yf_sym = MarketDataService._normalize_symbol(symbol, "yahoo")
+            result = await yahoo_finance_service.get_intraday(yf_sym, interval, period)
+            if result and "candles" in result:
+                # Persist to DuckDB
+                intraday_repository.save(symbol, interval, result["candles"], source="yahoo")
+                result["source"] = "Yahoo Finance -> DuckDB (Intraday)"
+                return result
+            if "error" in result:
+                print(f"[MarketData] Yahoo intraday error for {symbol}: {result['error']}")
+
+        return {"error": f"Intraday data unavailable for {symbol} ({interval})."}
 
 
 market_data_service = MarketDataService()

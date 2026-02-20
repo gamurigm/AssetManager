@@ -61,8 +61,8 @@ export default function ChartWindow() {
                 if (q && !q.error) {
                     setQuote({ price: q.price, changePercentage: q.changePercentage });
                 }
-            } catch (e) {
-                console.error("Failed to fetch history", e);
+            } catch (e: any) {
+                console.warn(`[Chart Page] Syncing ${symbol} pending backend response.`);
             }
         };
 

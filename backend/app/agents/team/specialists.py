@@ -150,11 +150,49 @@ trader = TeamAgent(
     tools=[place_order]
 )
 
+# --- Tools for Strategy Analyst ---
+async def run_strategy_signal(ctx: RunContext[TeamContext], symbol: str) -> str:
+    """
+    Run the ORB FVG Engulfing strategy engine on the current intraday session
+    for the given symbol. Returns a live trade signal if a setup is detected.
+    """
+    from ...services.simulation_service import simulation_service
+    result = await simulation_service.get_live_signal(symbol=symbol)
+    signal = result.get("signal")
+    reason = result.get("reason", "")
+    source = result.get("source", "")
+
+    if signal is None:
+        return f"No ORB FVG signal for {symbol} in current session. Reason: {reason} (Source: {source})"
+
+    return (
+        f"ORB FVG Engulfing Signal detected for {symbol}:\n"
+        f"  Direction:  {signal['direction']}\n"
+        f"  Entry:      {signal['entry']:.5f}\n"
+        f"  Stop Loss:  {signal['stop']:.5f}\n"
+        f"  Take Profit:{signal['tp']:.5f}\n"
+        f"  Risk Pips:  {signal['risk_pips']:.5f}\n"
+        f"  Confidence: {signal['confidence']}\n"
+        f"  FVG Zone:   [{signal['fvg_bottom']:.5f} – {signal['fvg_top']:.5f}]\n"
+        f"  Signal ID:  {signal['signal_id']}\n"
+        f"  Source:     {source}"
+    )
+
+
+# --- Initialize Strategy Analyst Agent ---
+strategy_analyst = TeamAgent(
+    name="Strategy Analyst",
+    role="Specialist in quantitative trading strategies — detects ORB, FVG, and Engulfing setups",
+    model_name=MIXTRAL_8X22B,
+    tools=[run_strategy_signal],
+)
+
 # Export map for Orchestrator lookup
 specialists_map = {
     "Fundamental Analyst": fundamental_analyst,
     "Quantitative Analyst": quant_analyst,
     "Risk Manager": risk_manager,
     "Macro Analyst": macro_analyst,
-    "Trader": trader
+    "Trader": trader,
+    "Strategy Analyst": strategy_analyst,
 }
