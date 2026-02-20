@@ -11,7 +11,7 @@ Thumbs.db
 *.bak
 *.swp
 *.swo
-
+external_repos/*
 # --- Environment & Secrets ---
 .env
 .env.*

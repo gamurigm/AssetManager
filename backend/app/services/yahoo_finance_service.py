@@ -1,6 +1,7 @@
 import yfinance as yf
 import pandas as pd
 from typing import List, Dict, Any, Optional
+from datetime import timezone
 
 class YahooFinanceService:
     @staticmethod
@@ -68,6 +69,66 @@ class YahooFinanceService:
                 "changePercentage": pct_change,
                 "volume": int(latest["Volume"]),
                 "source": "Yahoo Finance (Live)"
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
+    @staticmethod
+    async def get_intraday(
+        symbol: str,
+        interval: str = "1m",
+        period: str = "5d",
+    ) -> Dict[str, Any]:
+        """
+        Fetch intraday OHLCV candles using yfinance.
+
+        Args:
+            symbol:   Ticker in Yahoo format (e.g. "AAPL", "BTC-USD", "EURUSD=X").
+            interval: Candle size — "1m" (M1) or "5m" (M5).
+                      yfinance supports: 1m,2m,5m,15m,30m,60m,90m,1h.
+            period:   Lookback window — "1d","5d","1mo","3mo".
+                      NOTE: 1m data is only available for the last 7 days from Yahoo Finance.
+
+        Returns:
+            {
+                "symbol": str,
+                "interval": str,
+                "candles": [
+                    { "timestamp": "2025-11-01T09:30:00",
+                      "open": float, "high": float, "low": float,
+                      "close": float, "volume": int }
+                ],
+                "source": "Yahoo Finance (Intraday)"
+            }
+        """
+        try:
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period=period, interval=interval)
+
+            if hist.empty:
+                return {"error": f"No intraday data for {symbol} ({interval}, {period})"}
+
+            candles: List[Dict[str, Any]] = []
+            for ts, row in hist.iterrows():
+                # Normalise timezone → UTC → naive ISO-8601 string
+                if hasattr(ts, "tzinfo") and ts.tzinfo is not None:
+                    ts_utc = ts.astimezone(timezone.utc).replace(tzinfo=None)
+                else:
+                    ts_utc = ts
+                candles.append({
+                    "timestamp": ts_utc.strftime("%Y-%m-%dT%H:%M:%S"),
+                    "open":   float(row["Open"]),
+                    "high":   float(row["High"]),
+                    "low":    float(row["Low"]),
+                    "close":  float(row["Close"]),
+                    "volume": int(row["Volume"]),
+                })
+
+            return {
+                "symbol":   symbol,
+                "interval": interval,
+                "candles":  candles,
+                "source":   "Yahoo Finance (Intraday)",
             }
         except Exception as e:
             return {"error": str(e)}

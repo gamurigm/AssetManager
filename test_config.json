@@ -1,0 +1,8 @@
+{
+    "min_range_pips": 10.0,
+    "body_ratio_breakout": 0.50,
+    "vol_ruptura_ratio": 1.30,
+    "min_fvg_size_atr": 0.50,
+    "p_cuerpo_min": 0.40,
+    "p_vol_min": 1.20
+}

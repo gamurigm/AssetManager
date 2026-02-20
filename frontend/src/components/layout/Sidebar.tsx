@@ -20,7 +20,7 @@ import { useState, useEffect } from "react";
 const unifiedNav = [
     { label: "Overview", href: "/manager/dashboard", icon: LayoutDashboard },
     { label: "Portfolios", href: "/client/dashboard", icon: PieChart },
-    { label: "Simulator", href: "/client/trading", icon: ArrowLeftRight },
+    { label: "Backtest Lab", href: "/client/trading", icon: ArrowLeftRight },
     { label: "Strategies", href: "/manager/clients", icon: Briefcase },
 ];
 

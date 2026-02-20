@@ -1,0 +1,48 @@
+{
+    "strategy": {
+        "name": "ORB_FVG_Engulfing_Scalper",
+        "version": "2.0",
+        "timeframes": {
+            "signal": "M5",
+            "confirm": "M1"
+        },
+        "session": {
+            "start": "09:30",
+            "end": "11:00",
+            "timezone": "America/New_York"
+        }
+    },
+    "params": {
+        "min_range_pips": 10,
+        "vol_ruptura_ratio": 1.30,
+        "body_ratio_breakout": 0.50,
+        "k1_atr_fcr": 1.5,
+        "k2_body_ratio": 0.60,
+        "k3_vol_ratio_fcr": 1.50,
+        "p_cuerpo_min": 0.40,
+        "p_vol_min": 1.20,
+        "min_fvg_size_atr": 0.50,
+        "wait_retest_max_m1": 30,
+        "swing_lookback": 5,
+        "max_spread": 0.0005
+    },
+    "execution": {
+        "rr_target": 3.0,
+        "buffer_sl_factor": 0.10,
+        "entry_type": "limit_with_market_fallback",
+        "limit_timeout_sec": 30,
+        "tp_scaling_enabled": false,
+        "tp1_rr": 2.0,
+        "tp1_size_pct": 50,
+        "tp2_rr": 3.0,
+        "tp2_size_pct": 50
+    },
+    "risk_controls": {
+        "risk_per_trade": 0.005,
+        "max_concurrent_trades": 1,
+        "max_trades_per_day": 2,
+        "max_daily_losses": 2,
+        "max_daily_drawdown_pct": 0.02,
+        "max_monthly_drawdown_pct": 0.10
+    }
+}

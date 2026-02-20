@@ -81,8 +81,9 @@ export default function ClientDashboard() {
                         // Update state incrementally so user sees progress
                         setHoldings([...newHoldings]);
                     }
-                } catch (e) {
-                    console.error(`Error ${h.symbol}:`, e);
+                } catch (e: any) {
+                    // Use console.warn instead of error to prevent Next.js Turbopack Error Overlay
+                    console.warn(`Failed to sync ${h.symbol} - backend may be offline or syncing. Retrying later.`);
                 }
             }
             setLoading(false);
@@ -563,8 +564,8 @@ function InternalChart({ symbol }: { symbol: string }) {
                 if (q && !q.error) {
                     setQuote({ price: q.price, changePercentage: q.changePercentage });
                 }
-            } catch (e) {
-                console.error("Failed to fetch data", e);
+            } catch (e: any) {
+                console.warn(`[Chart] Pending synchronization or backend offline for ${symbol}. Retrying later.`);
             }
         };
 

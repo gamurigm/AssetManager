@@ -24,3 +24,4 @@ scipy
 pandas
 hmmlearn
 scikit-learn
+plotly
