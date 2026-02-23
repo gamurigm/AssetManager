@@ -41,9 +41,9 @@ class StrategyParamsRequest(BaseModel):
 
 
 class SimulationRequest(BaseModel):
-    symbol: str = Field(..., example="AAPL")
-    start_date: str = Field(..., example="2025-11-01")
-    end_date: str = Field(..., example="2025-11-30")
+    symbol: str = Field(..., examples=["AAPL"])
+    start_date: str = Field(..., examples=["2025-11-01"])
+    end_date: str = Field(..., examples=["2025-11-30"])
     account_size: float = Field(default=10_000.0, gt=0)
     strategy_name: str = Field(default="ORB_FVG_ENGULFING")
     strategy_params: Optional[StrategyParamsRequest] = None
@@ -172,7 +172,7 @@ async def list_simulations():
 
 @router.get("/signal/live")
 async def get_live_signal(
-    symbol: str = Query(..., example="AAPL"),
+    symbol: str = Query(..., examples=["AAPL"]),
     strategy: str = Query(default="ORB_FVG_ENGULFING"),
     account_size: float = Query(default=10_000.0, gt=0),
 ):

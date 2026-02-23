@@ -79,26 +79,40 @@ class DuckDBIntradayRepository:
     def __init__(self, db_path: str = _DB_PATH):
         self._db_path = db_path
         os.makedirs(os.path.dirname(self._db_path), exist_ok=True)
-        # ── Single persistent connection ──────────────────────────────────
-        # duckdb.connect() takes a file-level exclusive lock on Windows.
-        # Opening a new connection per-call causes IO Error when two async
-        # coroutines (e.g. M1 + M5 via asyncio.gather) run concurrently.
-        # One persistent connection + a threading.Lock is the correct pattern.
-        self._conn_obj: duckdb.DuckDBPyConnection = duckdb.connect(self._db_path)
-        self._lock = threading.Lock()
         self._init_schema()
 
-    # ------------------------------------------------------------------ #
-    #  Private helpers                                                     #
-    # ------------------------------------------------------------------ #
+    import contextlib
+    import time
 
-    def _conn(self) -> duckdb.DuckDBPyConnection:
-        """Return the shared connection. Callers must hold self._lock."""
-        return self._conn_obj
+    @contextlib.contextmanager
+    def _connection(self, retries: int = 50, delay: float = 0.1, read_only=False):
+        """Creates a transient connection with file-system lock retries."""
+        conn = None
+        last_exception = None
+        for i in range(retries):
+            try:
+                conn = duckdb.connect(self._db_path, read_only=read_only)
+                break
+            except Exception as e:
+                last_exception = e
+                err_str = str(e).lower()
+                if "used by another process" in err_str or "io error" in err_str:
+                    import time
+                    time.sleep(delay)
+                else:
+                    raise e
+        
+        if conn is None:
+            raise last_exception or Exception(f"Could not connect to DuckDB Intraday (read_only={read_only}) after retries.")
+
+        try:
+            yield conn
+        finally:
+            if conn:
+                conn.close()
 
     def _init_schema(self) -> None:
-        with self._lock:
-            conn = self._conn()
+        with self._connection() as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS ohlcv_intraday (
                     symbol    VARCHAR      NOT NULL,
@@ -118,7 +132,6 @@ class DuckDBIntradayRepository:
                 "CREATE INDEX IF NOT EXISTS idx_intraday_sym_ts "
                 "ON ohlcv_intraday(symbol, ts)"
             )
-            # No conn.close() — this is the persistent shared connection
 
     # ------------------------------------------------------------------ #
     #  Public Interface                                                    #
@@ -141,8 +154,7 @@ class DuckDBIntradayRepository:
             "source":   source,
         })
 
-        with self._lock:
-            conn = self._conn()
+        with self._connection() as conn:
             conn.register("_df_batch", df)
             conn.execute("""
                 INSERT OR REPLACE INTO ohlcv_intraday
@@ -153,6 +165,7 @@ class DuckDBIntradayRepository:
             """)
             conn.unregister("_df_batch")
             count = len(df)
+            
         print(f"[IntradayRepo] Bulk Upserted {count} {interval} candles for {symbol} (vectorized)")
         return count
 
@@ -183,8 +196,9 @@ class DuckDBIntradayRepository:
             ORDER BY ts ASC
             LIMIT ?
         """
-        with self._lock:
-            rows = self._conn().execute(sql, params).fetchall()
+        with self._connection(read_only=True) as conn:
+            rows = conn.execute(sql, params).fetchall()
+            
         return [
             CandleRow(
                 timestamp=str(row[0]),
@@ -203,8 +217,8 @@ class DuckDBIntradayRepository:
         Returns True if there are at least `min_count` candles in [start, end]
         for the given symbol+interval.
         """
-        with self._lock:
-            count = self._conn().execute(
+        with self._connection(read_only=True) as conn:
+            count = conn.execute(
                 """
                 SELECT COUNT(*) FROM ohlcv_intraday
                 WHERE symbol = ? AND interval = ? AND ts >= ? AND ts <= ?
@@ -215,9 +229,9 @@ class DuckDBIntradayRepository:
 
     def get_stats(self) -> dict:
         """Diagnostic stats — mirrors DuckDBStore.get_stats()."""
-        with self._lock:
-            total = self._conn().execute("SELECT COUNT(*) FROM ohlcv_intraday").fetchone()[0]
-            syms  = self._conn().execute("SELECT COUNT(DISTINCT symbol) FROM ohlcv_intraday").fetchone()[0]
+        with self._connection(read_only=True) as conn:
+            total = conn.execute("SELECT COUNT(*) FROM ohlcv_intraday").fetchone()[0]
+            syms  = conn.execute("SELECT COUNT(DISTINCT symbol) FROM ohlcv_intraday").fetchone()[0]
         return {"total_intraday_candles": total, "total_symbols": syms}
 
 
