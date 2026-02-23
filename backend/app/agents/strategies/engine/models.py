@@ -33,6 +33,7 @@ class StrategyConfig:
 
     # FVG
     min_fvg_size_atr: float = 0.10         # FVG size ≥ factor × ATR_M1
+    wait_fvg_max_m1: int = 15              # Max M1 candles to wait for an FVG to form after breakout
 
     # FCR candle (M5 impulse filter — optional)
     k1_atr_fcr: float = 1.5               # Range ≥ k1 × ATR_M5
@@ -160,6 +161,7 @@ class SessionState:
     fvg: Optional[FVG] = None
     setup_active: bool = False
     retest_countdown: int = 0
+    fvg_countdown: int = 0
     breakout_detected: bool = False
     breakout_direction: Optional[str] = None
     trades_today: int = 0
@@ -169,6 +171,7 @@ class SessionState:
         self.fvg = None
         self.setup_active = False
         self.retest_countdown = 0
+        self.fvg_countdown = 0
         self.breakout_detected = False
         self.breakout_direction = None
         self.trades_today = 0

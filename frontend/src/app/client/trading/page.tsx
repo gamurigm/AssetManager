@@ -2,7 +2,7 @@
 
 import AppLayout from "@/components/layout/AppLayout";
 import { useState } from "react";
-import { ArrowUpRight, ArrowDownRight, Search, CandlestickChart, Zap, Play, FileTerminal, Activity, Loader2, Link as externalLinkIcon } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, Search, CandlestickChart, Zap, Play, FileTerminal, Activity, Loader2, ExternalLink as ExternalLinkIcon } from "lucide-react";
 
 export default function BacktestLab() {
     const [symbol, setSymbol] = useState("AAPL");
@@ -256,7 +256,7 @@ export default function BacktestLab() {
                                             >
                                                 <Activity className="group-hover:text-accent transition-colors" size={20} />
                                                 View Interactive Plotly HTML Report
-                                                <externalLinkIcon size={16} className="text-muted group-hover:text-white" />
+                                                <ExternalLinkIcon size={16} className="text-muted group-hover:text-white" />
                                             </a>
                                             <p className="text-center text-xs text-muted mt-3">Opens in a new window with full charts and distributions.</p>
                                         </div>

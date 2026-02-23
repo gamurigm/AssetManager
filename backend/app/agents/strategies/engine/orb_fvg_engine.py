@@ -78,30 +78,41 @@ class ORBFVGEngine:
 
         for idx, candle in enumerate(m1_candles):
             # ---------------------------------------------------------- #
-            # PASO 2: Detect breakout (only when no FVG yet)              #
+            # PASO 2: Detect breakout (only when no breakout yet)         #
             # ---------------------------------------------------------- #
-            if not state.fvg:
+            if not state.breakout_detected:
                 if prev_candle is not None:
                     bk = self._detect_breakout(
                         candle, prev_candle, orb.high, orb.low, avg_vol_m1, config
                     )
-                    if bk["valid"] and not state.breakout_detected:
+                    if bk["valid"]:
                         state.breakout_detected = True
                         state.breakout_direction = bk["direction"]
+                        # Start FVG hunting countdown (e.g., allow 15 mins for FVG to form)
+                        state.fvg_countdown = config.wait_fvg_max_m1
 
-                        # PASO 3: Compute FVG from the 3 most recent M1 candles
-                        if idx >= 2:
-                            fvg = self._compute_fvg(
-                                m1_candles[idx - 2],
-                                m1_candles[idx - 1],
-                                candle,
-                                bk["direction"],
-                                atr_m1,
-                                config,
-                            )
-                            if fvg:
-                                state.fvg = fvg
-                                state.retest_countdown = config.wait_retest_max_m1
+            # ---------------------------------------------------------- #
+            # PASO 3: FVG Hunting (after breakout, before setup active)   #
+            # ---------------------------------------------------------- #
+            elif not state.fvg:
+                if state.fvg_countdown <= 0:
+                    return None  # Setup expired: no FVG formed in time
+                
+                state.fvg_countdown -= 1
+                
+                # We need at least 3 candles to form an FVG, check the current one as the 3rd candle
+                if idx >= 2:
+                    fvg = self._compute_fvg(
+                        m1_candles[idx - 2],
+                        m1_candles[idx - 1],
+                        candle,
+                        state.breakout_direction,  # look for FVG in breakout direction
+                        atr_m1,
+                        config,
+                    )
+                    if fvg:
+                        state.fvg = fvg
+                        state.retest_countdown = config.wait_retest_max_m1
 
             # ---------------------------------------------------------- #
             # PASO 4: Wait for retest of FVG                             #

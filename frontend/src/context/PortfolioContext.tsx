@@ -7,10 +7,13 @@ interface Holding {
     name: string;
     shares: number;
     price: number;
+    entryPrice: number;
+    factor: number;
     change: number;
     changePercent: number;
     source: string;
     sector: string;
+    type: string;
 }
 
 interface PortfolioContextType {
@@ -32,9 +35,9 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
         setHoldings(newHoldings);
     };
 
-    const totalValue = holdings.reduce((sum, h) => sum + h.shares * h.price, 0);
-    const totalPnL = holdings.reduce((sum, h) => sum + h.shares * h.change, 0);
-    const pnlPercent = totalValue > 0 ? (totalPnL / (totalValue - totalPnL)) * 100 : 0;
+    const totalPnL = holdings.reduce((sum, h) => sum + h.change, 0);
+    const totalValue = totalPnL;
+    const pnlPercent = 0; // Relative P&L doesn't apply without a principle balance
 
     return (
         <PortfolioContext.Provider value={{ holdings, totalValue, totalPnL, pnlPercent, setHoldings: updateHoldings }}>

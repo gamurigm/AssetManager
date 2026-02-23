@@ -64,7 +64,8 @@ const renderCustomizedLabel = (props: any) => {
     );
 };
 
-export default function SectorPieChart({ data }: { data: SectorData[] }) {
+export default function SectorPieChart({ data, total }: { data: SectorData[], total?: number }) {
+    const centerTotal = total !== undefined ? total : data.reduce((a, b) => a + b.value, 0);
     const [isMounted, setIsMounted] = React.useState(false);
 
     React.useEffect(() => {
@@ -102,8 +103,8 @@ export default function SectorPieChart({ data }: { data: SectorData[] }) {
                 {/* Center Text - High Contrast */}
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none">
                     <p className="text-[11px] text-foreground/60 font-black uppercase tracking-widest bg-accent/10 px-3 py-1 rounded-full border border-accent/20">Portfolio NAV</p>
-                    <p className="text-3xl font-black text-foreground font-mono mt-2 drop-shadow-sm">
-                        ${data.reduce((a, b) => a + b.value, 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    <p className="text-2xl font-black text-foreground font-mono mt-2 drop-shadow-sm">
+                        ${centerTotal.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
                     </p>
                 </div>
             </div>

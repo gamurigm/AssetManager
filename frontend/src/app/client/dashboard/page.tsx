@@ -10,26 +10,46 @@ import AllocationDonut from "@/components/charts/AllocationDonut";
 import { usePortfolio } from "@/context/PortfolioContext";
 import { logger } from "@/lib/logger";
 
+
 const INITIAL_HOLDINGS = [
-    { symbol: "AAPL", name: "Apple Inc.", shares: 45, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Technology" },
-    { symbol: "MSFT", name: "Microsoft Corp.", shares: 30, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Technology" },
-    { symbol: "BTC/USD", name: "Bitcoin", shares: 0.5, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Digital Assets" },
-    { symbol: "NVDA", name: "NVIDIA Corp.", shares: 20, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Technology" },
-    { symbol: "EUR/USD", name: "Euro / US Dollar", shares: 5000, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Forex" },
-    { symbol: "GC=F", name: "Gold Futures", shares: 10, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Commodities" },
-    { symbol: "JPM", name: "JPMorgan Chase & Co.", shares: 25, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Financials" },
-    { symbol: "XOM", name: "Exxon Mobil Corp.", shares: 40, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Energy" },
-    { symbol: "PFE", name: "Pfizer Inc.", shares: 100, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Health Care" },
-    { symbol: "TSLA", name: "Tesla, Inc.", shares: 15, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Consumer Discretionary" },
-    { symbol: "AMZN", name: "Amazon.com, Inc.", shares: 20, price: 0, change: 0, changePercent: 0, source: "Loading...", sector: "Consumer Discretionary" },
+    { symbol: "^N225", name: "Nikkei 225 Index", shares: 0.1, entryPrice: 57100, price: 56825.70, factor: 0.4166, change: -11.427, changePercent: -0.48, source: "Live", sector: "Indices", type: "cfd" },
+    { symbol: "AAPL", name: "Apple Inc CFD", shares: 10, entryPrice: 278.55, price: 264.580, factor: 1.3595, change: -189.922, changePercent: -5.02, source: "Live", sector: "Technology", type: "cfd" },
+    { symbol: "PLTR", name: "Palantir Technologies CFD", shares: 10, entryPrice: 139.19, price: 135.240, factor: 1.0871, change: -42.940, changePercent: -2.84, source: "Live", sector: "Technology", type: "cfd" },
+    { symbol: "GC=F", name: "Gold Futures", shares: 0.1, entryPrice: 5074.39, price: 5080.90, factor: 84.397, change: 54.942, changePercent: 0.13, source: "Live", sector: "Commodities", type: "cfd" },
+    { symbol: "JPM", name: "JPMorgan Chase & Co", shares: 1.536, entryPrice: 296.81, price: 310.790, factor: 1.0, change: 21.473, changePercent: 4.71, source: "Live", sector: "Financials", type: "stock" },
+    { symbol: "COIN", name: "Coinbase Global Inc", shares: 2.724, entryPrice: 278.93, price: 171.350, factor: 1.0, change: -293.048, changePercent: -38.57, source: "Live", sector: "Digital Assets", type: "stock" },
+    { symbol: "GS", name: "Goldman Sachs Group Inc", shares: 0.164, entryPrice: 785.54, price: 922.240, factor: 1.0, change: 22.419, changePercent: 17.40, source: "Live", sector: "Financials", type: "stock" },
+    { symbol: "LMT", name: "Lockheed Martin Corp", shares: 0.214, entryPrice: 504.70, price: 658.260, factor: 1.0, change: 32.862, changePercent: 30.43, source: "Live", sector: "Industrials", type: "stock" },
+    { symbol: "NVDA", name: "NVIDIA Corp", shares: 0.54, entryPrice: 186.15, price: 189.820, factor: 1.0, change: 1.982, changePercent: 1.97, source: "Live", sector: "Technology", type: "stock" },
+    { symbol: "CHFJPY=X", name: "CHF/JPY", shares: 0.5, entryPrice: 199.071, price: 200.091, factor: 615.66, change: 314.645, changePercent: 0.51, source: "Live", sector: "Forex", type: "cfd" },
+    { symbol: "ZT=F", name: "US 2 Year T-Note", shares: 0.1, entryPrice: 112.57, price: 112.938, factor: 114.285, change: 4.200, changePercent: 0.33, source: "Live", sector: "Bonds", type: "cfd" },
+    { symbol: "EURUSD=X", name: "EUR/USD", shares: -1.2, entryPrice: 1.18519, price: 1.17672, factor: 100000, change: 993.166, changePercent: -0.71, source: "Live", sector: "Forex", type: "cfd" },
 ];
 
 const MOCK_TRANSACTIONS = [
-    { id: 1, type: "BUY", symbol: "NVDA", shares: 5, price: 860.00, date: "2026-02-16", time: "10:32 AM" },
-    { id: 2, type: "SELL", symbol: "AAPL", shares: 10, price: 176.50, date: "2026-02-15", time: "3:45 PM" },
-    { id: 3, type: "BUY", symbol: "GOOGL", shares: 8, price: 170.85, date: "2026-02-14", time: "11:15 AM" },
-    { id: 4, type: "BUY", symbol: "MSFT", shares: 5, price: 417.20, date: "2026-02-13", time: "9:50 AM" },
+    { id: 1, type: "BUY", symbol: "GS", shares: 0.164, price: 785.54, date: "2025-11-24", time: "10:32 AM" },
+    { id: 2, type: "BUY", symbol: "LMT", shares: 0.214, price: 504.70, date: "2026-01-05", time: "9:45 AM" },
+    { id: 3, type: "BUY", symbol: "JPM", shares: 1.536, price: 296.81, date: "2025-11-21", time: "11:15 AM" },
+    { id: 4, type: "BUY", symbol: "COIN", shares: 2.724, price: 278.93, date: "2025-11-28", time: "10:05 AM" },
+    { id: 5, type: "BUY", symbol: "PLTR", shares: 10, price: 139.19, date: "2026-02-04", time: "9:50 AM" },
+    { id: 6, type: "SELL", symbol: "EURUSD=X", shares: 1.2, price: 1.18519, date: "2026-01-26", time: "2:30 PM" },
+    { id: 7, type: "BUY", symbol: "GC=F", shares: 0.1, price: 5074.39, date: "2026-01-26", time: "10:00 AM" },
+    { id: 8, type: "BUY", symbol: "AAPL", shares: 10, price: 278.55, date: "2025-11-25", time: "10:20 AM" },
 ];
+
+interface DashboardHolding {
+    symbol: string;
+    name: string;
+    shares: number;
+    price: number;
+    entryPrice: number;
+    factor: number;
+    change: number;
+    changePercent: number;
+    source: string;
+    sector: string;
+    type: string;
+}
 
 export default function ClientDashboard() {
     const { holdings, setHoldings, totalValue, totalPnL, pnlPercent } = usePortfolio();
@@ -57,6 +77,7 @@ export default function ClientDashboard() {
             const currentHoldings = holdings.length > 0 ? holdings : INITIAL_HOLDINGS;
             // Create a copy to mutate
             let newHoldings = [...currentHoldings];
+            let changed = false;
 
             // Load sequentially to respect API/Browser limits
             for (let i = 0; i < newHoldings.length; i++) {
@@ -70,27 +91,36 @@ export default function ClientDashboard() {
 
                     const data = await res.json();
                     if (data && !data.error) {
+                        const currentPrice = data.price;
+                        // Beneficio Neto = (Precio Actual - Precio Entrada) * Shares * Factor
+                        const totalProfit = (currentPrice - (h as any).entryPrice) * h.shares * (h as any).factor;
+
+                        // ChangePercent is relative to entry price
+                        const changePercent = (h as any).entryPrice !== 0
+                            ? ((currentPrice - (h as any).entryPrice) / (h as any).entryPrice) * 100
+                            : 0;
+
                         newHoldings[i] = {
                             ...h,
-                            price: data.price,
-                            change: data.change || 0,
-                            // Backend returns snake_case 'change_percent'
-                            changePercent: data.change_percent !== undefined ? data.change_percent : (data.changePercentage || 0),
+                            price: currentPrice,
+                            change: totalProfit,
+                            changePercent: changePercent,
                             source: data.source || "Unknown"
                         };
-                        // Update state incrementally so user sees progress
-                        setHoldings([...newHoldings]);
+                        changed = true;
                     }
                 } catch (e: any) {
                     // Use console.warn instead of error to prevent Next.js Turbopack Error Overlay
                     console.warn(`Failed to sync ${h.symbol} - backend may be offline or syncing. Retrying later.`);
                 }
             }
+            // Batch update state so charts only re-render once
+            if (changed) setHoldings([...newHoldings]);
             setLoading(false);
         };
 
         fetchPrices();
-        const interval = setInterval(fetchPrices, 60000);
+        const interval = setInterval(fetchPrices, 600000);
         return () => clearInterval(interval);
     }, []);
 
@@ -133,7 +163,8 @@ export default function ClientDashboard() {
                 return {
                     name: h.name,
                     symbol: h.symbol,
-                    value: h.shares * h.price,
+                    // Chart by absolute contribution to P&L
+                    value: Math.abs(h.change),
                     change: h.changePercent,
                     sector: sector,
                     baseColor: SECTOR_COLORS[sector] || "#64748b"
@@ -148,7 +179,7 @@ export default function ClientDashboard() {
 
         activeHoldings.forEach(h => {
             const sector = (h as any).sector || "Other";
-            sectors[sector] = (sectors[sector] || 0) + (h.shares * h.price);
+            sectors[sector] = (sectors[sector] || 0) + Math.abs(h.change);
         });
 
         const totalVal = Object.values(sectors).reduce((a, b) => a + b, 0);
@@ -213,13 +244,13 @@ export default function ClientDashboard() {
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 stagger">
                                     <StatCard
                                         label="NAV (NET ASSETS)"
-                                        value={`$${totalValue.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
+                                        value={`$${totalValue.toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}`}
                                         icon={<DollarSign size={14} />}
                                         accent="blue"
                                     />
                                     <StatCard
                                         label="P&L (YTD)"
-                                        value={`${totalPnL >= 0 ? "+" : ""}$${totalPnL.toLocaleString("en-US", { minimumFractionDigits: 2 })}`}
+                                        value={`${totalPnL >= 0 ? "+" : ""}$${totalPnL.toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}`}
                                         sub={`${pnlPercent >= 0 ? "+" : ""}${pnlPercent.toFixed(2)}%`}
                                         icon={totalPnL >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
                                         accent={totalPnL >= 0 ? "green" : "red"}
@@ -256,7 +287,7 @@ export default function ClientDashboard() {
                                         </div>
                                         {!collapsed['sector'] && (
                                             <div className="flex-1 animate-in fade-in slide-in-from-top-2 duration-300">
-                                                <SectorPieChart data={sectorData} />
+                                                <SectorPieChart data={sectorData} total={totalValue} />
                                             </div>
                                         )}
                                     </div>
@@ -310,19 +341,20 @@ export default function ClientDashboard() {
                                             <div className="overflow-x-auto animate-in fade-in slide-in-from-top-2 duration-300">
                                                 <table className="w-full text-sm">
                                                     <thead>
-                                                        <tr className="text-left text-muted text-xs border-b border-border bg-background/50">
-                                                            <th className="px-6 py-3 font-medium">Asset</th>
-                                                            <th className="px-4 py-3 font-medium text-right">Shares</th>
-                                                            <th className="px-4 py-3 font-medium text-right">Price</th>
-                                                            <th className="px-4 py-3 font-medium text-right">Value</th>
-                                                            <th className="px-4 py-3 font-medium text-right">Change</th>
-                                                            <th className="px-6 py-3 font-medium text-right">Source</th>
+                                                        <tr className="text-left text-muted text-[10px] font-black uppercase tracking-widest border-b border-border bg-background/50">
+                                                            <th className="px-6 py-3">Posicion</th>
+                                                            <th className="px-4 py-3 text-right">Tipo</th>
+                                                            <th className="px-4 py-3 text-right">Volumen</th>
+                                                            <th className="px-4 py-3 text-right">Beneficio Neto</th>
+                                                            <th className="px-4 py-3 text-right">Valor Mercado</th>
+                                                            <th className="px-4 py-3 text-right">Precio Apertura</th>
+                                                            <th className="px-4 py-3 text-right">Precio Mercado</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody className="stagger">
-                                                        {[...activeHoldings]
+                                                        {activeHoldings
                                                             .sort((a, b) => (b.shares * b.price) - (a.shares * a.price))
-                                                            .map((h) => {
+                                                            .map((h: any) => {
                                                                 const changeValue = h.changePercent || 0;
 
                                                                 // Synchronized Heatmap Color matching Treemap
@@ -362,27 +394,21 @@ export default function ClientDashboard() {
                                                                                 </div>
                                                                             </div>
                                                                         </td>
-                                                                        <td className="px-4 py-4 text-right font-mono text-xs">{h.shares}</td>
-                                                                        <td className="px-4 py-4 text-right font-mono font-medium">${h.price.toFixed(h.symbol.includes('/') ? 4 : 2)}</td>
-                                                                        <td className="px-4 py-4 text-right font-mono font-semibold text-accent">
-                                                                            ${(h.shares * h.price).toLocaleString("en-US", { minimumFractionDigits: 2 })}
+                                                                        <td className="px-4 py-4 text-right font-bold text-xs">
+                                                                            {h.shares >= 0 ? "Compra" : "Venta"}
                                                                         </td>
-                                                                        <td className="px-4 py-4 text-right">
-                                                                            <div
-                                                                                className="inline-flex items-center gap-1 text-[10px] font-black px-2.5 py-1 rounded-full shadow-sm"
-                                                                                style={{
-                                                                                    backgroundColor: badgeColor,
-                                                                                    color: isBright ? '#000000' : '#ffffff'
-                                                                                }}
-                                                                            >
-                                                                                {changeValue >= 0 ? <TrendingUp size={10} /> : <TrendingDown size={10} />}
-                                                                                {Math.abs(changeValue).toFixed(2)}%
-                                                                            </div>
+                                                                        <td className="px-4 py-4 text-right font-mono text-xs font-bold">{Math.abs(h.shares)}</td>
+                                                                        <td className={`px-4 py-4 text-right font-mono font-black text-sm ${h.change >= 0 ? 'text-green' : 'text-red'}`}>
+                                                                            {h.change >= 0 ? "+" : ""}{h.change.toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
                                                                         </td>
-                                                                        <td className="px-6 py-4 text-right">
-                                                                            <span className="text-[10px] bg-background border border-border px-2 py-0.5 rounded-md text-muted font-mono">
-                                                                                {h.source}
-                                                                            </span>
+                                                                        <td className={`px-4 py-4 text-right font-mono font-black text-sm ${h.change >= 0 ? 'text-green' : 'text-red'}`}>
+                                                                            {h.change >= 0 ? "+$" : "-$"}{Math.abs(h.change).toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+                                                                        </td>
+                                                                        <td className="px-4 py-4 text-right font-mono text-xs text-muted">
+                                                                            ${(h as any).entryPrice.toFixed(h.symbol.includes('/') ? 4 : 2)}
+                                                                        </td>
+                                                                        <td className="px-4 py-4 text-right font-mono text-xs font-bold">
+                                                                            ${h.price.toFixed(h.symbol.includes('/') ? 4 : 2)}
                                                                         </td>
                                                                     </tr>
                                                                 );

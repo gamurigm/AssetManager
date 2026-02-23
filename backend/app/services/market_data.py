@@ -182,10 +182,30 @@ class MarketDataService:
             { "symbol", "interval", "candles": [CandleRow], "source" }
         """
         # 1. Try local DuckDB (instant, free)
-        if intraday_repository.has_data(symbol, interval,
-                                        start or "2000-01-01",
-                                        end or "2099-01-01"):
-            print(f"[MarketData] DuckDB intraday HIT for {symbol} {interval}")
+        # IMPORTANT: Use the actual start/end range to avoid false cache hits.
+        # Compute the minimum expected candles for the interval so a 1-month
+        # fetch doesn't satisfy a 6-month backtest request.
+        _db_start = start or "2000-01-01"
+        _db_end   = end   or "2099-01-01"
+
+        # Estimate expected trading minutes in range to establish a coverage floor
+        _min_candles_required = 10  # default for live/short queries
+        if start and end:
+            try:
+                from datetime import date as _date
+                _s = _date.fromisoformat(start)
+                _e = _date.fromisoformat(end)
+                _days = (_e - _s).days
+                # ~6.5h × 60 min trading day; 5m interval = 78 candles/day
+                _candles_per_day = 390 if interval == "1m" else 78
+                # Require at least 50% coverage of expected candles
+                _min_candles_required = max(10, int(_days * _candles_per_day * 0.5))
+            except Exception:
+                pass
+
+        if intraday_repository.has_data(symbol, interval, _db_start, _db_end,
+                                        min_count=_min_candles_required):
+            print(f"[MarketData] DuckDB intraday HIT for {symbol} {interval} (≥{_min_candles_required} candles)")
             candles = intraday_repository.get(symbol, interval, start, end)
             return {"symbol": symbol, "interval": interval, "candles": candles,
                     "source": "DuckDB (Intraday)"}

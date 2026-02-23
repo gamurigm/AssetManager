@@ -149,10 +149,16 @@ class BacktestRunner:
             bootstrap_stats = None
             if config.run_bootstrap and len(trades) > 0:
                 from .engine.bootstrap_analyzer import bootstrap_analyzer
+                # return_samples=True only when we'll generate the HTML report
+                # (sample arrays are needed for chart distributions).
+                # Skipping this avoids serializing N doubles to Python lists,
+                # which previously made 1k and 10k iterations feel identical.
+                _need_samples = True  # always True if report will be generated
                 bootstrap_stats = bootstrap_analyzer.run_bootstrap(
-                    trades, 
-                    config.account_size, 
-                    config.bootstrap_iterations
+                    trades,
+                    config.account_size,
+                    config.bootstrap_iterations,
+                    return_samples=_need_samples,
                 )
 
             logfire.info("Backtest completed",
