@@ -8,6 +8,7 @@ Pattern: Composition Root (replaces Service Locator anti-pattern).
 
 from ..infrastructure.providers import (
     YahooProvider, FMPProvider, TwelveDataProvider, PolygonProvider, AlphaVantageProvider,
+    FinazonProvider
 )
 from ..infrastructure.persistence import DuckDBRepository
 from ..infrastructure.ai import (
@@ -25,7 +26,9 @@ fmp_provider = FMPProvider()
 twelvedata_provider = TwelveDataProvider()
 polygon_provider = PolygonProvider()
 alpha_vantage_provider = AlphaVantageProvider()
+finazon_provider = FinazonProvider()
 
+# Finazon is omitted from the active chain due to severe Free Tier limits (only AAPL, GOOG, TSLA allowed)
 _market_providers = [yahoo_provider, fmp_provider, twelvedata_provider, polygon_provider]
 
 # Persistence
