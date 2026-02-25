@@ -24,20 +24,13 @@ const unifiedNav = [
     { label: "Strategies", href: "/manager/clients", icon: Briefcase },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ collapsed, setCollapsed }: { collapsed: boolean, setCollapsed: (val: boolean) => void }) {
     const pathname = usePathname();
-    const [collapsed, setCollapsed] = useState(false);
     const [isDarkMode, setIsDarkMode] = useState(true);
     const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
         setMounted(true);
-        const handleResize = () => {
-            if (window.innerWidth < 1024) setCollapsed(true);
-        };
-        handleResize();
-        window.addEventListener("resize", handleResize);
-        return () => window.removeEventListener("resize", handleResize);
     }, []);
 
     // Sync theme with document

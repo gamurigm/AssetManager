@@ -3,7 +3,7 @@
 import AppLayout from "@/components/layout/AppLayout";
 import Watchlist from "@/components/watchlist/Watchlist";
 import React, { useEffect, useState, useRef, useMemo } from "react";
-import { TrendingUp, TrendingDown, DollarSign, BarChart3, ArrowUpRight, ArrowDownRight, X, PieChart as PieIcon, LayoutGrid, ChartPie, ChevronDown, ChevronUp, Star } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, BarChart3, ArrowUpRight, ArrowDownRight, X, PieChart as PieIcon, LayoutGrid, ChartPie, ChevronDown, ChevronUp, Star, Activity, FileText } from "lucide-react";
 import AssetTreemap from "@/components/charts/AssetTreemap";
 import SectorPieChart from "@/components/charts/SectorPieChart";
 import AllocationDonut from "@/components/charts/AllocationDonut";
@@ -11,31 +11,7 @@ import { usePortfolio } from "@/context/PortfolioContext";
 import { logger } from "@/lib/logger";
 
 
-const INITIAL_HOLDINGS = [
-    { symbol: "^N225", name: "Nikkei 225 Index", shares: 0.1, entryPrice: 57100, price: 56825.70, factor: 0.4166, change: -11.427, changePercent: -0.48, source: "Live", sector: "Indices", type: "cfd" },
-    { symbol: "AAPL", name: "Apple Inc CFD", shares: 10, entryPrice: 278.55, price: 264.580, factor: 1.3595, change: -189.922, changePercent: -5.02, source: "Live", sector: "Technology", type: "cfd" },
-    { symbol: "PLTR", name: "Palantir Technologies CFD", shares: 10, entryPrice: 139.19, price: 135.240, factor: 1.0871, change: -42.940, changePercent: -2.84, source: "Live", sector: "Technology", type: "cfd" },
-    { symbol: "GC=F", name: "Gold Futures", shares: 0.1, entryPrice: 5074.39, price: 5080.90, factor: 84.397, change: 54.942, changePercent: 0.13, source: "Live", sector: "Commodities", type: "cfd" },
-    { symbol: "JPM", name: "JPMorgan Chase & Co", shares: 1.536, entryPrice: 296.81, price: 310.790, factor: 1.0, change: 21.473, changePercent: 4.71, source: "Live", sector: "Financials", type: "stock" },
-    { symbol: "COIN", name: "Coinbase Global Inc", shares: 2.724, entryPrice: 278.93, price: 171.350, factor: 1.0, change: -293.048, changePercent: -38.57, source: "Live", sector: "Digital Assets", type: "stock" },
-    { symbol: "GS", name: "Goldman Sachs Group Inc", shares: 0.164, entryPrice: 785.54, price: 922.240, factor: 1.0, change: 22.419, changePercent: 17.40, source: "Live", sector: "Financials", type: "stock" },
-    { symbol: "LMT", name: "Lockheed Martin Corp", shares: 0.214, entryPrice: 504.70, price: 658.260, factor: 1.0, change: 32.862, changePercent: 30.43, source: "Live", sector: "Industrials", type: "stock" },
-    { symbol: "NVDA", name: "NVIDIA Corp", shares: 0.54, entryPrice: 186.15, price: 189.820, factor: 1.0, change: 1.982, changePercent: 1.97, source: "Live", sector: "Technology", type: "stock" },
-    { symbol: "CHFJPY=X", name: "CHF/JPY", shares: 0.5, entryPrice: 199.071, price: 200.091, factor: 615.66, change: 314.645, changePercent: 0.51, source: "Live", sector: "Forex", type: "cfd" },
-    { symbol: "ZT=F", name: "US 2 Year T-Note", shares: 0.1, entryPrice: 112.57, price: 112.938, factor: 114.285, change: 4.200, changePercent: 0.33, source: "Live", sector: "Bonds", type: "cfd" },
-    { symbol: "EURUSD=X", name: "EUR/USD", shares: -1.2, entryPrice: 1.18519, price: 1.17672, factor: 100000, change: 993.166, changePercent: -0.71, source: "Live", sector: "Forex", type: "cfd" },
-];
 
-const MOCK_TRANSACTIONS = [
-    { id: 1, type: "BUY", symbol: "GS", shares: 0.164, price: 785.54, date: "2025-11-24", time: "10:32 AM" },
-    { id: 2, type: "BUY", symbol: "LMT", shares: 0.214, price: 504.70, date: "2026-01-05", time: "9:45 AM" },
-    { id: 3, type: "BUY", symbol: "JPM", shares: 1.536, price: 296.81, date: "2025-11-21", time: "11:15 AM" },
-    { id: 4, type: "BUY", symbol: "COIN", shares: 2.724, price: 278.93, date: "2025-11-28", time: "10:05 AM" },
-    { id: 5, type: "BUY", symbol: "PLTR", shares: 10, price: 139.19, date: "2026-02-04", time: "9:50 AM" },
-    { id: 6, type: "SELL", symbol: "EURUSD=X", shares: 1.2, price: 1.18519, date: "2026-01-26", time: "2:30 PM" },
-    { id: 7, type: "BUY", symbol: "GC=F", shares: 0.1, price: 5074.39, date: "2026-01-26", time: "10:00 AM" },
-    { id: 8, type: "BUY", symbol: "AAPL", shares: 10, price: 278.55, date: "2025-11-25", time: "10:20 AM" },
-];
 
 interface DashboardHolding {
     symbol: string;
@@ -52,29 +28,44 @@ interface DashboardHolding {
 }
 
 export default function ClientDashboard() {
-    const { holdings, setHoldings, totalValue, totalPnL, pnlPercent } = usePortfolio();
+    const { holdings, setHoldings, totalValue, accountEquity, totalPnL, pnlPercent, closePosition } = usePortfolio();
     const [loading, setLoading] = useState(true);
     const [activeTab, setActiveTab] = useState("portfolio");
     const [openTabs, setOpenTabs] = useState<{ id: string; title: string; symbol: string | null }[]>([{ id: "portfolio", title: "My Portfolio", symbol: null }]);
     const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
     const [watchlistVisible, setWatchlistVisible] = useState(true);
+    const [transactions, setTransactions] = useState<any[]>([]);
 
     const togglePanel = (id: string) => {
         setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
     };
 
     useEffect(() => {
+        const fetchHistory = async () => {
+            try {
+                const res = await fetch('http://localhost:8282/api/v1/trading/history');
+                const data = await res.json();
+                setTransactions(data);
+            } catch (err) {
+                console.error("Failed to fetch history:", err);
+            }
+        };
+        fetchHistory();
+        const interval = setInterval(fetchHistory, 10000); // Poll every 10s
+        return () => clearInterval(interval);
+    }, []);
+
+    useEffect(() => {
         logger.info("Dashboard", "Terminal Main Dashboard initialized");
     }, []);
 
     useEffect(() => {
-        // Initialize if empty
-        if (holdings.length === 0) {
-            setHoldings(INITIAL_HOLDINGS);
-        }
-
         const fetchPrices = async () => {
-            const currentHoldings = holdings.length > 0 ? holdings : INITIAL_HOLDINGS;
+            if (holdings.length === 0) {
+                setLoading(false);
+                return;
+            }
+            const currentHoldings = holdings;
             // Create a copy to mutate
             let newHoldings = [...currentHoldings];
             let changed = false;
@@ -122,7 +113,7 @@ export default function ClientDashboard() {
         fetchPrices();
         const interval = setInterval(fetchPrices, 600000);
         return () => clearInterval(interval);
-    }, []);
+    }, [holdings.length]);
 
     const openSymbolTab = (symbol: string) => {
         if (!openTabs.find(t => t.id === symbol)) {
@@ -160,11 +151,11 @@ export default function ClientDashboard() {
         return activeHoldings
             .map(h => {
                 const sector = (h as any).sector || "Other";
+                const value = Math.abs(h.shares) * h.price * h.factor;
                 return {
                     name: h.name,
                     symbol: h.symbol,
-                    // Chart by absolute contribution to P&L
-                    value: Math.abs(h.change),
+                    value: value,
                     change: h.changePercent,
                     sector: sector,
                     baseColor: SECTOR_COLORS[sector] || "#64748b"
@@ -179,7 +170,8 @@ export default function ClientDashboard() {
 
         activeHoldings.forEach(h => {
             const sector = (h as any).sector || "Other";
-            sectors[sector] = (sectors[sector] || 0) + Math.abs(h.change);
+            const val = Math.abs(h.shares) * h.price * h.factor;
+            sectors[sector] = (sectors[sector] || 0) + val;
         });
 
         const totalVal = Object.values(sectors).reduce((a, b) => a + b, 0);
@@ -238,13 +230,36 @@ export default function ClientDashboard() {
                                         <span className={`flex h-1.5 w-1.5 rounded-full ${loading ? 'bg-yellow-400' : 'bg-green animate-pulse'}`} />
                                         <span className="text-[9px] text-muted font-black tracking-widest uppercase">{loading ? 'Syncing...' : 'Live'}</span>
                                     </div>
+                                    <button
+                                        onClick={async () => {
+                                            const res = await fetch('http://localhost:8282/api/v1/portfolios/report', {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({
+                                                    holdings: activeHoldings,
+                                                    total_value: totalValue,
+                                                    total_pnl: totalPnL
+                                                })
+                                            });
+                                            if (res.ok) {
+                                                const data = await res.json();
+                                                window.open(data.url, '_blank');
+                                            } else {
+                                                alert("Failed to generate report");
+                                            }
+                                        }}
+                                        className="px-3 py-1.5 bg-accent hover:bg-accent-hover text-white text-[9px] font-black uppercase tracking-widest rounded-lg transition-all shadow-lg shadow-accent/20 flex items-center gap-2"
+                                    >
+                                        <Activity size={10} />
+                                        Generate Executive PDF Report
+                                    </button>
                                 </div>
 
                                 {/* Stat Cards */}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 stagger">
                                     <StatCard
-                                        label="NAV (NET ASSETS)"
-                                        value={`$${totalValue.toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}`}
+                                        label="AUM (TOTAL EQUITY)"
+                                        value={`$${accountEquity.toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}`}
                                         icon={<DollarSign size={14} />}
                                         accent="blue"
                                     />
@@ -334,6 +349,34 @@ export default function ClientDashboard() {
                                                     )}
                                                     <span className="text-[10px] text-accent font-black">{activeHoldings.length} Active</span>
                                                 </div>
+                                                <button
+                                                    onClick={async (e) => {
+                                                        e.stopPropagation();
+                                                        if (confirm("Are you sure you want to liquidate all positions?")) {
+                                                            // Record each one as a SELL
+                                                            for (const h of activeHoldings) {
+                                                                try {
+                                                                    await fetch('http://localhost:8282/api/v1/trading/record', {
+                                                                        method: 'POST',
+                                                                        headers: { 'Content-Type': 'application/json' },
+                                                                        body: JSON.stringify({
+                                                                            type_str: 'SELL',
+                                                                            symbol: h.symbol,
+                                                                            shares: h.shares,
+                                                                            price: h.price
+                                                                        })
+                                                                    });
+                                                                } catch (err) {
+                                                                    console.error("Failed to record liquidation:", err);
+                                                                }
+                                                            }
+                                                            setHoldings([]);
+                                                        }
+                                                    }}
+                                                    className="px-2 py-0.5 rounded border border-red/40 bg-red/5 text-[9px] font-black text-red uppercase tracking-tighter hover:bg-red hover:text-white transition-all ml-2"
+                                                >
+                                                    Liquidate All
+                                                </button>
                                                 {collapsed['holdings'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
                                             </div>
                                         </div>
@@ -349,6 +392,7 @@ export default function ClientDashboard() {
                                                             <th className="px-4 py-3 text-right">Valor Mercado</th>
                                                             <th className="px-4 py-3 text-right">Precio Apertura</th>
                                                             <th className="px-4 py-3 text-right">Precio Mercado</th>
+                                                            <th className="px-6 py-3 text-right">Acción</th>
                                                         </tr>
                                                     </thead>
                                                     <tbody className="stagger">
@@ -394,21 +438,32 @@ export default function ClientDashboard() {
                                                                                 </div>
                                                                             </div>
                                                                         </td>
-                                                                        <td className="px-4 py-4 text-right font-bold text-xs">
-                                                                            {h.shares >= 0 ? "Compra" : "Venta"}
+                                                                        <td className="px-4 py-4 text-right font-bold text-xs uppercase tracking-tighter">
+                                                                            {h.shares >= 0 ? "Buy" : "Sell"}
                                                                         </td>
                                                                         <td className="px-4 py-4 text-right font-mono text-xs font-bold">{Math.abs(h.shares)}</td>
                                                                         <td className={`px-4 py-4 text-right font-mono font-black text-sm ${h.change >= 0 ? 'text-green' : 'text-red'}`}>
                                                                             {h.change >= 0 ? "+" : ""}{h.change.toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
                                                                         </td>
                                                                         <td className={`px-4 py-4 text-right font-mono font-black text-sm ${h.change >= 0 ? 'text-green' : 'text-red'}`}>
-                                                                            {h.change >= 0 ? "+$" : "-$"}{Math.abs(h.change).toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+                                                                            ${(Math.abs(h.shares) * h.price).toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
                                                                         </td>
                                                                         <td className="px-4 py-4 text-right font-mono text-xs text-muted">
-                                                                            ${(h as any).entryPrice.toFixed(h.symbol.includes('/') ? 4 : 2)}
+                                                                            ${(h as any).entryPrice?.toLocaleString("en-US", { minimumFractionDigits: 3 })}
                                                                         </td>
-                                                                        <td className="px-4 py-4 text-right font-mono text-xs font-bold">
-                                                                            ${h.price.toFixed(h.symbol.includes('/') ? 4 : 2)}
+                                                                        <td className="px-4 py-4 text-right font-mono text-xs text-muted">
+                                                                            ${h.price.toLocaleString("en-US", { minimumFractionDigits: 3 })}
+                                                                        </td>
+                                                                        <td className="px-6 py-4 text-right">
+                                                                            <button
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    closePosition(h.symbol);
+                                                                                }}
+                                                                                className="opacity-0 group-hover:opacity-100 transition-all px-3 py-1.5 rounded-lg border border-red/20 text-[10px] font-black uppercase tracking-tighter text-red hover:bg-red/10 hover:border-red/40 hover:shadow-[0_0_12px_rgba(239,68,68,0.2)]"
+                                                                            >
+                                                                                Liquidate
+                                                                            </button>
                                                                         </td>
                                                                     </tr>
                                                                 );
@@ -477,12 +532,61 @@ export default function ClientDashboard() {
                                         )}
                                     </div>
 
+                                    {/* Recent Activity Panel */}
+                                    <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['activity'] ? 'h-[50px]' : 'h-[400px]'}`}>
+                                        <div
+                                            onClick={() => togglePanel('activity')}
+                                            className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/30 cursor-pointer hover:bg-card-hover/50 transition-colors"
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <Activity size={12} className="text-accent" />
+                                                <h2 className="text-xs font-black uppercase tracking-widest text-muted">Recent Activity</h2>
+                                            </div>
+                                            <div className="flex items-center gap-4">
+                                                <span className="text-[10px] text-accent font-black">{transactions.length} Events</span>
+                                                {collapsed['activity'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
+                                            </div>
+                                        </div>
+                                        {!collapsed['activity'] && (
+                                            <div className="flex-1 overflow-y-auto p-0 animate-in fade-in slide-in-from-top-2 duration-300">
+                                                {transactions.length === 0 ? (
+                                                    <div className="h-full flex flex-col items-center justify-center p-8 text-center">
+                                                        <Activity size={32} className="text-muted/20 mb-3" />
+                                                        <p className="text-xs text-muted font-bold uppercase tracking-widest">No recent transactions</p>
+                                                        <p className="text-[10px] text-muted/60 mt-1 max-w-[180px]">Automated and manual liquidations will appear here.</p>
+                                                    </div>
+                                                ) : (
+                                                    <div className="divide-y divide-border/50">
+                                                        {transactions.map((t, i) => (
+                                                            <div key={i} className="px-5 py-3 hover:bg-card-hover/20 transition-colors flex items-center justify-between group">
+                                                                <div className="flex items-center gap-3">
+                                                                    <div className={`h-8 w-8 rounded-lg flex items-center justify-center font-black text-[10px] ${t.type === 'BUY' ? 'bg-green/10 text-green' : 'bg-red/10 text-red'}`}>
+                                                                        {t.type.slice(0, 1)}
+                                                                    </div>
+                                                                    <div className="flex flex-col">
+                                                                        <span className="text-xs font-black group-hover:text-accent transition-colors">{t.symbol}</span>
+                                                                        <span className="text-[9px] text-muted font-bold uppercase tracking-tighter">{t.date} • {t.time}</span>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="text-right flex flex-col">
+                                                                    <span className="text-xs font-mono font-black">${(t.price * t.shares).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                                    <span className="text-[9px] text-muted font-bold tracking-tighter">{t.shares} units @ ${t.price.toFixed(2)}</span>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+
                                     {/* Watchlist Panel - Always Visible */}
+
                                     {/* REMOVED from here */}
                                 </div>
                             </>
                         ) : (
-                            <div className="h-full min-h-[600px] rounded-2xl overflow-hidden border border-border bg-card">
+                            <div className="h-full min-h-[900px] rounded-2xl overflow-hidden border border-border bg-card">
                                 <InternalChart symbol={activeTab} />
                             </div>
                         )}
@@ -518,94 +622,194 @@ export default function ClientDashboard() {
     );
 }
 
-import { createChart, ColorType, CandlestickSeries } from "lightweight-charts";
+import { createChart, ColorType, CandlestickSeries, LineSeries, HistogramSeries } from "lightweight-charts";
+
+/* ─── Indicator Math (Dashboard) ───────────────────────────────────── */
+function calcEMADash(data: number[], period: number): number[] {
+    const k = 2 / (period + 1);
+    const ema: number[] = [data[0]];
+    for (let i = 1; i < data.length; i++) ema.push(data[i] * k + ema[i - 1] * (1 - k));
+    return ema;
+}
+function calcMACDDash(closes: number[], fast: number, slow: number, signal: number) {
+    const emaFast = calcEMADash(closes, fast);
+    const emaSlow = calcEMADash(closes, slow);
+    const macdLine = emaFast.map((v, i) => v - emaSlow[i]);
+    const signalLine = calcEMADash(macdLine, signal);
+    const histogram = macdLine.map((v, i) => v - signalLine[i]);
+    return { macdLine, signalLine, histogram };
+}
+function calcStochDash(highs: number[], lows: number[], closes: number[], kP: number, dP: number, smooth: number) {
+    const rawK: number[] = [];
+    for (let i = 0; i < closes.length; i++) {
+        if (i < kP - 1) { rawK.push(NaN); continue; }
+        const hh = Math.max(...highs.slice(i - kP + 1, i + 1));
+        const ll = Math.min(...lows.slice(i - kP + 1, i + 1));
+        rawK.push(hh === ll ? 50 : ((closes[i] - ll) / (hh - ll)) * 100);
+    }
+    const kLine: number[] = [];
+    for (let i = 0; i < rawK.length; i++) {
+        if (i < kP - 1 + smooth - 1 || isNaN(rawK[i])) { kLine.push(NaN); continue; }
+        const sl = rawK.slice(i - smooth + 1, i + 1).filter(v => !isNaN(v));
+        kLine.push(sl.reduce((s, v) => s + v, 0) / sl.length);
+    }
+    const dLine: number[] = [];
+    for (let i = 0; i < kLine.length; i++) {
+        if (isNaN(kLine[i]) || i < kP - 1 + smooth - 1 + dP - 1) { dLine.push(NaN); continue; }
+        const sl = kLine.slice(i - dP + 1, i + 1).filter(v => !isNaN(v));
+        dLine.push(sl.reduce((s, v) => s + v, 0) / sl.length);
+    }
+    return { kLine, dLine };
+}
 
 function InternalChart({ symbol }: { symbol: string }) {
+    const { closePosition } = usePortfolio();
     const chartContainerRef = useRef<HTMLDivElement>(null);
+    const macdRef = useRef<HTMLDivElement>(null);
+    const stochRef = useRef<HTMLDivElement>(null);
     const [loading, setLoading] = useState(true);
     const [theme, setTheme] = useState<'light' | 'dark'>('dark');
     const [quote, setQuote] = useState<{ price: number; changePercentage: number } | null>(null);
+    const [candles, setCandles] = useState<any[]>([]);
+
+    // Indicator params
+    const [macdFast, setMacdFast] = useState(12);
+    const [macdSlow, setMacdSlow] = useState(26);
+    const [macdSignal, setMacdSignal] = useState(9);
+    const [stochK, setStochK] = useState(14);
+    const [stochD, setStochD] = useState(3);
+    const [stochSmooth, setStochSmooth] = useState(3);
+    const [showMacd, setShowMacd] = useState(true);
+    const [showStoch, setShowStoch] = useState(true);
+    const [showEmas, setShowEmas] = useState(true);
+
+    // EMA params
+    const [ema1, setEma1] = useState(9);
+    const [ema2, setEma2] = useState(21);
+    const [ema3, setEma3] = useState(50);
 
     useEffect(() => {
-        const checkTheme = () => {
-            setTheme(document.documentElement.classList.contains('light') ? 'light' : 'dark');
-        };
+        const checkTheme = () => setTheme(document.documentElement.classList.contains('light') ? 'light' : 'dark');
         checkTheme();
-
         const observer = new MutationObserver(checkTheme);
         observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
         return () => observer.disconnect();
     }, []);
 
+    // Fetch data — historical + quote in PARALLEL
     useEffect(() => {
-        if (!chartContainerRef.current) return;
-
-        const isLight = theme === 'light';
-        const chart = createChart(chartContainerRef.current, {
-            layout: {
-                background: { type: ColorType.Solid, color: 'transparent' },
-                textColor: isLight ? '#3f3f46' : '#d1d1d1',
-            },
-            grid: {
-                vertLines: { color: isLight ? '#f4f4f5' : '#1f1f1f' },
-                horzLines: { color: isLight ? '#f4f4f5' : '#1f1f1f' },
-            },
-            width: chartContainerRef.current.clientWidth,
-            height: 600,
-        });
-
-        const candlestickSeries = chart.addSeries(CandlestickSeries, {
-            upColor: '#22c55e',
-            downColor: '#ef4444',
-            borderVisible: false,
-            wickUpColor: '#22c55e',
-            wickDownColor: '#ef4444',
-        });
-
         const fetchData = async () => {
             try {
-                // Fetch Historical Data
-                const histRes = await fetch(`http://127.0.0.1:8282/api/v1/market/historical/${encodeURIComponent(symbol)}?limit=10000`);
-                console.log(`[Chart] Fetching history for ${symbol}... Status: ${histRes.status}`);
+                const [histRes, quoteRes] = await Promise.all([
+                    fetch(`http://127.0.0.1:8282/api/v1/market/historical/${encodeURIComponent(symbol)}?limit=10000`),
+                    fetch(`http://127.0.0.1:8282/api/v1/market/quote/${encodeURIComponent(symbol)}`)
+                ]);
                 const histData = await histRes.json();
-                console.log(`[Chart] Data for ${symbol}:`, histData);
-
                 if (histData.historical && histData.historical.length > 0) {
-                    const formattedData = histData.historical.map((d: any) => ({
-                        time: d.date,
-                        open: d.open,
-                        high: d.high,
-                        low: d.low,
-                        close: d.close,
-                    })).sort((a: any, b: any) => a.time.localeCompare(b.time));
-
-                    candlestickSeries.setData(formattedData);
-                    chart.timeScale().fitContent();
-                    setLoading(false);
+                    const sorted = histData.historical.sort((a: any, b: any) => a.date.localeCompare(b.date));
+                    setCandles(sorted);
+                } else {
+                    setCandles([]);
                 }
-
-                // Fetch Quote for header (Mandatory: Daily Change)
-                const quoteRes = await fetch(`http://127.0.0.1:8282/api/v1/market/quote/${encodeURIComponent(symbol)}`);
                 const q = await quoteRes.json();
-                if (q && !q.error) {
-                    setQuote({ price: q.price, changePercentage: q.changePercentage });
-                }
-            } catch (e: any) {
-                console.warn(`[Chart] Pending synchronization or backend offline for ${symbol}. Retrying later.`);
+                if (q && !q.error) setQuote({ price: q.price, changePercentage: q.changePercentage });
+            } catch (err) {
+                console.error("Dashboard chart fetch error:", err);
+                setCandles([]);
+            } finally {
+                setLoading(false);
             }
         };
-
         fetchData();
-        const handleResize = () => chart.applyOptions({ width: chartContainerRef.current?.clientWidth || 800 });
+    }, [symbol]);
+
+    const isLight = theme === 'light';
+    const chartOpts = (h: number) => ({
+        layout: { background: { type: ColorType.Solid as const, color: 'transparent' }, textColor: isLight ? '#3f3f46' : '#71717a' },
+        grid: { vertLines: { color: isLight ? '#f4f4f5' : '#1a1a1a' }, horzLines: { color: isLight ? '#f4f4f5' : '#1a1a1a' } },
+        height: h,
+        rightPriceScale: { borderVisible: false },
+        timeScale: { borderVisible: false },
+        crosshair: { horzLine: { visible: true, labelVisible: true }, vertLine: { visible: true, labelVisible: true } },
+    });
+
+    // Main chart
+    useEffect(() => {
+        if (!chartContainerRef.current || candles.length === 0) return;
+        const el = chartContainerRef.current;
+        const chart = createChart(el, { ...chartOpts(el.clientHeight), width: el.clientWidth });
+        const series = chart.addSeries(CandlestickSeries, {
+            upColor: '#22c55e', downColor: '#ef4444', borderVisible: false,
+            wickUpColor: '#22c55e', wickDownColor: '#ef4444',
+        });
+        series.setData(candles.map(d => ({ time: d.date, open: d.open, high: d.high, low: d.low, close: d.close })));
+
+        if (showEmas) {
+            const closes = candles.map(d => d.close);
+            const times = candles.map(d => d.date);
+
+            const e1Data = calcEMADash(closes, ema1);
+            const e1Series = chart.addSeries(LineSeries, { color: '#fbbf24', lineWidth: 2, priceLineVisible: false, crosshairMarkerVisible: false });
+            e1Series.setData(e1Data.map((v, i) => ({ time: times[i], value: v })));
+
+            const e2Data = calcEMADash(closes, ema2);
+            const e2Series = chart.addSeries(LineSeries, { color: '#f472b6', lineWidth: 2, priceLineVisible: false, crosshairMarkerVisible: false });
+            e2Series.setData(e2Data.map((v, i) => ({ time: times[i], value: v })));
+
+            const e3Data = calcEMADash(closes, ema3);
+            const e3Series = chart.addSeries(LineSeries, { color: '#38bdf8', lineWidth: 2, priceLineVisible: false, crosshairMarkerVisible: false });
+            e3Series.setData(e3Data.map((v, i) => ({ time: times[i], value: v })));
+        }
+
+        chart.timeScale().fitContent();
+        const handleResize = () => chart.applyOptions({ width: el.clientWidth });
         window.addEventListener('resize', handleResize);
-        return () => {
-            window.removeEventListener('resize', handleResize);
-            chart.remove();
-        };
-    }, [symbol, theme]);
+        return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
+    }, [candles, theme, showEmas, ema1, ema2, ema3]);
+
+    // MACD chart
+    useEffect(() => {
+        if (!macdRef.current || candles.length === 0 || !showMacd) return;
+        const el = macdRef.current;
+        const chart = createChart(el, { ...chartOpts(130), width: el.clientWidth });
+        const closes = candles.map(d => d.close);
+        const times = candles.map(d => d.date);
+        const { macdLine, signalLine, histogram } = calcMACDDash(closes, macdFast, macdSlow, macdSignal);
+        const histSeries = chart.addSeries(HistogramSeries, { color: '#3b82f6', priceLineVisible: false });
+        histSeries.setData(times.map((t, i) => ({ time: t, value: histogram[i], color: histogram[i] >= 0 ? '#22c55e80' : '#ef444480' })));
+        const macdS = chart.addSeries(LineSeries, { color: '#3b82f6', lineWidth: 1, priceLineVisible: false });
+        macdS.setData(times.map((t, i) => ({ time: t, value: macdLine[i] })));
+        const sigS = chart.addSeries(LineSeries, { color: '#f97316', lineWidth: 1, priceLineVisible: false });
+        sigS.setData(times.map((t, i) => ({ time: t, value: signalLine[i] })));
+        chart.timeScale().fitContent();
+        const handleResize = () => chart.applyOptions({ width: el.clientWidth });
+        window.addEventListener('resize', handleResize);
+        return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
+    }, [candles, theme, macdFast, macdSlow, macdSignal, showMacd]);
+
+    // Stochastic chart
+    useEffect(() => {
+        if (!stochRef.current || candles.length === 0 || !showStoch) return;
+        const el = stochRef.current;
+        const chart = createChart(el, { ...chartOpts(130), width: el.clientWidth });
+        const closes = candles.map(d => d.close);
+        const highs = candles.map(d => d.high);
+        const lows = candles.map(d => d.low);
+        const times = candles.map(d => d.date);
+        const { kLine, dLine } = calcStochDash(highs, lows, closes, stochK, stochD, stochSmooth);
+        const kS = chart.addSeries(LineSeries, { color: '#8b5cf6', lineWidth: 1, priceLineVisible: false });
+        kS.setData(times.map((t, i) => ({ time: t, value: isNaN(kLine[i]) ? undefined : kLine[i] })).filter(d => d.value !== undefined));
+        const dS = chart.addSeries(LineSeries, { color: '#ec4899', lineWidth: 1, priceLineVisible: false });
+        dS.setData(times.map((t, i) => ({ time: t, value: isNaN(dLine[i]) ? undefined : dLine[i] })).filter(d => d.value !== undefined));
+        chart.timeScale().fitContent();
+        const handleResize = () => chart.applyOptions({ width: el.clientWidth });
+        window.addEventListener('resize', handleResize);
+        return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
+    }, [candles, theme, stochK, stochD, stochSmooth, showStoch]);
 
     return (
         <div className="flex flex-col h-full">
+            {/* Header */}
             <div className="px-6 py-4 border-b border-border flex items-center justify-between bg-card-hover/20">
                 <div className="flex items-center gap-4">
                     <div className="h-8 w-8 rounded-lg bg-accent/20 flex items-center justify-center text-accent text-xs font-bold">
@@ -626,9 +830,98 @@ function InternalChart({ symbol }: { symbol: string }) {
                         </div>
                     )}
                 </div>
-                {loading && <span className="text-xs animate-pulse text-accent font-mono uppercase tracking-tighter">Syncing...</span>}
+
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={() => {
+                            if (confirm(`Liquidate total ${symbol} position?`)) {
+                                closePosition(symbol);
+                            }
+                        }}
+                        className="px-4 py-2 bg-red/10 hover:bg-red/20 border border-red/20 hover:border-red/40 text-red text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-sm hover:shadow-red/10"
+                    >
+                        Liquidate Position
+                    </button>
+                    {loading && <span className="text-xs animate-pulse text-accent font-mono uppercase tracking-tighter">Syncing...</span>}
+                </div>
             </div>
-            <div ref={chartContainerRef} className="flex-1 w-full" />
+
+            {/* Main Candlestick */}
+            <div className="relative w-full" style={{ height: 'calc(100% - 320px)', minHeight: 300 }}>
+                <div ref={chartContainerRef} className="absolute inset-0" />
+
+                {/* Overlay EMA Controls */}
+                <div className="absolute top-2 left-2 z-10 flex flex-col gap-1">
+                    <div
+                        className="flex items-center gap-2 px-2 py-1 bg-card-hover/90 backdrop-blur-sm rounded border border-border/50 cursor-pointer hover:bg-card-hover transition-colors select-none"
+                        onClick={() => setShowEmas(!showEmas)}
+                    >
+                        <span className="text-[10px] font-black uppercase tracking-[0.15em] text-muted">MOVING AVERAGES</span>
+                        {showEmas ? <ChevronUp size={10} className="text-muted" /> : <ChevronDown size={10} className="text-muted" />}
+                    </div>
+                    {showEmas && (
+                        <div className="flex flex-col gap-1.5 p-2 bg-card-hover/90 backdrop-blur-sm rounded border border-border/50" onClick={e => e.stopPropagation()}>
+                            <div className="flex items-center gap-2">
+                                <div className="h-2 w-2 rounded-full bg-[#fbbf24] shadow-[0_0_8px_#fbbf24]" />
+                                <span className="text-[9px] font-mono text-muted font-bold w-12">EMA 1</span>
+                                <input type="number" value={ema1} onChange={e => setEma1(+e.target.value || 9)} min={1} max={200} className="w-12 px-1 py-0.5 bg-background border border-border/50 rounded text-[10px] text-foreground font-mono text-center focus:outline-none" />
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <div className="h-2 w-2 rounded-full bg-[#f472b6] shadow-[0_0_8px_#f472b6]" />
+                                <span className="text-[9px] font-mono text-muted font-bold w-12">EMA 2</span>
+                                <input type="number" value={ema2} onChange={e => setEma2(+e.target.value || 21)} min={1} max={200} className="w-12 px-1 py-0.5 bg-background border border-border/50 rounded text-[10px] text-foreground font-mono text-center focus:outline-none" />
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <div className="h-2 w-2 rounded-full bg-[#38bdf8] shadow-[0_0_8px_#38bdf8]" />
+                                <span className="text-[9px] font-mono text-muted font-bold w-12">EMA 3</span>
+                                <input type="number" value={ema3} onChange={e => setEma3(+e.target.value || 50)} min={1} max={500} className="w-12 px-1 py-0.5 bg-background border border-border/50 rounded text-[10px] text-foreground font-mono text-center focus:outline-none" />
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* MACD Panel */}
+            <div className="border-t border-border/30 flex-shrink-0">
+                <div
+                    className="flex items-center justify-between px-3 py-1.5 bg-card-hover/30 cursor-pointer select-none"
+                    onClick={() => setShowMacd(!showMacd)}
+                >
+                    <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black uppercase tracking-[0.15em] text-muted">MACD ({macdFast},{macdSlow},{macdSignal})</span>
+                        {showMacd ? <ChevronUp size={12} className="text-muted" /> : <ChevronDown size={12} className="text-muted" />}
+                    </div>
+                    {showMacd && (
+                        <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                            <input type="number" value={macdFast} min={2} max={50} onChange={e => setMacdFast(+e.target.value || 12)} className="w-10 px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[10px] text-white font-mono text-center focus:outline-none" />
+                            <input type="number" value={macdSlow} min={2} max={100} onChange={e => setMacdSlow(+e.target.value || 26)} className="w-10 px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[10px] text-white font-mono text-center focus:outline-none" />
+                            <input type="number" value={macdSignal} min={2} max={50} onChange={e => setMacdSignal(+e.target.value || 9)} className="w-10 px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[10px] text-white font-mono text-center focus:outline-none" />
+                        </div>
+                    )}
+                </div>
+                {showMacd && <div ref={macdRef} className="w-full" style={{ height: 130 }} />}
+            </div>
+
+            {/* Stochastic Panel */}
+            <div className="border-t border-border/30 flex-shrink-0">
+                <div
+                    className="flex items-center justify-between px-3 py-1.5 bg-card-hover/30 cursor-pointer select-none"
+                    onClick={() => setShowStoch(!showStoch)}
+                >
+                    <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black uppercase tracking-[0.15em] text-muted">STOCH ({stochK},{stochD},{stochSmooth})</span>
+                        {showStoch ? <ChevronUp size={12} className="text-muted" /> : <ChevronDown size={12} className="text-muted" />}
+                    </div>
+                    {showStoch && (
+                        <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                            <input type="number" value={stochK} min={2} max={50} onChange={e => setStochK(+e.target.value || 14)} className="w-10 px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[10px] text-white font-mono text-center focus:outline-none" />
+                            <input type="number" value={stochD} min={2} max={50} onChange={e => setStochD(+e.target.value || 3)} className="w-10 px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[10px] text-white font-mono text-center focus:outline-none" />
+                            <input type="number" value={stochSmooth} min={1} max={20} onChange={e => setStochSmooth(+e.target.value || 3)} className="w-10 px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[10px] text-white font-mono text-center focus:outline-none" />
+                        </div>
+                    )}
+                </div>
+                {showStoch && <div ref={stochRef} className="w-full" style={{ height: 130 }} />}
+            </div>
         </div>
     );
 }
