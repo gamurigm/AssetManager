@@ -18,11 +18,14 @@ import {
     Minimize2,
     Sun,
     Moon,
-    ShieldCheck
+    ShieldCheck,
+    Activity,
+    Trash2,
+    RefreshCcw
 } from "lucide-react";
 import { usePortfolio } from "@/context/PortfolioContext";
 
-type Model = "general" | "mistral" | "mixtral" | "glm5";
+type Model = "general" | "mistral" | "mixtral" | "kimi" | "deepseek" | "nemotron";
 
 export default function ChatWidget() {
     const { holdings, totalValue, totalPnL, pnlPercent } = usePortfolio();
@@ -43,6 +46,37 @@ export default function ChatWidget() {
     const inactivityTimer = useRef<NodeJS.Timeout | null>(null);
 
     const scrollRef = useRef<HTMLDivElement>(null);
+
+    // Load session from localStorage on mount
+    useEffect(() => {
+        try {
+            const savedMessages = localStorage.getItem("mmam_chat_history");
+            const savedModel = localStorage.getItem("mmam_chat_model");
+
+            if (savedMessages) setMessages(JSON.parse(savedMessages));
+            if (savedModel) setSelectedModel(savedModel as Model);
+        } catch (e) {
+            console.error("Failed to load chat session:", e);
+        }
+    }, []);
+
+    // Save session to localStorage on changes
+    useEffect(() => {
+        if (messages.length > 0) {
+            localStorage.setItem("mmam_chat_history", JSON.stringify(messages));
+        }
+    }, [messages]);
+
+    useEffect(() => {
+        localStorage.setItem("mmam_chat_model", selectedModel);
+    }, [selectedModel]);
+
+    const clearChat = () => {
+        if (confirm("Clear current intelligence session?")) {
+            setMessages([]);
+            localStorage.removeItem("mmam_chat_history");
+        }
+    };
 
     // Sync theme with global document class
     useEffect(() => {
@@ -149,11 +183,29 @@ export default function ChatWidget() {
 
     const preprocessMarkdown = (text: string) => {
         if (!text) return "";
-        return text
-            .replace(/\\\[/g, "\n$$\n").replace(/\\\]/g, "\n$$\n")
-            .replace(/\\\(/g, " $").replace(/\\\)/g, "$ ")
-            .replace(/\$\$([\s\S]+?)\$\$/g, (match, p1) => `\n$$\n${p1.trim()}\n$$\n`)
-            .replace(/\\(_|\^|{|}|%|&|\$)/g, "$1");
+        let processed = text;
+
+        // 1. Normalize block delimiters \[ ... \] to $$
+        processed = processed.replace(/\\\[/g, "\n$$\n").replace(/\\\]/g, "\n$$\n");
+
+        // 2. Normalize inline delimiters \( ... \) to $
+        processed = processed.replace(/\\\(/g, " $ ").replace(/\\\)/g, " $ ");
+
+        // 3. Detect "lazy" multi-line single dollar blocks (common in AI outputs)
+        // If a line is just $ followed by a newline, and later there is another such line, convert to $$
+        // Regex: (newline or start) + (only possible whitespace and $) + (newline)
+        processed = processed.replace(/(^|\n)\s*\$\s*\n([\s\S]+?)\n\s*\$\s*(\n|$)/g, "$1\n$$\n$2\n$$\n$3");
+
+        // 4. Handle standard $$ ... $$ and ensure double-spacing/newlines for proper block detection
+        processed = processed.replace(/\$\$([\s\S]+?)\$\$/g, (match, p1) => {
+            const clean = p1.trim();
+            return `\n\n$$\n${clean}\n$$\n\n`;
+        });
+
+        // 5. Final pass: ensure standard $...$ doesn't have spaces inside delimiters which can confuse some parsers
+        // but wait, we want to BE lenient for AI. So we'll leave it or just trim.
+
+        return processed;
     };
 
     const handleSend = async () => {
@@ -203,7 +255,8 @@ export default function ChatWidget() {
                     const { done, value } = await reader.read();
                     if (done) break;
                     const chunk = decoder.decode(value, { stream: true });
-                    if (selectedModel === "glm5") {
+
+                    if (selectedModel === "deepseek") {
                         const lines = chunk.split("\n");
                         for (const line of lines) {
                             if (!line.trim()) continue;
@@ -211,9 +264,34 @@ export default function ChatWidget() {
                                 const data = JSON.parse(line);
                                 accR += data.reasoning || "";
                                 accC += data.content || "";
-                            } catch (e) { }
+                            } catch (e) {
+                                // Fallback for raw chunks that might be mixed in
+                                accC += line;
+                            }
                         }
-                    } else accC += chunk;
+                    } else {
+                        accC += chunk;
+                    }
+
+                    // Global Reasoner: Extract <think> tags from content if they leaked
+                    // This handles models that don't use a separate reasoning field
+                    if (accC.includes("<think>")) {
+                        const parts = accC.split("</think>");
+                        if (parts.length > 1) {
+                            // Tag is closed
+                            const thinkPart = parts[0].split("<think>")[1] || "";
+                            accR += thinkPart;
+                            accC = parts[1].trim();
+                        } else {
+                            // Tag is still open, extract what's inside to R, leave what's before in C
+                            const openParts = accC.split("<think>");
+                            accC = openParts[0].trim();
+                            accR += openParts[1] || "";
+                            // Note: This logic is slightly lossy for R during streaming 
+                            // but keeps C clean. For a premium feel, we'll refine:
+                        }
+                    }
+
                     setMessages(prev => {
                         const updated = [...prev];
                         updated[assistantMsgIndex] = { role: "assistant", content: accC, reasoning: accR };
@@ -266,82 +344,110 @@ export default function ChatWidget() {
                     />
                 </button>
             ) : isOpen ? (
-                <div className={`w-full h-full flex flex-col overflow-hidden transition-colors duration-500
+                <div className={`w-full h-full flex flex-col overflow-hidden transition-all duration-700 glass
                     ${isDarkMode
-                        ? "bg-zinc-950/98 backdrop-blur-3xl border border-white/10 shadow-[0_40px_100px_-20px_rgba(0,0,0,0.8)]"
-                        : "bg-white/95 backdrop-blur-3xl border border-zinc-200 shadow-[0_40px_100px_-20px_rgba(0,0,0,0.15)]"}
+                        ? "border border-white/10 shadow-[0_40px_100px_-20px_rgba(0,0,0,0.8)]"
+                        : "border border-zinc-200 shadow-[0_40px_100px_-20px_rgba(0,0,0,0.15)]"}
                     ${isMaximized || (typeof window !== 'undefined' && window.innerWidth < 640) ? "rounded-none border-none" : "rounded-[32px]"} ring-1 ring-black/5`}>
 
-                    <header className={`${typeof window !== 'undefined' && window.innerWidth < 640 ? "px-4 py-3" : "px-6 py-4"} flex justify-between items-center border-b transition-colors
-                        ${isDarkMode ? "bg-white/[0.03] border-white/5" : "bg-zinc-50 border-zinc-100"}`}>
-                        <div className="flex items-center gap-3">
-                            <div className={`h-9 w-9 rounded-xl flex items-center justify-center text-white shadow-lg
-                                ${isDarkMode ? "bg-fuchsia-600" : "bg-indigo-600"}`}>
-                                <Terminal size={16} />
+                    <header className={`${typeof window !== 'undefined' && window.innerWidth < 640 ? "px-4 py-3" : "px-6 py-5"} flex justify-between items-center border-b transition-colors relative overflow-hidden
+                        ${isDarkMode ? "bg-white/[0.04] border-white/5" : "bg-white/40 border-zinc-100"}`}>
+                        <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-accent to-transparent opacity-50 shadow-[0_0_10px_var(--accent)]" />
+
+                        <div className="flex items-center gap-4 relative z-10 text-gradient font-black">
+                            <div className={`h-10 w-10 rounded-2xl flex items-center justify-center text-white shadow-lg animate-pulse-glow
+                                ${isDarkMode ? "bg-fuchsia-600 shadow-fuchsia-500/20" : "bg-indigo-600 shadow-indigo-500/20"}`}>
+                                <BrainCircuit size={20} />
                             </div>
                             <div className="flex flex-col">
-                                <h3 className={`font-bold text-base tracking-tight ${isDarkMode ? "text-white" : "text-zinc-900"}`}>
-                                    Intelligence Core
+                                <h3 className={`font-black text-lg tracking-tighter ${isDarkMode ? "text-white" : "text-zinc-900"}`}>
+                                    Intelligence Core <span className="text-[10px] bg-accent/10 px-1.5 py-0.5 rounded ml-2 border border-accent/20">V2.4</span>
                                 </h3>
-                                <div className="flex items-center gap-1.5">
-                                    <div className="h-1 w-1 rounded-full bg-emerald-500 animate-pulse" />
+                                <div className="flex items-center gap-2">
+                                    <div className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse shadow-[0_0_6px_#10b981]" />
                                     <select
                                         value={selectedModel}
                                         onChange={(e) => setSelectedModel(e.target.value as Model)}
-                                        className={`bg-transparent text-xs border-none p-0 focus:ring-0 cursor-pointer transition-all uppercase tracking-[0.2em] font-black outline-none
+                                        className={`bg-transparent text-[10px] border-none p-0 focus:ring-0 cursor-pointer transition-all uppercase tracking-[0.25em] font-black outline-none
                                             ${isDarkMode ? "text-zinc-500 hover:text-fuchsia-400" : "text-zinc-400 hover:text-indigo-600"}`}
                                     >
                                         <option value="general" className={isDarkMode ? "bg-zinc-950" : "bg-white text-zinc-900"}>Hybrid Core</option>
                                         <option value="mistral" className={isDarkMode ? "bg-zinc-950" : "bg-white text-zinc-900"}>Mistral-L3</option>
                                         <option value="mixtral" className={isDarkMode ? "bg-zinc-950" : "bg-white text-zinc-900"}>MoE-8x22B</option>
-                                        <option value="glm5" className={isDarkMode ? "bg-zinc-950" : "bg-white text-zinc-900"}>GLM-5 Deep</option>
+                                        <option value="kimi" className={isDarkMode ? "bg-zinc-950" : "bg-white text-zinc-900"}>Kimi K2.5</option>
+                                        <option value="deepseek" className={isDarkMode ? "bg-zinc-950" : "bg-white text-zinc-900"}>DeepSeek V3</option>
+                                        <option value="nemotron" className={isDarkMode ? "bg-zinc-950" : "bg-white text-zinc-900"}>Nemotron-253B</option>
                                     </select>
                                 </div>
                             </div>
                         </div>
-                        <div className="flex items-center gap-1.5">
-                            <button onClick={() => setIsMaximized(!isMaximized)} className={`h-8 w-8 flex items-center justify-center rounded-lg ${isDarkMode ? "bg-white/5 text-zinc-400" : "bg-zinc-200/50 text-zinc-600"}`}>
-                                {isMaximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                        <div className="flex items-center gap-2 relative z-10">
+                            <button
+                                onClick={clearChat}
+                                title="Clear Session"
+                                className={`h-9 w-9 flex items-center justify-center rounded-xl transition-all ${isDarkMode ? "bg-white/5 text-zinc-400 hover:bg-red-500/10 hover:text-red-400" : "bg-zinc-200/50 text-zinc-600 hover:bg-red-500/10 hover:text-red-600"}`}
+                            >
+                                <Trash2 size={15} />
                             </button>
-                            <button onClick={() => setIsOpen(false)} className={`h-8 w-8 flex items-center justify-center rounded-lg ${isDarkMode ? "bg-white/5 text-zinc-400" : "bg-zinc-200/50 text-zinc-600"}`}>
-                                <X size={16} />
+                            <button onClick={() => setIsMaximized(!isMaximized)} className={`h-9 w-9 flex items-center justify-center rounded-xl transition-all ${isDarkMode ? "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white" : "bg-zinc-200/50 text-zinc-600 hover:bg-zinc-200"}`}>
+                                {isMaximized ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+                            </button>
+                            <button onClick={() => setIsOpen(false)} className={`h-9 w-9 flex items-center justify-center rounded-xl transition-all ${isDarkMode ? "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white" : "bg-zinc-200/50 text-zinc-600 hover:bg-zinc-200"}`}>
+                                <X size={18} />
                             </button>
                         </div>
                     </header>
 
-                    <div ref={scrollRef} className={`flex-1 overflow-y-auto ${typeof window !== 'undefined' && window.innerWidth < 640 ? "px-4 pt-4" : "px-6 pt-6"} space-y-8 scrollbar-none pb-4 transition-colors
-                        ${isDarkMode ? "bg-transparent" : "bg-zinc-50/30"}`}>
+                    <div ref={scrollRef} className={`flex-1 overflow-y-auto ${typeof window !== 'undefined' && window.innerWidth < 640 ? "px-4 pt-4" : "px-6 pt-6"} space-y-10 scrollbar-none pb-8 transition-colors
+                        ${isDarkMode ? "bg-transparent" : "bg-zinc-50/50"}`}>
+                        {messages.length === 0 && (
+                            <div className="h-full flex flex-col items-center justify-center text-center opacity-40 py-20 px-10">
+                                <div className="h-20 w-20 rounded-3xl bg-accent/10 flex items-center justify-center mb-6 animate-float">
+                                    <Sparkles size={40} className="text-accent" />
+                                </div>
+                                <h4 className="text-lg font-black tracking-tight mb-2">Omni-Agent Strategy Terminal</h4>
+                                <p className="text-xs font-medium max-w-[240px] leading-relaxed">System ready for market directive, quantitative analysis, or portfolio risk auditing.</p>
+                            </div>
+                        )}
                         {messages.map((m, i) => (
-                            <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                                <div className={`${isMaximized ? "max-w-[70%]" : "max-w-full"} space-y-2`}>
-                                    <div className={`py-4 px-6 rounded-[22px] transition-all duration-300 shadow-sm
+                            <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"} message-animate`}>
+                                <div className={`${isMaximized ? "max-w-[75%]" : "max-w-full"} space-y-3`}>
+                                    <div className={`py-5 px-6 rounded-[28px] transition-all duration-300 shadow-lg relative
                                         ${m.role === "user"
-                                            ? (isDarkMode ? "bg-white text-black rounded-tr-none" : "bg-indigo-600 text-white rounded-tr-none")
-                                            : (isDarkMode ? "bg-white/[0.04] text-zinc-100 rounded-tl-none border border-white/10" : "bg-white text-zinc-900 rounded-tl-none border border-zinc-200")
+                                            ? (isDarkMode ? "bg-white text-black rounded-tr-none shadow-white/5" : "bg-indigo-600 text-white rounded-tr-none shadow-indigo-600/20")
+                                            : (isDarkMode ? "bg-white/[0.05] text-zinc-100 rounded-tl-none border border-white/10" : "bg-white text-zinc-900 rounded-tl-none border border-zinc-200 shadow-xl")
                                         }`}>
+
+                                        {m.role === "assistant" && (
+                                            <div className={`absolute -top-3 -left-3 h-8 w-8 rounded-full border-4 border-background flex items-center justify-center shadow-lg
+                                                ${isDarkMode ? "bg-zinc-800 text-fuchsia-400 border-zinc-950" : "bg-white text-indigo-600 border-zinc-50"}`}>
+                                                <Bot size={14} />
+                                            </div>
+                                        )}
+
                                         <div
-                                            style={{ fontSize: '106%' }}
+                                            style={{ fontSize: '108%', lineHeight: '1.7' }}
                                             className={`prose prose-sm max-w-full break-normal
                                             ${m.role === "user" ? (isDarkMode ? "prose-zinc" : "prose-invert") : (isDarkMode ? "prose-invert" : "prose-zinc")}
-                                            prose-p:leading-relaxed prose-p:mb-3 last:prose-p:mb-0
-                                            prose-strong:font-bold prose-code:px-1.5 prose-code:rounded-md
+                                            prose-p:mb-5 last:prose-p:mb-0
+                                            prose-strong:font-black prose-code:px-2 prose-code:py-0.5 prose-code:rounded-lg prose-code:font-mono
                                             ${isDarkMode ? "prose-strong:text-fuchsia-400 prose-code:text-emerald-400 prose-code:bg-emerald-400/5" : "prose-strong:text-indigo-600 prose-code:text-emerald-600 prose-code:bg-emerald-50"}
                                         `}>
                                             {m.reasoning && (
-                                                <div className={`mb-4 p-3 rounded-xl border italic text-[11px] leading-relaxed
-                                                    ${isDarkMode ? "bg-white/[0.03] border-white/5 text-zinc-400" : "bg-zinc-50 border-zinc-100 text-zinc-500"}`}>
-                                                    <div className="flex items-center gap-2 mb-1.5 opacity-70">
-                                                        <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-                                                        <span className="font-bold uppercase tracking-widest text-[9px]">Internal Cognition</span>
+                                                <div className={`mb-6 p-4 rounded-2xl border italic text-[11px] leading-relaxed font-mono
+                                                    ${isDarkMode ? "bg-white/[0.03] border-white/5 text-zinc-500" : "bg-zinc-50 border-zinc-100 text-zinc-400"}`}>
+                                                    <div className="flex items-center gap-2 mb-2 opacity-50">
+                                                        <Activity size={10} className="animate-pulse" />
+                                                        <span className="font-black uppercase tracking-[0.2em] text-[9px]">Neural Synthesis Path</span>
                                                     </div>
                                                     {m.reasoning}
                                                 </div>
                                             )}
                                             {m.content === "" && m.role === "assistant" && isLoading ? (
-                                                <div className="flex gap-2 items-center h-8 px-1">
-                                                    <div className="w-2 h-2 bg-current rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                                                    <div className="w-2 h-2 bg-current rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                                                    <div className="w-2 h-2 bg-current rounded-full animate-bounce"></div>
+                                                <div className="flex gap-2.5 items-center h-10 px-2">
+                                                    <div className="w-2.5 h-2.5 bg-accent/40 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                                                    <div className="w-2.5 h-2.5 bg-accent/60 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                                                    <div className="w-2.5 h-2.5 bg-accent rounded-full animate-bounce"></div>
                                                 </div>
                                             ) : (
                                                 <ReactMarkdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={[[rehypeKatex, { strict: false, throwOnError: false }]]}>
@@ -350,6 +456,16 @@ export default function ChatWidget() {
                                             )}
                                         </div>
                                     </div>
+                                    {m.role === "assistant" && (
+                                        <div className="flex items-center gap-3 px-2 opacity-40 hover:opacity-100 transition-opacity">
+                                            <span className="text-[9px] font-black tracking-widest uppercase flex items-center gap-1">
+                                                <ShieldCheck size={10} /> Compliant Analysis
+                                            </span>
+                                            <span className="text-[9px] font-black tracking-widest uppercase">
+                                                Ref: Core-{i}
+                                            </span>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         ))}

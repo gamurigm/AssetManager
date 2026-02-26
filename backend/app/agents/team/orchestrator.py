@@ -6,12 +6,13 @@ from typing import Optional
 import json
 
 # --- Orchestrator Definition ---
-# Uses GLM-5 or similar high-reasoning model for planning
+# Uses Nemotron or similar high-reasoning model for planning
 
-ORCHESTRATOR_MODEL = "deepseek-ai/deepseek-v3.2"
+ORCHESTRATOR_MODEL = "nvidia/llama-3.1-nemotron-ultra-253b-v1"
 
 import asyncio
-from typing import List, Dict
+from typing import List, Dict, Optional
+from ...services.risk_service import risk_service
 
 # ... existing imports ...
 
@@ -103,6 +104,25 @@ class HeadOfStrategy(TeamAgent):
                 table_rows.append(f"| {sym} | {shares} | ${price:,.2f} | ${val:,.2f} | {chg:+.2f}% |")
 
             table_str = "\n".join(table_rows)
+            
+            # 🛡️ RISK ANALYSIS INTEGRATION (Pfaff Logic)
+            risk_report = risk_service.get_portfolio_risk_report(holdings)
+            risk_str = ""
+            if "error" not in risk_report:
+                risk_str = f"""
+## 🛡️ PORTFOLIO RISK (PFAFF METHODOLOGY)
+- **Modified VaR (95%):** {risk_report.get('mvar_95_percent')}% (${risk_report.get('mvar_95_cash', 0):,.2f})
+- **Modified ES (mES):** {risk_report.get('mes_95_percent')}%
+- **Gaussian VaR (Ref):** {risk_report['var_95_percent']}%
+- **Portfolio Skewness:** {risk_report.get('skewness', 0)}
+- **Excess Kurtosis:** {risk_report.get('excess_kurtosis', 0)}
+- **Annualized Sharpe:** {risk_report['sharpe_ratio']}
+- **Annualized Vol:** {risk_report['annualized_volatility_percent']}%
+- **Asset Risks:** {json.dumps(risk_report['asset_risks'])}
+"""
+            else:
+                risk_str = f"\n[Risk Analysis Unavailable: {risk_report.get('error')}]\n"
+
             system_context_parts.append(f"""
 ## 📊 REAL-TIME PORTFOLIO SNAPSHOT
 **Total AUM:** ${total_val:,.2f}
@@ -111,6 +131,8 @@ class HeadOfStrategy(TeamAgent):
 | Asset | Shares | Price | Value | Change |
 | :--- | :--- | :--- | :--- | :--- |
 {table_str}
+
+{risk_str}
 """)
 
         if market_regime:
@@ -128,7 +150,9 @@ class HeadOfStrategy(TeamAgent):
 
         if system_context_parts:
              full_context = "\n".join(system_context_parts)
-             # Add a hidden system message just for this turn to inform the agent
+             # Share with all agents via scratchpad
+             self.context.update_scratchpad("formatted_realtime_context", full_context)
+             # Still add as a direct message for the orchestrator's immediate turn
              self.context.add_message("system", full_context, "System Monitor")
 
         # Add user message to shared context

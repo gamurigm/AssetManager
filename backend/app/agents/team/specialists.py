@@ -9,13 +9,16 @@ from ...services.fee_service import FeeService
 from ...services.polygon_service import polygon_service
 from ...services.alpha_vantage_service import alpha_vantage_service
 from ...services.twelve_data_service import twelve_data_service
+from ...services.market_data import market_data_service
+from ...core.container import search_knowledge_base_uc, read_book_section_uc
 from ...core.config import settings
 import asyncio
+import time
 
 # --- Constants for Models ---
 MISTRAL_LARGE = "mistralai/mistral-large-3-675b-instruct-2512"
 MIXTRAL_8X22B = "mistralai/mixtral-8x22b-instruct-v0.1"
-GLM5 = "z-ai/glm5"
+KIMI_K25 = "moonshotai/kimi-k2.5"
 DEEPSEEK_V3 = "deepseek-ai/deepseek-v3.2"
 NEMOTRON_253B = "nvidia/llama-3.1-nemotron-ultra-253b-v1"
 
@@ -32,6 +35,30 @@ async def get_company_profile(ctx: RunContext[TeamContext], symbol: str) -> str:
     if not profile or "error" in profile: return "Company not found."
     description = profile.get('description', 'No description available')
     return f"{profile.get('companyName')} ({profile.get('sector')}): {description[:500]}..."
+
+# --- Knowledge Base Tools ---
+async def search_knowledge_base(ctx: RunContext[TeamContext], query: str) -> str:
+    """
+    Search for academic/textbook information in the Quant Knowledge Base.
+    Useful for finding definitions, formulas, or theory on:
+    - Stochastic Calculus (Shreve)
+    - Optimization Methods (Cornuejols)
+    - Risk Modelling (Pfaff)
+    - Linear Algebra (Primer)
+    """
+    results = search_knowledge_base_uc.execute(query, limit=10)
+    if not results:
+        return f"No results for '{query}' found in the textbooks."
+        
+    formatted = []
+    for r in results:
+        formatted.append(f"• [{r.file}]: {r.snippet}...")
+    
+    return "Top 10 Knowledge Base results:\n" + "\n".join(formatted)
+
+async def read_textbook_section(ctx: RunContext[TeamContext], file_path: str, start_line: int, end_line: int) -> str:
+    """Read a specific section from a textbook found during search."""
+    return read_book_section_uc.execute(file_path, start_line, end_line)
 
 # --- Tools for Quantitative Analyst ---
 async def get_price(ctx: RunContext[TeamContext], symbol: str) -> str:
@@ -119,7 +146,7 @@ fundamental_analyst = TeamAgent(
     name="Fundamental Analyst",
     role="Specialist in qualitative analysis, news, and company fundamentals",
     model_name=NEMOTRON_253B,
-    tools=[get_market_news, get_company_profile]
+    tools=[get_market_news, get_company_profile, search_knowledge_base, read_textbook_section]
 )
 
 quant_analyst = TeamAgent(
@@ -184,7 +211,7 @@ strategy_analyst = TeamAgent(
     name="Strategy Analyst",
     role="Specialist in quantitative trading strategies — detects ORB, FVG, and Engulfing setups",
     model_name=MIXTRAL_8X22B,
-    tools=[run_strategy_signal],
+    tools=[run_strategy_signal, search_knowledge_base, read_textbook_section],
 )
 
 # Export map for Orchestrator lookup

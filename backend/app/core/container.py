@@ -8,14 +8,18 @@ Pattern: Composition Root (replaces Service Locator anti-pattern).
 
 from ..infrastructure.providers import (
     YahooProvider, FMPProvider, TwelveDataProvider, PolygonProvider, AlphaVantageProvider,
-    FinazonProvider
+    FinazonProvider, LocalKnowledgeBaseProvider
 )
 from ..infrastructure.persistence import DuckDBRepository
 from ..infrastructure.ai import (
-    MistralLargeProvider, MixtralProvider, GLM5Provider,
+    MistralLargeProvider, MixtralProvider, KimiProvider,
     DeepSeekProvider, NemotronProvider,
 )
-from ..application.use_cases import GetQuoteUseCase, GetHistoricalUseCase
+from ..application.use_cases import (
+    GetQuoteUseCase, GetHistoricalUseCase,
+    SearchKnowledgeBaseUseCase, ReadBookSectionUseCase,
+    CalculateEquityCurveUseCase
+)
 
 
 # --- Singletons (instantiated once) ---
@@ -37,19 +41,25 @@ duckdb_repo = DuckDBRepository()
 # AI / LLM Providers
 mistral_provider = MistralLargeProvider()
 mixtral_provider = MixtralProvider()
-glm5_provider = GLM5Provider()
+kimi_provider = KimiProvider()
 deepseek_provider = DeepSeekProvider()
 nemotron_provider = NemotronProvider()
 
 llm_providers = {
     "mistral": mistral_provider,
     "mixtral": mixtral_provider,
-    "glm5": glm5_provider,
+    "kimi": kimi_provider,
     "deepseek": deepseek_provider,
     "nemotron": nemotron_provider,
 }
+
+# Knowledge Base Provider
+kb_provider = LocalKnowledgeBaseProvider()
 
 # --- Use Cases (wired with dependencies) ---
 
 get_quote = GetQuoteUseCase(providers=_market_providers)
 get_historical = GetHistoricalUseCase(providers=_market_providers, repository=duckdb_repo)
+search_knowledge_base_uc = SearchKnowledgeBaseUseCase(provider=kb_provider)
+read_book_section_uc = ReadBookSectionUseCase(provider=kb_provider)
+calculate_equity_curve_uc = CalculateEquityCurveUseCase(repository=duckdb_repo)

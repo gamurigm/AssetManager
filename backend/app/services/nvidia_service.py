@@ -86,32 +86,23 @@ class NvidiaService:
                 yield content
 
     @staticmethod
-    def chat_glm5(message: str, history: Optional[List[dict]] = None, portfolio: Optional[dict] = None) -> AsyncGenerator[dict, None]:
+    def chat_kimi(message: str, history: Optional[List[dict]] = None, portfolio: Optional[dict] = None) -> AsyncGenerator[str, None]:
         client = OpenAI(
             base_url="https://integrate.api.nvidia.com/v1",
-            api_key=settings.NVIDIA_GLM5_KEY
+            api_key=settings.NVIDIA_NIM_API_KEY
         )
         completion = client.chat.completions.create(
-            model="z-ai/glm5",
+            model="moonshotai/kimi-k2.5",
             messages=NvidiaService._prepare_messages(message, history, portfolio),
-            temperature=1,
-            top_p=1,
-            max_tokens=16384,
-            extra_body={"chat_template_kwargs": {"enable_thinking": True, "clear_thinking": False}},
+            temperature=0.7,
+            max_tokens=4096,
             stream=True
         )
         for chunk in completion:
-            if not getattr(chunk, "choices", None):
+            if not getattr(chunk, "choices", None) or not chunk.choices:
                 continue
-            if len(chunk.choices) == 0 or getattr(chunk.choices[0], "delta", None) is None:
-                continue
-            delta = chunk.choices[0].delta
-            reasoning = getattr(delta, "reasoning_content", None)
-            content = getattr(delta, "content", None)
-            
-            yield {
-                "reasoning": reasoning if reasoning else "",
-                "content": content if content else ""
-            }
+            content = chunk.choices[0].delta.content
+            if content is not None:
+                yield content
 
 nvidia_service = NvidiaService()

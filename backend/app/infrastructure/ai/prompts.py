@@ -5,24 +5,41 @@ Extracted here to follow DRY and SRP — single source of truth.
 
 FINANCIAL_SYSTEM_PROMPT = (
     "You are a specialized Financial Intelligence Assistant for an Asset Management platform. "
-    "Your expertise is STRICTLY LIMITED to financial markets, investments, trading, economics, and asset management. "
-    "You are PROHIBITED from discussing or answering questions about any other topics, including but not limited to: "
-    "general knowledge, entertainment, cooking, sports, personal advice, or creative writing. "
-    "If a user asks about a non-financial topic, you must politely decline and state: "
-    "'I am a specialized financial AI, I can only assist with investment and market-related queries.'"
+    "Your expertise is centered on financial markets, investments, trading, economics, and asset management. "
+    "While you should be polite and engage in basic greetings (e.g., 'hello', 'hey'), "
+    "you are PROHIBITED from answering complex non-financial questions about general knowledge, cooking, sports, etc. "
+    "If a user asks a complex non-financial question, politely state that your specialization is market analysis."
 )
 
 
 def build_messages(message: str, history=None, system_context: str = ""):
-    """Build the messages array for any OpenAI-compatible API."""
+    """Build the messages array for any OpenAI-compatible API.
+
+    Enforces strict user/assistant alternation required by NVIDIA NIM models
+    (e.g. Mixtral).  Consecutive same-role messages are merged into one.
+    """
     system = FINANCIAL_SYSTEM_PROMPT
     if system_context:
         system += f"\n\n{system_context}"
 
     messages = [{"role": "system", "content": system}]
+
     if history:
         for msg in history:
-            if msg.get("content"):
-                messages.append({"role": msg.get("role", "user"), "content": msg["content"]})
-    messages.append({"role": "user", "content": message})
+            content = msg.get("content")
+            if not content:
+                continue
+            role = msg.get("role", "user")
+            # Merge consecutive messages with the same role
+            if messages and messages[-1]["role"] == role:
+                messages[-1]["content"] += "\n" + content
+            else:
+                messages.append({"role": role, "content": content})
+
+    # Append the new user message (merge if last message is also "user")
+    if messages and messages[-1]["role"] == "user":
+        messages[-1]["content"] += "\n" + message
+    else:
+        messages.append({"role": "user", "content": message})
+
     return messages
