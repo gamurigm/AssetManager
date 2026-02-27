@@ -25,8 +25,9 @@ class MistralLargeProvider(ILLMProvider):
     def stream_chat(
         self, message: str, history: Optional[List[Dict[str, str]]] = None, system_context: str = ""
     ) -> AsyncGenerator[str, None]:
+        api_key = settings.NVIDIA_MISTRAL_LARGE_KEY or settings.NVIDIA_NIM_API_KEY
         headers = {
-            "Authorization": f"Bearer {settings.NVIDIA_MISTRAL_LARGE_KEY}",
+            "Authorization": f"Bearer {api_key}",
             "Accept": "text/event-stream",
         }
         payload = {

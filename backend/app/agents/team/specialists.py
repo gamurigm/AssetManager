@@ -36,6 +36,41 @@ async def get_company_profile(ctx: RunContext[TeamContext], symbol: str) -> str:
     description = profile.get('description', 'No description available')
     return f"{profile.get('companyName')} ({profile.get('sector')}): {description[:500]}..."
 
+async def get_balance_sheet(ctx: RunContext[TeamContext], symbol: str) -> str:
+    """Get the latest annual balance sheet statement for a specific company (e.g. AAPL, MSFT, NVDA)."""
+    import yfinance as yf
+    
+    def _fetch():
+        ticker = yf.Ticker(symbol)
+        bs = ticker.balance_sheet
+        if bs is None or bs.empty:
+            return f"Balance sheet data not found for {symbol}."
+        
+        # Take the most recent year column
+        recent_bs = bs.iloc[:, 0].dropna()
+        period = bs.columns[0].strftime('%Y-%m-%d') if hasattr(bs.columns[0], 'strftime') else str(bs.columns[0])
+        
+        # Format for LLM context
+        res = f"Balance Sheet for {symbol} (Period Ending: {period}):\n"
+        for idx, val in recent_bs.items():
+            # Format large numbers to billions/millions if possible or just commas
+            if isinstance(val, (int, float)):
+                if abs(val) >= 1e9:
+                    res += f"- {idx}: ${val/1e9:,.2f}B\n"
+                elif abs(val) >= 1e6:
+                    res += f"- {idx}: ${val/1e6:,.2f}M\n"
+                else:
+                    res += f"- {idx}: ${val:,.0f}\n"
+            else:
+                res += f"- {idx}: {val}\n"
+        return res
+        
+    try:
+        return await asyncio.to_thread(_fetch)
+    except Exception as e:
+        return f"Error fetching balance sheet for {symbol}: {str(e)}"
+
+
 # --- Knowledge Base Tools ---
 async def search_knowledge_base(ctx: RunContext[TeamContext], query: str) -> str:
     """
@@ -111,16 +146,35 @@ async def calculate_risk_metrics(ctx: RunContext[TeamContext], symbol: str) -> s
     # Store in context
     ctx.deps.update_scratchpad(f"risk_{symbol}", {"VaR": var, "Sharpe": sharpe})
     
-    return f"Risk Analysis for {symbol} (via Polygon Data):\n- VaR (95%): {var:.4f}\n- Sharpe Ratio: {sharpe:.2f}\nCompliance Note: Validated against risk thresholds."
-
-async def check_compliance(ctx: RunContext[TeamContext], trade_details: str) -> str:
-    """Validate if a trade complies with risk management policies."""
-    # Mock compliance logic
-    if "speculative" in trade_details.lower():
-        return "REJECTED: Leverage too high for current mandate."
+async def generate_detailed_alpha_report(ctx: RunContext[TeamContext], analysis_text: Optional[str] = None) -> str:
+    """
+    Generates a professional, deeply detailed PDF Alpha Report with charts, 
+    risk metrics (VaR, Sharpe, Risk Adjusted Returns), Trend Projections 
+    using Gradient Descent, and Hedging Strategies.
+    If 'analysis_text' is provided, it will be included as a dedicated Intelligence Section.
+    """
+    from ...services.report_service import report_service
+    # Fetches real-time portfolio from context or DB
+    holdings = ctx.deps.scratchpad.get("current_portfolio", {}).get("holdings", [])
+    total_val = ctx.deps.scratchpad.get("current_portfolio", {}).get("total_value", 0)
+    total_pnl = ctx.deps.scratchpad.get("current_portfolio", {}).get("total_pnl", 0)
     
-    ctx.deps.update_scratchpad("RISK_APPROVED", True)
-    return "RISK APPROVED: Trade meets all mandated compliance criteria."
+    if not holdings:
+        # Fallback to DB
+        from ...core.container import duckdb_repo
+        holdings = duckdb_repo.get_portfolio()
+        total_val = sum(h.get('shares',0) * h.get('entryPrice',0) for h in holdings)
+        total_pnl = 0 # Placeholder if not in context
+        
+    if analysis_text:
+        # New bespoke path
+        filename = report_service.generate_custom_intelligence_report(analysis_text, holdings, total_val, total_pnl)
+    else:
+        # Standard automated path
+        filename = report_service.generate_balance_sheet(holdings, total_val, total_pnl)
+
+    url = f"http://localhost:8282/view-reports/{filename}"
+    return f"REPORT GENERATED: {filename}. Access URL: {url}"
 
 # --- Tools for Trader ---
 async def place_order(ctx: RunContext[TeamContext], symbol: str, quantity: int, side: str, order_type: str = "market") -> str:
@@ -144,23 +198,26 @@ import time
 
 fundamental_analyst = TeamAgent(
     name="Fundamental Analyst",
-    role="Specialist in qualitative analysis, news, and company fundamentals",
+    role="Specialist in qualitative analysis, news, company fundamentals, and financial statements (balance sheets)",
     model_name=NEMOTRON_253B,
-    tools=[get_market_news, get_company_profile, search_knowledge_base, read_textbook_section]
+    tools=[get_market_news, get_company_profile, get_balance_sheet, search_knowledge_base, read_textbook_section]
 )
 
 quant_analyst = TeamAgent(
     name="Quantitative Analyst",
     role="Specialist in technical analysis, price data, and metrics",
-    model_name=MIXTRAL_8X22B, # Use faster/larger context model for data
+    model_name=NEMOTRON_253B, # Switched from MIXTRAL to avoid tool parsing block
     tools=[get_price, get_technical_indicator]
 )
 
 risk_manager = TeamAgent(
     name="Risk Manager",
-    role="Specialist in risk assessment, VaR, and compliance",
+    role="Specialist in risk assessment, VaR, and compliance. "
+         "When asked for a report, ALWAYS write a deep professional 'analysis_text' "
+         "summarizing neural insights, risk outliers, and strategic positioning "
+         "to include in the custom PDF.",
     model_name=MISTRAL_LARGE,
-    tools=[calculate_risk_metrics, check_compliance]
+    tools=[calculate_risk_metrics, generate_detailed_alpha_report]
 )
 
 macro_analyst = TeamAgent(
@@ -210,7 +267,7 @@ async def run_strategy_signal(ctx: RunContext[TeamContext], symbol: str) -> str:
 strategy_analyst = TeamAgent(
     name="Strategy Analyst",
     role="Specialist in quantitative trading strategies — detects ORB, FVG, and Engulfing setups",
-    model_name=MIXTRAL_8X22B,
+    model_name=NEMOTRON_253B, # Switched from MIXTRAL to avoid tool parsing block
     tools=[run_strategy_signal, search_knowledge_base, read_textbook_section],
 )
 

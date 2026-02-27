@@ -12,6 +12,7 @@ import json
 
 from ...core.container import llm_providers
 from ...agents.team.orchestrator import orchestrator
+from ...agents.team.specialists import specialists_map
 from ...services.risk_service import risk_service
 
 logger = logging.getLogger("MMAM")
@@ -22,6 +23,8 @@ router = APIRouter()
 class ChatRequest(BaseModel):
     message: str
     user_id: int
+    session_id: Optional[str] = "default"  # multi-conversation support
+    target_agent: Optional[str] = "auto"   # new target agent param
     portfolio: Optional[dict] = None
     history: Optional[List[dict]] = None
     market_regime: Optional[dict] = None
@@ -60,15 +63,21 @@ def _build_context(portfolio: Optional[dict], regime: Optional[dict] = None) -> 
         risk_report = risk_service.get_portfolio_risk_report(holdings)
         if "error" not in risk_report:
             ctx_parts.append(
-                f"\n\n## 🛡️ PORTFOLIO RISK (PFAFF METHODOLOGY)\n"
-                f"- **Modified VaR (95%):** {risk_report.get('mvar_95_percent')}% (${risk_report.get('mvar_95_cash', 0):,.2f})\n"
-                f"- **Modified ES (mES):** {risk_report.get('mes_95_percent')}%\n"
-                f"- **Gaussian VaR (Reference):** {risk_report['var_95_percent']}%\n"
+                f"\n\n## 🛡️ INSTITUTIONAL RISK ANALYSIS (MMAM ALPHA CORE)\n"
+                f"- **Modified VaR (95%):** {risk_report.get('mvar_95_percent')}%\n"
+                f"- **Sharpe Ratio:** {risk_report.get('sharpe_ratio')}\n"
+                f"- **Expected Value (E[x]):** ${risk_report.get('expected_value_trade', 0):,.2f}\n"
+                f"- **Risk Adjusted Return:** {risk_report.get('risk_adjusted_return', 'N/A')}\n"
+                f"- **Annualized Volatility:** {risk_report.get('annualized_volatility')}%\n"
                 f"- **Portfolio Skewness:** {risk_report.get('skewness', 0)}\n"
                 f"- **Excess Kurtosis:** {risk_report.get('excess_kurtosis', 0)}\n"
-                f"- **Annualized Sharpe Ratio:** {risk_report['sharpe_ratio']}\n"
-                f"- **Annualized Volatility:** {risk_report['annualized_volatility_percent']}%\n"
-                f"- **Data Coverage:** {risk_report['coverage_percent']}% (Excluded: {', '.join(risk_report['missing_assets'])})\n"
+                f"\n### 🛡️ HEDGING STRATEGY\n"
+                f"- **Action:** {risk_report.get('hedging_strategy', {}).get('action')}\n"
+                f"- **Recommended:** {risk_report.get('hedging_strategy', {}).get('recommended_strategy')}\n"
+                f"- **Target:** {risk_report.get('hedging_strategy', {}).get('primary_hedge_target')}\n"
+                f"- **Ratio:** {risk_report.get('hedging_strategy', {}).get('hedge_ratio')}\n"
+                f"\n### 📉 MOMENTUM (GRADIENT DESCENT)\n"
+                f"{json.dumps(risk_report.get('momentum', {}), indent=2)}\n"
             )
         else:
             ctx_parts.append(f"\n\n[Risk Analysis Unavailable: {risk_report.get('error')}]")
@@ -91,11 +100,50 @@ def _build_context(portfolio: Optional[dict], regime: Optional[dict] = None) -> 
 
 @router.post("/chat")
 async def chat(request: ChatRequest):
-    """Orchestrator-based chat (multi-agent delegation)."""
-    async def stream():
-        async for chunk in orchestrator.run_stream(request.message, request.portfolio, request.market_regime):
-            yield chunk
-    return StreamingResponse(stream(), media_type="text/plain")
+    """
+    Multifunctional endpoint. If target_agent is specified, routes directly to that agent.
+    Otherwise, uses the orchestrator.
+    """
+    sid = request.session_id or "default"
+    
+    if request.target_agent and request.target_agent != "auto" and request.target_agent in specialists_map:
+        # Route directly to specific sub-agent
+        agent_obj = specialists_map[request.target_agent]
+        async def stream_specialist():
+            # In purely direct usage we can reuse orchestrator's context management or create independent stream mechanism
+            # Since TeamAgent handles run_stream uniformly if provided a TeamContext.
+            # We'll use the orchestrator's context generator for simplicity of real-time state injecion,
+            # but then stream from the agent.
+            
+            ctx = orchestrator._get_context(sid)
+            # Add message
+            ctx.add_message("user", request.message, "User")
+            try:
+                async for chunk in agent_obj.run_stream(request.message, ctx):
+                    yield chunk
+            except Exception as e:
+                yield f"Specialist Stream Error: {e}"
+                
+        return StreamingResponse(stream_specialist(), media_type="text/plain")
+        
+    else:
+        # Auto/Orchestrator behavior
+        async def stream_orchestrator():
+            async for chunk in orchestrator.run_stream(
+                request.message,
+                request.portfolio,
+                request.market_regime,
+                session_id=sid,
+            ):
+                yield chunk
+        return StreamingResponse(stream_orchestrator(), media_type="text/plain")
+
+
+@router.delete("/chat/sessions/{session_id}")
+async def reset_session(session_id: str):
+    """Reset a chat session context."""
+    orchestrator.reset_session(session_id)
+    return {"status": "ok", "session_id": session_id}
 
 
 @router.post("/chat/mistral")

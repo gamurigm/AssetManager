@@ -1,8 +1,13 @@
 """
 Yahoo Finance Provider — Implements IMarketDataProvider.
 Uses yfinance library. Most stable free source.
+
+PERFORMANCE: All yfinance calls run via asyncio.to_thread()
+to avoid blocking the async event loop.
 """
 
+import asyncio
+import time
 import yfinance as yf
 from typing import Optional, List
 from ...domain.interfaces.market_provider import IMarketDataProvider
@@ -10,6 +15,9 @@ from ...domain.entities.market import Quote, Candle
 
 
 class YahooProvider(IMarketDataProvider):
+
+    def __init__(self):
+        self._search_cache: dict[str, tuple[float, list]] = {}
 
     @property
     def name(self) -> str:
@@ -25,24 +33,42 @@ class YahooProvider(IMarketDataProvider):
             if any(c in symbol for c in fiat):
                 return symbol.replace("/", "") + "=X"
             return symbol.replace("/", "-")
-        # Do not replace '=' here, as Yahoo uses it for futures (e.g., GC=F)
         return symbol
+
+    # ─── Blocking helpers (run in background thread) ──────────────────
+
+    def _sync_get_quote(self, yf_sym: str):
+        """Synchronous quote fetch — called via asyncio.to_thread."""
+        ticker = yf.Ticker(yf_sym)
+        return ticker.history(period="5d")
+
+    def _sync_get_historical(self, yf_sym: str, start_date: Optional[str] = None):
+        """Synchronous historical fetch — called via asyncio.to_thread."""
+        ticker = yf.Ticker(yf_sym)
+        if start_date:
+            return ticker.history(start=start_date, interval="1d")
+        else:
+            try:
+                return ticker.history(period="max", interval="1d")
+            except Exception:
+                try:
+                    return ticker.history(period="5y", interval="1d")
+                except Exception:
+                    return ticker.history(period="1y", interval="1d")
+
+    # ─── Async interface (non-blocking) ───────────────────────────────
 
     async def get_quote(self, symbol: str) -> Optional[Quote]:
         try:
             yf_sym = self.normalize_symbol(symbol)
-            ticker = yf.Ticker(yf_sym)
-            
-            # Fetch 5 days to ensure we have previous close
-            hist = ticker.history(period="5d")
+            hist = await asyncio.to_thread(self._sync_get_quote, yf_sym)
 
-            if hist.empty:
+            if hist is None or hist.empty:
                 return None
-            
+
             latest = hist.iloc[-1]
             price = float(latest["Close"])
-            
-            # Calculate change without .info
+
             if len(hist) > 1:
                 prev_close = float(hist.iloc[-2]["Close"])
                 change = price - prev_close
@@ -62,28 +88,17 @@ class YahooProvider(IMarketDataProvider):
         except Exception as e:
             print(f"[YahooProvider] Error for {symbol}: {e}")
             return None
-        except Exception as e:
-            print(f"[YahooProvider] Error for {symbol}: {e}")
-            return None
 
     async def get_historical(
         self, symbol: str, limit: int = 300, start_date: Optional[str] = None
     ) -> Optional[List[Candle]]:
         try:
             yf_sym = self.normalize_symbol(symbol)
-            ticker = yf.Ticker(yf_sym)
-            
-            if start_date:
-                # Incremental sync: fetch from last date to now
-                hist = ticker.history(start=start_date, interval="1d")
-            else:
-                # Bootstrap: fetch full history
-                hist = ticker.history(period="max", interval="1d")
+            hist = await asyncio.to_thread(self._sync_get_historical, yf_sym, start_date)
 
-            if hist.empty:
+            if hist is None or hist.empty:
                 return None
 
-            # Clean data: Replace NaNs with last valid value or 0
             hist = hist.ffill().fillna(0)
 
             candles = []
@@ -98,10 +113,50 @@ class YahooProvider(IMarketDataProvider):
                         volume=int(row["Volume"]),
                     ))
                 except Exception:
-                    continue # Skip malformed rows
-            
+                    continue
+
             print(f"[YahooProvider] {symbol} fetched {len(candles)} bars (Start: {candles[0].date if candles else 'N/A'})")
             return candles
         except Exception as e:
             print(f"[YahooProvider] Historical error for {symbol}: {e}")
             return None
+
+    # ─── Yahoo-specific: Search (already async via httpx) ─────────────
+
+    async def search_ticker(self, query: str, limit: int = 10) -> list:
+        """Global search via Yahoo Finance API with in-memory TTL caching."""
+        import httpx
+
+        cache_key = f"{query.lower()}_{limit}"
+        if cache_key in self._search_cache:
+            expiry, cached_results = self._search_cache[cache_key]
+            if time.time() < expiry:
+                return cached_results
+            else:
+                del self._search_cache[cache_key]
+
+        url = "https://query2.finance.yahoo.com/v1/finance/search"
+        params = {"q": query, "quotesCount": limit, "newsCount": 0}
+        headers = {"User-Agent": "Mozilla/5.0"}
+
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                res = await client.get(url, params=params, headers=headers)
+                if res.status_code == 200:
+                    data = res.json()
+                    results = []
+                    for q in data.get("quotes", []):
+                        if "symbol" in q:
+                            results.append({
+                                "symbol": q["symbol"],
+                                "name": q.get("shortname", q.get("longname", q["symbol"])),
+                                "type": q.get("quoteType", "EQUITY"),
+                                "exchange": q.get("exchange", "Unknown"),
+                            })
+
+                    self._search_cache[cache_key] = (time.time() + 3600, results)
+                    return results
+                return []
+        except Exception as e:
+            print(f"[YahooProvider] Search error for '{query}': {e}")
+            return []

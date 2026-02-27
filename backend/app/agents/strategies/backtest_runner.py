@@ -25,7 +25,9 @@ from .engine import (
     IStrategyEngine, IKPICalculator,
     StrategyConfig, TradeSignal, TradeRecord, KPIResult, CircuitBreaker,
     ORBFVGEngine, ORBKPICalculator,
+    FoldResult, CrossValidationResult,
 )
+from .engine.purged_kfold import PurgedKFoldSplitter
 from ...services.intraday_repository import IIntradayRepository, CandleRow, intraday_repository
 
 
@@ -45,6 +47,10 @@ class BacktestConfig:
     pip_value: float = 1.0  # 1.0 per pip/unit (set per instrument)
     run_bootstrap: bool = False
     bootstrap_iterations: int = 10000
+    # --- Cross-Validation (PurgedKFold) ---
+    run_cv: bool = False         # set True to run PurgedKFold CV instead of a single backtest
+    cv_n_splits: int = 5         # K folds
+    cv_embargo_days: int = 5     # calendar days to exclude around each test window
 
     def strategy_config(self) -> StrategyConfig:
         return StrategyConfig.from_dict(self.strategy_params) if self.strategy_params else StrategyConfig.default()
@@ -148,13 +154,15 @@ class BacktestRunner:
             # --- Bootstrap Resampling (Optional) ---
             bootstrap_stats = None
             if config.run_bootstrap and len(trades) > 0:
-                from .engine.bootstrap_analyzer import bootstrap_analyzer
-                # return_samples=True only when we'll generate the HTML report
-                # (sample arrays are needed for chart distributions).
-                # Skipping this avoids serializing N doubles to Python lists,
-                # which previously made 1k and 10k iterations feel identical.
-                _need_samples = True  # always True if report will be generated
-                bootstrap_stats = bootstrap_analyzer.run_bootstrap(
+                from .engine.stationary_bootstrap import StationaryBootstrap, recommend_block_length
+                # Stationary Bootstrap (Politis & Romano, 1994):
+                # Resample BLOCKS of consecutive trades (not individual trades)
+                # to preserve the temporal autocorrelation structure.
+                # Block length ~ N^(1/3) is the optimal rule of thumb.
+                block_len = recommend_block_length(len(trades))
+                sb = StationaryBootstrap(block_length=block_len)
+                _need_samples = True  # needed for HTML report charts
+                bootstrap_stats = sb.run(
                     trades,
                     config.account_size,
                     config.bootstrap_iterations,
@@ -206,6 +214,138 @@ class BacktestRunner:
                 bootstrap_stats=bootstrap_stats,
                 report_path=report_path
             )
+
+    # ================================================================== #
+    #  PurgedKFold Cross-Validation                                       #
+    # ================================================================== #
+
+    async def run_cv(self, config: BacktestConfig) -> CrossValidationResult:
+        """
+        Execute K-fold out-of-sample evaluation using PurgedKFold.
+
+        Each fold scores the strategy on a held-out time window that was
+        *never seen* during parameter selection, with a configurable
+        embargo gap to prevent autocorrelation leakage.
+
+        Returns
+        -------
+        CrossValidationResult
+            Per-fold KPIs + aggregated mean/std statistics.
+        """
+        import statistics as stats_lib
+
+        with logfire.span("BacktestRunner.run_cv", symbol=config.symbol,
+                          n_splits=config.cv_n_splits,
+                          embargo_days=config.cv_embargo_days):
+
+            strategy_cfg = config.strategy_config()
+
+            # 1. Fetch ALL candles once
+            m1_candles, m5_candles = await self._fetch_candles(config)
+            if not m1_candles:
+                logfire.warning("run_cv: no M1 candles", symbol=config.symbol)
+                return CrossValidationResult(
+                    n_splits=config.cv_n_splits,
+                    embargo_days=config.cv_embargo_days,
+                    folds=[],
+                    mean_win_rate=0.0, std_win_rate=0.0,
+                    mean_profit_factor=0.0, std_profit_factor=0.0,
+                    mean_sharpe=0.0, std_sharpe=0.0,
+                    mean_expectancy_r=0.0, std_expectancy_r=0.0,
+                )
+
+            # 2. Split into sessions (chronologically sorted)
+            all_sessions = self._split_into_sessions(m1_candles, m5_candles)
+
+            if len(all_sessions) < config.cv_n_splits:
+                raise ValueError(
+                    f"Only {len(all_sessions)} sessions available but "
+                    f"cv_n_splits={config.cv_n_splits}. "
+                    "Extend the date range or reduce cv_n_splits."
+                )
+
+            # 3. Build splitter and iterate
+            splitter = PurgedKFoldSplitter(
+                n_splits=config.cv_n_splits,
+                embargo_days=config.cv_embargo_days,
+            )
+
+            fold_results: List[FoldResult] = []
+
+            for fold_idx, (train_sessions, test_sessions) in enumerate(
+                splitter.split(all_sessions)
+            ):
+                if not test_sessions:
+                    logfire.warning(f"run_cv: fold {fold_idx} has no test sessions — skipping")
+                    continue
+
+                test_start = str(test_sessions[0]["date"])
+                test_end   = str(test_sessions[-1]["date"])
+
+                logfire.info(
+                    f"[CV] Fold {fold_idx}/{config.cv_n_splits - 1}",
+                    test_start=test_start, test_end=test_end,
+                    train_sessions=len(train_sessions), test_sessions=len(test_sessions),
+                )
+
+                # Score the strategy on the TEST fold only (out-of-sample)
+                trades, trading_days, _ = self._run_session_loop(
+                    test_sessions, strategy_cfg, config
+                )
+
+                kpis = self._kpi_calc.compute(trades, config.account_size, trading_days)
+
+                fold_results.append(FoldResult(
+                    fold_index=fold_idx,
+                    train_days=len(train_sessions),
+                    test_days=len(test_sessions),
+                    test_start=test_start,
+                    test_end=test_end,
+                    kpis=kpis,
+                    trades=trades,
+                ))
+
+            # 4. Aggregate KPI statistics across folds
+            if not fold_results:
+                return CrossValidationResult(
+                    n_splits=config.cv_n_splits,
+                    embargo_days=config.cv_embargo_days,
+                    folds=[],
+                    mean_win_rate=0.0, std_win_rate=0.0,
+                    mean_profit_factor=0.0, std_profit_factor=0.0,
+                    mean_sharpe=0.0, std_sharpe=0.0,
+                    mean_expectancy_r=0.0, std_expectancy_r=0.0,
+                )
+
+            def _safe_std(values):
+                return stats_lib.stdev(values) if len(values) > 1 else 0.0
+
+            win_rates       = [f.kpis.win_rate for f in fold_results]
+            profit_factors  = [f.kpis.profit_factor for f in fold_results]
+            sharpes         = [f.kpis.sharpe_ratio for f in fold_results]
+            expectancies    = [f.kpis.expectancy_r for f in fold_results]
+
+            cv_result = CrossValidationResult(
+                n_splits=config.cv_n_splits,
+                embargo_days=config.cv_embargo_days,
+                folds=fold_results,
+                mean_win_rate=stats_lib.mean(win_rates),
+                std_win_rate=_safe_std(win_rates),
+                mean_profit_factor=stats_lib.mean(profit_factors),
+                std_profit_factor=_safe_std(profit_factors),
+                mean_sharpe=stats_lib.mean(sharpes),
+                std_sharpe=_safe_std(sharpes),
+                mean_expectancy_r=stats_lib.mean(expectancies),
+                std_expectancy_r=_safe_std(expectancies),
+            )
+
+            logfire.info(
+                "PurgedKFold CV completed",
+                folds=len(fold_results),
+                mean_win_rate=cv_result.mean_win_rate,
+                mean_profit_factor=cv_result.mean_profit_factor,
+            )
+            return cv_result
 
     # ================================================================== #
     #  Template Method — session loop                                     #
@@ -424,48 +564,43 @@ class BacktestRunner:
         m5_candles: List[CandleRow],
     ) -> List[Dict]:
         """
-        Group M1/M5 candles into daily sessions: 09:30–11:00 NY.
-        Returns list of {date, m5: [CandleRow], m1: [CandleRow]}.
+        Group M1/M5 candles into daily sessions dynamically.
+        Uses the first M5 candle of the day as the start of the session (ORB).
+        Includes all subsequent M1 candles for that day to allow any strategy to run.
         """
-        import pytz
-        utc_zone = pytz.utc
-        ny_zone = pytz.timezone("America/New_York")
         sessions: Dict[date, Dict] = {}
 
-        for c in m5_candles:
+        # Ensure sorted chronologically
+        m5_sorted = sorted(m5_candles, key=lambda x: x["timestamp"])
+        m1_sorted = sorted(m1_candles, key=lambda x: x["timestamp"])
+
+        # 1. Detect start of day
+        for c in m5_sorted:
             try:
-                # Timestamps from our providers (Yahoo/Polygon) are generally localized 
-                # to the market timezone (NY) in naive format
                 ts_naive = datetime.fromisoformat(c["timestamp"].replace("Z", ""))
                 d  = ts_naive.date()
-                if ts_naive.hour == _SESSION_START_H and ts_naive.minute == _SESSION_START_M:
-                    sessions.setdefault(d, {"date": d, "m5": [], "m1": []})["m5"].append(c)
+                if d not in sessions:
+                    sessions[d] = {"date": d, "m5": [c], "m1": [], "session_start": ts_naive}
+                else:
+                    sessions[d]["m5"].append(c)
             except (ValueError, KeyError):
                 continue
 
-        for c in m1_candles:
+        # 2. Append all subsequent M1 candles
+        for c in m1_sorted:
             try:
                 ts_naive = datetime.fromisoformat(c["timestamp"].replace("Z", ""))
                 d  = ts_naive.date()
                 
-                # We need to capture candles in the window 09:35 to 11:00 for M1
-                # Wait: _SESSION_START_H is 9, _SESSION_START_M is 30. M1 starts at 9:35
-                in_window = False
-                if ts_naive.hour == _SESSION_START_H and ts_naive.minute >= _SESSION_START_M + 5:
-                    in_window = True
-                elif ts_naive.hour > _SESSION_START_H and ts_naive.hour < _SESSION_END_H:
-                    in_window = True
-                elif ts_naive.hour == _SESSION_END_H and ts_naive.minute == _SESSION_END_M:
-                    in_window = True
-
-                if in_window:
-                    if d not in sessions:
-                        sessions[d] = {"date": d, "m5": [], "m1": []}
-                    sessions[d]["m1"].append(c)
+                if d in sessions:
+                    session_start = sessions[d]["session_start"]
+                    # Add M1 candles that happen after the ORB candle start time
+                    if ts_naive > session_start:
+                        sessions[d]["m1"].append(c)
             except (ValueError, KeyError):
                 continue
 
-        return sorted(sessions.values(), key=lambda s: s["date"])
+        return sorted([s for s in sessions.values() if s["m1"]], key=lambda s: s["date"])
 
     @staticmethod
     def _find_candle_index(candles: List[CandleRow], timestamp: str) -> int:

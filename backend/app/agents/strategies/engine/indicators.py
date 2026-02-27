@@ -63,10 +63,20 @@ def candles_to_numpy(candles: List[CandleRow]) -> np.ndarray:
 # --------------------------------------------------------------------------- #
 
 def compute_ATR(candles: Union[List[CandleRow], np.ndarray], period: int = 14) -> float:
-    """Average True Range (Wilder's Smoothing) via Rust"""
+    """Average True Range (Wilder's Smoothing) via Rust or CUDA"""
     if isinstance(candles, list): candles = candles_to_numpy(candles)
-    
     if len(candles) < period + 1: return 0.0
+
+    # Switch to CUDA for large datasets
+    if len(candles) > 500:
+        from app.core.math_cuda import torch_atr
+        import torch
+        from app.core.gpu import device
+        h = torch.tensor(candles[:, 3], device=device, dtype=torch.float32)
+        l = torch.tensor(candles[:, 4], device=device, dtype=torch.float32)
+        c = torch.tensor(candles[:, 2], device=device, dtype=torch.float32)
+        res = torch_atr(h, l, c, period)
+        return float(res[-1])
 
     # jesse_rust.atr expects the full candles array
     res = atr_rust(candles, period)

@@ -2,123 +2,156 @@ from .state import TeamContext
 from .specialists import specialists_map
 from .base import TeamAgent
 from pydantic_ai import RunContext
-from typing import Optional
+from typing import Optional, List, Dict
 import json
-
-# --- Orchestrator Definition ---
-# Uses Nemotron or similar high-reasoning model for planning
-
-ORCHESTRATOR_MODEL = "nvidia/llama-3.1-nemotron-ultra-253b-v1"
-
 import asyncio
-from typing import List, Dict, Optional
+import uuid
+
 from ...services.risk_service import risk_service
 
-# ... existing imports ...
+# --- Orchestrator Definition ---
+ORCHESTRATOR_MODEL = "nvidia/llama-3.1-nemotron-ultra-253b-v1"
+
+
+# ── Tools available to the Orchestrator LLM ─────────────────────────
 
 async def delegate_task(ctx: RunContext[TeamContext], specialist_name: str, instruction: str) -> str:
-    """Delegate a single subtask (Sequential)."""
-    # ... existing implementation ...
+    """Delegate a single subtask to one specialist (sequential)."""
     agent = specialists_map.get(specialist_name)
     if not agent:
-        return f"Error: Specialist '{specialist_name}' not found."
-    
-    # Log delegation in context
+        return f"Error: Specialist '{specialist_name}' not found. Available: {list(specialists_map.keys())}"
+
     from app.core.logging import logger
-    logger.info(f"Delegating task to {specialist_name}: {instruction[:100]}...")
+    logger.info(f"[SEQ] → {specialist_name}: {instruction[:80]}…")
     ctx.deps.add_message("system", f"Delegating to {specialist_name}: {instruction}", "Head of Strategy")
-    
+
     result = await agent.run(instruction, ctx.deps)
     return f"Response from {specialist_name}: {result}"
 
 
 async def delegate_parallel_tasks(ctx: RunContext[TeamContext], tasks: List[Dict[str, str]]) -> str:
     """
-    Delegate multiple subtasks to run in PARALLEL.
-    Input format: [{"specialist": "Fundamental Analyst", "instruction": "Check news..."}, ...]
+    Delegate multiple subtasks in PARALLEL.
+    Each element: {"specialist": "Risk Manager", "instruction": "…"}
+    All run concurrently via asyncio.gather.
     """
     from app.core.logging import logger
-    
-    async def run_single(task):
-        spec_name = task.get("specialist")
-        instr = task.get("instruction")
-        agent = specialists_map.get(spec_name)
+
+    async def _run(task: dict) -> str:
+        name = task.get("specialist", "")
+        instr = task.get("instruction", "")
+        agent = specialists_map.get(name)
         if not agent:
-            return f"{spec_name}: Specialist not found."
-        
-        logger.info(f"PARALLEL Delegation to {spec_name}: {instr[:50]}...")
-        ctx.deps.add_message("system", f"Parallel delegation to {spec_name}: {instr}", "Head of Strategy")
-        
+            return f"⚠ {name}: not found."
+
+        logger.info(f"[PAR] → {name}: {instr[:60]}…")
+        ctx.deps.add_message("system", f"Parallel → {name}: {instr}", "Head of Strategy")
+
         try:
             res = await agent.run(instr, ctx.deps)
-            return f"--- Response from {spec_name} ---\n{res}"
+            return f"──── {name} ────\n{res}"
         except Exception as e:
-            return f"Error from {spec_name}: {str(e)}"
+            return f"⚠ {name} error: {e}"
 
-    results = await asyncio.gather(*(run_single(t) for t in tasks))
+    results = await asyncio.gather(*(_run(t) for t in tasks))
     return "\n\n".join(results)
 
+
+# ── Orchestrator class ──────────────────────────────────────────────
+
 class HeadOfStrategy(TeamAgent):
+    """
+    Multi-conversation orchestrator.
+    Each conversation is identified by a `session_id` and gets its own
+    TeamContext so parallel chats don't leak into each other.
+    """
+
     def __init__(self):
         super().__init__(
             "Head of Strategy",
-            "Orchestrator lead responsible for planning and delegating tasks",
+            "Orchestrator lead responsible for planning and delegating tasks. "
+            "IMPORTANT: When the user asks for a comprehensive analysis, a full report, "
+            "or multi-ticker research, ALWAYS use 'delegate_parallel_tasks' to trigger "
+            "specialists (Fundamental Analyst, Quantitative Analyst, Risk Manager, "
+            "Macro Analyst, Strategy Analyst) simultaneously to maximise efficiency.",
             ORCHESTRATOR_MODEL,
-            tools=[delegate_task, delegate_parallel_tasks]
+            tools=[delegate_task, delegate_parallel_tasks],
         )
-        self.context = TeamContext()
+        # session_id → TeamContext (multi-conversation support)
+        self._sessions: Dict[str, TeamContext] = {}
 
-    async def run(self, user_query: str) -> str:
-        # Add user message to shared context
-        self.context.add_message("user", user_query, "User")
-        
+    def _get_context(self, session_id: str) -> TeamContext:
+        if session_id not in self._sessions:
+            self._sessions[session_id] = TeamContext()
+        return self._sessions[session_id]
+
+    def reset_session(self, session_id: str):
+        self._sessions.pop(session_id, None)
+
+    # ── Non-streaming run ───────────────────────────────────────────
+    async def run(self, user_query: str, session_id: str = "default") -> str:
+        ctx = self._get_context(session_id)
+        ctx.add_message("user", user_query, "User")
         try:
-            # Run the agent (TeamAgent.run handles internal context logging)
-            result = await super().run(user_query, self.context)
+            result = await super().run(user_query, ctx)
             return result
         except Exception as e:
-            error_msg = f"Orchestrator Error: {str(e)}"
-            self.context.add_message("system", error_msg, "Head of Strategy")
-            return error_msg
+            err = f"Orchestrator Error: {e}"
+            ctx.add_message("system", err, "Head of Strategy")
+            return err
 
-    async def run_stream(self, user_query: str, portfolio: Optional[dict] = None, market_regime: Optional[dict] = None):
-        # Update shared context with real-time portfolio data if available
-        system_context_parts = []
+    # ── Streaming run ───────────────────────────────────────────────
+    async def run_stream(
+        self,
+        user_query: str,
+        portfolio: Optional[dict] = None,
+        market_regime: Optional[dict] = None,
+        session_id: str = "default",
+    ):
+        ctx = self._get_context(session_id)
+        system_context_parts: list[str] = []
 
+        # ── inject live portfolio into shared context ───────────────
         if portfolio:
-            self.context.update_scratchpad("current_portfolio", portfolio)
-            
-            # Format portfolio as a readable Markdown table for the LLM
-            holdings = portfolio.get("holdings", [])
+            ctx.update_scratchpad("current_portfolio", portfolio)
+
+            holdings  = portfolio.get("holdings", [])
             total_val = portfolio.get("total_value", 0)
-            pnl = portfolio.get("total_pnl", 0)
-            pct = portfolio.get("pnl_percent", 0)
-            
-            table_rows = []
+            pnl       = portfolio.get("total_pnl", 0)
+            pct       = portfolio.get("pnl_percent", 0)
+
+            rows = []
             for h in holdings:
                 sym = h.get("symbol", "N/A")
                 shares = h.get("shares", 0)
-                price = h.get("price", 0)
-                val = shares * price
-                chg = h.get("changePercent", 0)
-                table_rows.append(f"| {sym} | {shares} | ${price:,.2f} | ${val:,.2f} | {chg:+.2f}% |")
+                price  = h.get("price", 0)
+                val    = shares * price
+                chg    = h.get("changePercent", 0)
+                rows.append(f"| {sym} | {shares} | ${price:,.2f} | ${val:,.2f} | {chg:+.2f}% |")
 
-            table_str = "\n".join(table_rows)
-            
-            # 🛡️ RISK ANALYSIS INTEGRATION (Pfaff Logic)
+            table_str = "\n".join(rows)
+
+            # risk metrics
             risk_report = risk_service.get_portfolio_risk_report(holdings)
-            risk_str = ""
             if "error" not in risk_report:
                 risk_str = f"""
-## 🛡️ PORTFOLIO RISK (PFAFF METHODOLOGY)
-- **Modified VaR (95%):** {risk_report.get('mvar_95_percent')}% (${risk_report.get('mvar_95_cash', 0):,.2f})
-- **Modified ES (mES):** {risk_report.get('mes_95_percent')}%
-- **Gaussian VaR (Ref):** {risk_report['var_95_percent']}%
-- **Portfolio Skewness:** {risk_report.get('skewness', 0)}
-- **Excess Kurtosis:** {risk_report.get('excess_kurtosis', 0)}
-- **Annualized Sharpe:** {risk_report['sharpe_ratio']}
-- **Annualized Vol:** {risk_report['annualized_volatility_percent']}%
-- **Asset Risks:** {json.dumps(risk_report['asset_risks'])}
+## 🛡️ INSTITUTIONAL RISK ANALYSIS (MMAM ALPHA CORE)
+- **Modified VaR (95%):** {risk_report.get('mvar_95_percent')}%
+- **Sharpe Ratio:** {risk_report.get('sharpe_ratio')}
+- **Expected Value E[x]:** ${risk_report.get('expected_value_trade', 0):,.2f}
+- **Risk Adjusted Return:** {risk_report.get('risk_adjusted_return', 'N/A')}
+- **Annualized Volatility:** {risk_report.get('annualized_volatility')}%
+- **Skewness:** {risk_report.get('skewness', 0)}
+- **Kurtosis:** {risk_report.get('excess_kurtosis', 0)}
+
+### 📉 MOMENTUM (Gradient Descent Linear Regression)
+{json.dumps(risk_report.get('momentum', {}), indent=2)}
+
+### 🛡️ HEDGING STRATEGY
+- **Action:** {risk_report.get('hedging_strategy', {}).get('action')}
+- **Strategy:** {risk_report.get('hedging_strategy', {}).get('recommended_strategy')}
+- **Target:** {risk_report.get('hedging_strategy', {}).get('primary_hedge_target')}
+- **Ratio:** {risk_report.get('hedging_strategy', {}).get('hedge_ratio')}
 """
             else:
                 risk_str = f"\n[Risk Analysis Unavailable: {risk_report.get('error')}]\n"
@@ -135,34 +168,32 @@ class HeadOfStrategy(TeamAgent):
 {risk_str}
 """)
 
+        # ── inject market regime ────────────────────────────────────
         if market_regime:
-             self.context.update_scratchpad("market_regime", market_regime)
-             r = market_regime
-             symbol = r.get("symbol", "Unknown")
-             analysis = r.get("regime_analysis", {})
-             curr_regime = analysis.get("current_regime", "Unknown")
-             
-             system_context_parts.append(f"""
+            ctx.update_scratchpad("market_regime", market_regime)
+            r = market_regime
+            symbol   = r.get("symbol", "Unknown")
+            analysis = r.get("regime_analysis", {})
+            curr     = analysis.get("current_regime", "Unknown")
+            system_context_parts.append(f"""
 ## 🧠 MARKET REGIME ANALYSIS ({symbol})
-**Current State:** {curr_regime}
+**Current State:** {curr}
 **Details:** {json.dumps(analysis, indent=2)}
 """)
 
         if system_context_parts:
-             full_context = "\n".join(system_context_parts)
-             # Share with all agents via scratchpad
-             self.context.update_scratchpad("formatted_realtime_context", full_context)
-             # Still add as a direct message for the orchestrator's immediate turn
-             self.context.add_message("system", full_context, "System Monitor")
+            full = "\n".join(system_context_parts)
+            ctx.update_scratchpad("formatted_realtime_context", full)
+            ctx.add_message("system", full, "System Monitor")
 
-        # Add user message to shared context
-        self.context.add_message("user", user_query, "User")
-        
+        ctx.add_message("user", user_query, "User")
+
         try:
-            async for chunk in super().run_stream(user_query, self.context):
+            async for chunk in super().run_stream(user_query, ctx):
                 yield chunk
         except Exception as e:
-            yield f"Orchestrator Stream Error: {str(e)}"
+            yield f"Orchestrator Stream Error: {e}"
 
-# Singleton instance
+
+# Singleton
 orchestrator = HeadOfStrategy()

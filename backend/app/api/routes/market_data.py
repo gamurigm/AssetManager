@@ -3,12 +3,31 @@ Market Data API Routes — Clean Architecture
 Routes depend on Use Cases, NOT on concrete services.
 """
 
+import asyncio
 import datetime
-from fastapi import APIRouter, HTTPException, Query
-from ...core.container import get_quote, get_historical, fmp_provider, duckdb_repo
+from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
+from ...core.container import get_quote, get_historical, fmp_provider, yahoo_provider, duckdb_repo
 from ...core.rate_limiter import get_all_statuses
 
 router = APIRouter()
+
+# Track symbols currently being prefetched to avoid duplicate work
+_prefetching: set[str] = set()
+
+
+async def _background_prefetch(symbol: str):
+    """Background task: fetch + persist historical data into DuckDB."""
+    if symbol in _prefetching:
+        return  # Already in progress
+    _prefetching.add(symbol)
+    try:
+        print(f"[Prefetch] ⚡ Starting background sync for {symbol}...")
+        await get_historical.execute(symbol, limit=10000)
+        print(f"[Prefetch] ✅ {symbol} persisted to DuckDB.")
+    except Exception as e:
+        print(f"[Prefetch] ❌ {symbol} failed: {e}")
+    finally:
+        _prefetching.discard(symbol)
 
 
 @router.get("/system/status")
@@ -17,6 +36,7 @@ async def system_status():
     return {
         "rate_limits": get_all_statuses(),
         "database": duckdb_repo.get_stats(),
+        "prefetching": list(_prefetching),
     }
 
 
@@ -47,10 +67,75 @@ async def get_profile(symbol: str):
     return data
 
 
+@router.get("/volume-profile/{symbol:path}")
+async def get_volume_profile(symbol: str, days: int = Query(7, description="Number of days to analyze")):
+    """Get Volume Profile (POC, VAH, VAL, HVNs) for a symbol based on recent intraday data."""
+    from ...services.intraday_repository import intraday_repository
+    from ...agents.strategies.engine.volume_profile import VolumeProfileCalculator
+    from datetime import date, timedelta
+    
+    end_date = date.today()
+    start_date = end_date - timedelta(days=days)
+    
+    try:
+        # Fetch M5 candles to build the profile
+        candles = await intraday_repository.fetch_intraday(symbol, "5m", start_date, end_date)
+        if not candles:
+            raise HTTPException(status_code=404, detail="No intraday data found for Volume Profile")
+            
+        calc = VolumeProfileCalculator(num_bins=50, value_area_pct=0.70, hvn_threshold_pct=0.5)
+        res = calc.compute(candles)
+        
+        return {
+            "symbol": symbol,
+            "period_days": days,
+            "poc": res.poc,
+            "vah": res.vah,
+            "val": res.val,
+            "hvn_edges": [{"low": edge[0], "high": edge[1]} for edge in res.hvn_edges],
+            "profile": [{"low": n.price_low, "high": n.price_high, "vol": n.volume} for n in res.profile]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Volume Profile error: {str(e)}")
+
+
 @router.get("/search")
-async def search_ticker(query: str, limit: int = 10):
-    """Search for symbols (FMP-specific)."""
-    return await fmp_provider.search_ticker(query, limit)
+async def search_ticker(query: str, limit: int = 15, prefetch: bool = True):
+    """Search for symbols globally. Auto-prefetches historical data for all results."""
+    results = await yahoo_provider.search_ticker(query, limit)
+
+    # Fire-and-forget: prefetch historical data for all search results in parallel
+    if prefetch and results:
+        symbols_to_prefetch = [r["symbol"] for r in results if r["symbol"] not in _prefetching]
+        for s in symbols_to_prefetch:
+            asyncio.ensure_future(_background_prefetch(s))
+
+    return results
+
+
+@router.post("/prefetch/{symbol:path}")
+async def prefetch_symbol(symbol: str):
+    """Manually trigger background historical data download for a single symbol."""
+    if symbol in _prefetching:
+        return {"status": "already_in_progress", "symbol": symbol}
+
+    asyncio.ensure_future(_background_prefetch(symbol))
+    return {"status": "started", "symbol": symbol}
+
+
+@router.post("/prefetch-batch")
+async def prefetch_batch(symbols: list[str]):
+    """Trigger parallel historical data download for multiple symbols at once."""
+    started = []
+    skipped = []
+    for s in symbols:
+        if s in _prefetching:
+            skipped.append(s)
+        else:
+            asyncio.ensure_future(_background_prefetch(s))
+            started.append(s)
+
+    return {"started": started, "skipped": skipped, "total": len(started)}
 
 
 # --- TradingView UDF Endpoints ---

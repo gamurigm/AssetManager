@@ -19,7 +19,7 @@ export default function BacktestLab() {
         setLoading(true);
         setResult(null);
         try {
-            const reqUrl = 'http://localhost:8282/api/v1/simulation/run';
+            const reqUrl = 'http://127.0.0.1:8282/api/v1/simulation/run';
             const reqBody = {
                 symbol: symbol,
                 start_date: startDate,

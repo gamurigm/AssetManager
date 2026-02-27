@@ -15,7 +15,7 @@ export default function ManagerDashboard() {
 
     const fetchHistory = async () => {
         try {
-            const res = await fetch('http://localhost:8282/api/v1/portfolios/history');
+            const res = await fetch('http://127.0.0.1:8282/api/v1/portfolios/history');
             const data = await res.json();
             setHistory(data);
             if (data.length > 0) {

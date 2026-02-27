@@ -132,3 +132,4 @@ frontend/.env*
 /*.md
 !/README.md
 
+backend/data/*.duckdb

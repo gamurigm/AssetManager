@@ -1,8 +1,10 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 import json
 from pathlib import Path
-from typing import List, Dict, Any
+from ...core.container import duckdb_repo
+from ...services.risk_service import risk_service
+from ...services.standardizer import standardizer
 
 router = APIRouter()
 
@@ -31,26 +33,57 @@ async def get_apps():
 @router.get("/widgets/portfolio")
 async def widget_portfolio():
     """Data for the Portfolio Overview widget."""
-    return {
-        "metric": "Current Portfolio Value",
-        "value": "$1,245,670.00",
-        "change": "+2.4%",
-        "isPositive": True
-    }
+    holdings = duckdb_repo.get_portfolio()
+    # Basic math for total value (using entry prices as placeholder for live)
+    total_val = sum(h['shares'] * h['entryPrice'] for h in holdings) if holdings else 0
+    
+    return standardizer.to_openbb_metric(
+        "Current Portfolio Value",
+        f"${total_val:,.2f}",
+        change="+0.0%",  # Needs live price integration for real delta
+        is_positive=True
+    )
 
 @router.get("/widgets/sentiment")
 async def widget_sentiment():
     """Data for the Market Sentiment widget."""
-    return {
-        "markdown": "## Market Analysis\n\n**Current Stance:** Bullish/Neutral\n\n**Key Factors:**\n- Tech sector continues to show resilience.\n- Fed rate cut expectations are priced in.\n- NVIDIA performance is driving AI-related stocks.\n\n*Last updated by Fundamental Agent at 14:30*"
-    }
+    holdings = duckdb_repo.get_portfolio()
+    risk_report = risk_service.get_portfolio_risk_report(holdings)
+    
+    if "error" in risk_report:
+        body = "Sentiment analysis currently unavailable — insufficient market data."
+    else:
+        var = risk_report.get('mvar_95_percent', 0)
+        sharpe = risk_report.get('sharpe_ratio', 0)
+        status = "BULLISH" if sharpe > 1 else ("NEUTRAL" if sharpe > 0 else "CAUTIOUS")
+        
+        body = (
+            f"**Current Stance:** {status}\n\n"
+            f"**Risk Metrics:**\n"
+            f"- Modified VaR (95%): {var}%\n"
+            f"- Portfolio Sharpe: {sharpe}\n"
+            f"- Data Coverage: {risk_report.get('coverage_percent')}%"
+        )
+    
+    return standardizer.to_openbb_text("MMAM Neural Sentiment", body)
 
 @router.get("/widgets/trades")
 async def widget_trades():
     """Data for the Recent Trading Activity widget."""
-    return [
-        {"Symbol": "AAPL", "Type": "BUY", "Quantity": 100, "Price": "$178.50", "Status": "Success"},
-        {"Symbol": "NVDA", "Type": "BUY", "Quantity": 50, "Price": "$870.20", "Status": "Success"},
-        {"Symbol": "TSLA", "Type": "SELL", "Quantity": 20, "Price": "$245.10", "Status": "Success"},
-        {"Symbol": "MSFT", "Type": "BUY", "Quantity": 30, "Price": "$410.00", "Status": "Pending"}
-    ]
+    txs = duckdb_repo.get_transactions()
+    # Sort and slice to last 10
+    recent = txs[-10:] if txs else []
+    
+    # Capitalize keys for OpenBB table display
+    formatted = []
+    for t in recent:
+        formatted.append({
+            "Date": t.get("date"),
+            "Symbol": t.get("symbol"),
+            "Type": t.get("type"),
+            "Quantity": t.get("shares"),
+            "Price": f"${t.get('price', 0):,.2f}",
+            "PnL": f"${t.get('realized_pnl', 0):,.2f}"
+        })
+        
+    return standardizer.to_openbb_table(formatted)

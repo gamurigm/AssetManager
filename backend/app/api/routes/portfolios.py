@@ -2,8 +2,7 @@ from fastapi import APIRouter, Body
 from typing import List, Dict, Any
 from ...services.report_service import report_service
 
-from ...core.container import duckdb_repo
-from ...services.equity_service import equity_service
+from ...core.container import duckdb_repo, calculate_equity_curve_uc
 
 INITIAL_HOLDINGS = [
     { "symbol": "^N225", "name": "Nikkei 225 Index", "shares": 0.1, "entryPrice": 29600, "price": 0, "factor": 0.4166, "change": 0, "changePercent": 0, "source": "Live", "sector": "Indices", "type": "cfd", "purchaseDate": "2023-05-15" },
@@ -57,4 +56,4 @@ async def snapshot_equity(total_value: float = Body(..., embed=True)):
 @router.get("/history")
 async def get_equity_history():
     """Retrieve dynamic equity history (realized vs total) for charts."""
-    return equity_service.get_historical_equity_curve(days=730)
+    return calculate_equity_curve_uc.execute(days=730)

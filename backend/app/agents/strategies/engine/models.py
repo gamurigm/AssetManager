@@ -11,7 +11,7 @@ This ensures:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
 
 # --------------------------------------------------------------------------- #
@@ -210,4 +210,73 @@ class KPIResult:
             "total_r": round(self.total_r, 4),
             "final_equity": round(self.final_equity, 2),
             "cagr": round(self.cagr, 4),
+        }
+
+
+# --------------------------------------------------------------------------- #
+#  Cross-Validation Results                                                    #
+# --------------------------------------------------------------------------- #
+
+@dataclass(frozen=True)
+class FoldResult:
+    """
+    KPIs and metadata for a single PurgedKFold test fold.
+    Produced by BacktestRunner.run_cv().
+    """
+    fold_index: int         # 0-indexed
+    train_days: int         # sessions available for training this fold
+    test_days: int          # sessions evaluated (out-of-sample)
+    test_start: str         # YYYY-MM-DD of first test session
+    test_end: str           # YYYY-MM-DD of last test session
+    kpis: KPIResult         # KPIs computed on the test fold only
+    trades: List[TradeRecord]  # raw trades in this test fold
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "fold_index": self.fold_index,
+            "train_days": self.train_days,
+            "test_days": self.test_days,
+            "test_start": self.test_start,
+            "test_end": self.test_end,
+            "trades": len(self.trades),
+            **{f"kpi_{k}": v for k, v in self.kpis.as_dict().items()},
+        }
+
+
+@dataclass(frozen=True)
+class CrossValidationResult:
+    """
+    Aggregated result from PurgedKFold cross-validation.
+    Returned by BacktestRunner.run_cv().
+
+    The ``mean_*`` / ``std_*`` fields describe the distribution of KPIs
+    across folds — a wide std suggests the strategy is unstable over time.
+    """
+    n_splits: int
+    embargo_days: int
+    folds: List[FoldResult]
+
+    # Aggregated KPI statistics (mean ± std across folds)
+    mean_win_rate: float
+    std_win_rate: float
+    mean_profit_factor: float
+    std_profit_factor: float
+    mean_sharpe: float
+    std_sharpe: float
+    mean_expectancy_r: float
+    std_expectancy_r: float
+
+    def as_dict(self) -> Dict[str, Any]:
+        return {
+            "n_splits": self.n_splits,
+            "embargo_days": self.embargo_days,
+            "mean_win_rate": round(self.mean_win_rate, 4),
+            "std_win_rate": round(self.std_win_rate, 4),
+            "mean_profit_factor": round(self.mean_profit_factor, 4),
+            "std_profit_factor": round(self.std_profit_factor, 4),
+            "mean_sharpe": round(self.mean_sharpe, 4),
+            "std_sharpe": round(self.std_sharpe, 4),
+            "mean_expectancy_r": round(self.mean_expectancy_r, 4),
+            "std_expectancy_r": round(self.std_expectancy_r, 4),
+            "folds": [f.as_dict() for f in self.folds],
         }

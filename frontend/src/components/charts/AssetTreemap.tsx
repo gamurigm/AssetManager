@@ -84,11 +84,11 @@ const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
         const data = payload[0].payload;
         return (
-            <div className="bg-slate-900 border border-slate-700 p-2 rounded shadow-lg text-white text-xs">
-                <p className="font-bold">{data.symbol}</p>
-                <p>Valor: ${data.value.toLocaleString()}</p>
-                <p className={(data.change || 0) >= 0 ? 'text-green-400' : 'text-red-400'}>
-                    Cambio: {(data.change || 0).toFixed(2)}%
+            <div className="dark:bg-[#0f0f0f]/95 bg-white border dark:border-white/10 border-zinc-200 p-3 rounded-xl shadow-2xl backdrop-blur-md">
+                <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-1">{data.symbol}</p>
+                <p className="dark:text-white text-zinc-900 font-mono font-bold">Value: ${data.value.toLocaleString()}</p>
+                <p className={`text-[11px] font-black ${(data.change || 0) >= 0 ? 'text-green' : 'text-red'}`}>
+                    Delta: {(data.change || 0).toFixed(2)}%
                 </p>
             </div>
         );

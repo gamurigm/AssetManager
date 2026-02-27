@@ -1,0 +1,140 @@
+{
+  "table_of_contents": [
+    {
+      "title": "FINANCIAL ENGINEERING\nADVANCED BACKGROUND SERIES",
+      "heading_level": null,
+      "page_id": 0,
+      "polygon": [
+        [
+          162.09230769230768,
+          99.67321016166282
+        ],
+        [
+          401.4786324786325,
+          98.17436489607391
+        ],
+        [
+          401.4786324786325,
+          130.39953810623558
+        ],
+        [
+          162.09230769230768,
+          130.39953810623558
+        ]
+      ]
+    },
+    {
+      "title": "Financial Engineering Advanced Background Series",
+      "heading_level": null,
+      "page_id": 1,
+      "polygon": [
+        [
+          28.516239316239314,
+          86.8291015625
+        ],
+        [
+          294.9179487179487,
+          86.8291015625
+        ],
+        [
+          294.9179487179487,
+          99.5048828125
+        ],
+        [
+          28.516239316239314,
+          99.5048828125
+        ]
+      ]
+    },
+    {
+      "title": "Other Titles from FE Press",
+      "heading_level": null,
+      "page_id": 1,
+      "polygon": [
+        [
+          28.294921875,
+          303.5849609375
+        ],
+        [
+          171.0974358974359,
+          302.3173828125
+        ],
+        [
+          171.0974358974359,
+          312.5092378752887
+        ],
+        [
+          28.294921875,
+          313.7255859375
+        ]
+      ]
+    }
+  ],
+  "page_stats": [
+    {
+      "page_id": 0,
+      "text_extraction_method": "surya",
+      "block_counts": [
+        [
+          "Line",
+          7
+        ],
+        [
+          "Span",
+          3
+        ],
+        [
+          "Text",
+          2
+        ],
+        [
+          "SectionHeader",
+          1
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    },
+    {
+      "page_id": 1,
+      "text_extraction_method": "surya",
+      "block_counts": [
+        [
+          "Line",
+          28
+        ],
+        [
+          "Span",
+          16
+        ],
+        [
+          "ListItem",
+          8
+        ],
+        [
+          "SectionHeader",
+          2
+        ],
+        [
+          "ListGroup",
+          2
+        ]
+      ],
+      "block_metadata": {
+        "llm_request_count": 0,
+        "llm_error_count": 0,
+        "llm_tokens_used": 0,
+        "previous_text": "",
+        "previous_type": "",
+        "previous_order": 0
+      }
+    }
+  ],
+  "debug_data_path": "debug_data\\A Linear Algebra Primer for Financial Engineering"
+}

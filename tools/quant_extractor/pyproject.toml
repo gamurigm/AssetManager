@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quant-extractor"
+version = "0.1.0"
+description = "Extracts PDFs into Markdown for Quant Finance AI Agents"
+requires-python = ">=3.9"
+dependencies = [
+    "pymupdf4llm>=0.0.17",
+    "pymupdf>=1.24.4",
+    "click"
+]
+
+[project.scripts]
+quant-extractor = "quant_extractor.cli:main"

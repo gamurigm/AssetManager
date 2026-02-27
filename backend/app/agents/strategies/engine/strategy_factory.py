@@ -18,6 +18,7 @@ from typing import Dict, Type, Optional
 from .interfaces import IStrategyEngine
 from .models import StrategyConfig
 from .orb_fvg_engine import ORBFVGEngine
+from .ict_vp_engine import IctVpEngine
 
 
 class StrategyFactory:
@@ -28,6 +29,7 @@ class StrategyFactory:
 
     _registry: Dict[str, Type] = {
         "ORB_FVG_ENGULFING": ORBFVGEngine,
+        "ICT_VP": IctVpEngine,
     }
 
     @classmethod

@@ -5,7 +5,7 @@ External code should import from here, not from submodules directly.
 This keeps internal structure free to change without breaking imports.
 """
 
-from .models import StrategyConfig, ORBLevel, FVG, TradeSignal, TradeRecord, KPIResult, SessionState
+from .models import StrategyConfig, ORBLevel, FVG, TradeSignal, TradeRecord, KPIResult, SessionState, FoldResult, CrossValidationResult
 from .interfaces import IStrategyEngine, IKPICalculator
 from .orb_fvg_engine import ORBFVGEngine
 from .kpi_calculator import ORBKPICalculator
@@ -15,6 +15,7 @@ from .circuit_breaker import CircuitBreaker
 __all__ = [
     # Models
     "StrategyConfig", "ORBLevel", "FVG", "TradeSignal", "TradeRecord", "KPIResult", "SessionState",
+    "FoldResult", "CrossValidationResult",
     # Interfaces
     "IStrategyEngine", "IKPICalculator",
     # Implementations

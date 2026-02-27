@@ -25,9 +25,9 @@ const SECTOR_COLORS: Record<string, string> = {
 const CustomTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
         return (
-            <div className="bg-[#0f0f0f]/95 border border-white/10 p-3 rounded-xl shadow-2xl backdrop-blur-md">
+            <div className="dark:bg-[#0f0f0f]/95 bg-white border dark:border-white/10 border-zinc-200 p-3 rounded-xl shadow-2xl backdrop-blur-md">
                 <p className="text-[10px] font-bold text-muted uppercase tracking-widest mb-1">{payload[0].name}</p>
-                <p className="text-white font-mono font-bold">${payload[0].value.toLocaleString()}</p>
+                <p className="dark:text-white text-zinc-900 font-mono font-bold">${payload[0].value.toLocaleString()}</p>
             </div>
         );
     }

@@ -9,18 +9,29 @@ import logfire
 import socketio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 
-# Configure Logfire
+# Configure Logfire — try cloud, fall back silently if unreachable
 token = os.getenv("LOGFIRE_TOKEN")
+_logfire_online = False
 if token:
-    logfire.configure(
-        token=token,
-        send_to_logfire='always' # Be explicit to ensure it sends
-    )
-    logfire.info("Logfire initialized successfully for MMAM")
+    try:
+        import urllib.request, ssl
+        ctx = ssl.create_default_context()
+        urllib.request.urlopen("https://logfire-us.pydantic.dev", context=ctx, timeout=3)
+        _logfire_online = True
+    except Exception:
+        pass  # SSL error, timeout, or no internet — go offline
+
+if token and _logfire_online:
+    logfire.configure(token=token, send_to_logfire='always')
+    logfire.info("Logfire initialized (cloud mode)")
 else:
     logfire.configure(send_to_logfire='never')
-    print("WARNING: LOGFIRE_TOKEN not found in environment.")
+    if token and not _logfire_online:
+        print("INFO: Logfire cloud unreachable — running in local-only mode (no telemetry sent).")
+    else:
+        print("INFO: LOGFIRE_TOKEN not set — Logfire running in local-only mode.")
 
 # logfire.instrument_pydantic() # Trace all Pydantic models (Disabled for console cleanliness)
 logfire.instrument_openai()   # Trace all NVIDIA NIM calls
@@ -39,8 +50,18 @@ from .api.routes import auth, clients, portfolios, trading, agents, market_data,
 # Socket.IO setup
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
 
+from .services.scheduler_service import start_scheduler, stop_scheduler
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    start_scheduler()
+    yield
+    # Shutdown
+    stop_scheduler()
+
 # FastAPI app
-app = FastAPI(title=settings.PROJECT_NAME)
+app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
 logfire.instrument_fastapi(app)
 
 # CORS
@@ -50,8 +71,11 @@ app.add_middleware(
         "http://localhost:3309", 
         "http://127.0.0.1:3309",
         "http://localhost:3000",
-        "http://127.0.0.1:3000"
+        "http://127.0.0.1:3000",
+        "http://localhost:8282", # For self-referencing if needed
+        "*" # Temporary for debugging if necessary, but we'll stick to specific ones + regex below
     ],
+    allow_origin_regex="http://(localhost|127\.0\.0\.1):[0-9]+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -102,4 +126,5 @@ sio_app = socketio.ASGIApp(sio, app)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:sio_app", host="0.0.0.0", port=8282, reload=True)
+    logger.info("Starting MMAM Backend on http://0.0.0.0:8282")
+    uvicorn.run("app.main:sio_app", host="0.0.0.0", port=8282, reload=True, log_level="info")

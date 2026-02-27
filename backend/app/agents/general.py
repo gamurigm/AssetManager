@@ -1,18 +1,21 @@
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.openai import OpenAIModel
+from pydantic_ai.settings import ModelSettings
+from pydantic_ai.providers.openai import OpenAIProvider
+from openai import AsyncOpenAI
 from ..core.config import settings
-import os
-
-# Set environment variables for OpenAI client configuration
-os.environ["OPENAI_API_KEY"] = settings.NVIDIA_NIM_API_KEY
-os.environ["OPENAI_BASE_URL"] = 'https://integrate.api.nvidia.com/v1'
 
 # Initialize NIM model (OpenAI compatible)
-# pydantic-ai should pick up the environment variables
-model = OpenAIModel(settings.NIM_MODEL_NAME)
+client = AsyncOpenAI(
+    base_url='https://integrate.api.nvidia.com/v1',
+    api_key=settings.NVIDIA_NIM_API_KEY
+)
+provider = OpenAIProvider(openai_client=client)
+model = OpenAIModel(settings.NIM_MODEL_NAME, provider=provider)
 
 general_agent = Agent(
     model,
+    model_settings=ModelSettings(),
     system_prompt=(
         "You are a specialized Financial Intelligence Assistant for an Asset Management platform. "
         "Your expertise is STRICTLY LIMITED to financial markets, investments, trading, economics, and asset management. "

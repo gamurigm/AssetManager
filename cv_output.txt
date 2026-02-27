@@ -1,0 +1,6 @@
+
+============================================================
+BACKTEST SIMPLE (single-pass — potencialmente sesgado)
+============================================================
+20:57:22.582 BacktestRunner.run
+[DuckDB] Schema initialized at C:\AssetManager\backend\app\services\../../data/market.duckdb

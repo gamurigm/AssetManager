@@ -28,9 +28,10 @@ class NemotronProvider(ILLMProvider):
         thinking_prefix = "detailed thinking on\n\n"
         full_context = thinking_prefix + system_context if system_context else thinking_prefix
 
+        api_key = settings.NVIDIA_NEMOTRON_KEY or settings.NVIDIA_NIM_API_KEY
         client = OpenAI(
             base_url="https://integrate.api.nvidia.com/v1",
-            api_key=settings.NVIDIA_NEMOTRON_KEY,
+            api_key=api_key,
         )
         completion = client.chat.completions.create(
             model=self.MODEL,

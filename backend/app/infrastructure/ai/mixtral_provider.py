@@ -23,9 +23,10 @@ class MixtralProvider(ILLMProvider):
     def stream_chat(
         self, message: str, history: Optional[List[Dict[str, str]]] = None, system_context: str = ""
     ) -> AsyncGenerator[str, None]:
+        api_key = settings.NVIDIA_MIXTRAL_8X22B_KEY or settings.NVIDIA_NIM_API_KEY
         client = OpenAI(
             base_url="https://integrate.api.nvidia.com/v1",
-            api_key=settings.NVIDIA_MIXTRAL_8X22B_KEY,
+            api_key=api_key,
         )
         completion = client.chat.completions.create(
             model=self.MODEL,

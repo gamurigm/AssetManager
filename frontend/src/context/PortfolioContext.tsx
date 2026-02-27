@@ -39,8 +39,8 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
         const loadInitialData = async () => {
             try {
                 const [hRes, pnlRes] = await Promise.all([
-                    fetch('http://localhost:8282/api/v1/portfolios/'),
-                    fetch('http://localhost:8282/api/v1/trading/history') // We'll calculate realized from transactions
+                    fetch('http://127.0.0.1:8282/api/v1/portfolios/'),
+                    fetch('http://127.0.0.1:8282/api/v1/trading/history') // We'll calculate realized from transactions
                 ]);
 
                 const hData = await hRes.json();
@@ -84,7 +84,7 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
 
         const syncTimeout = setTimeout(async () => {
             try {
-                await fetch('http://localhost:8282/api/v1/portfolios/save', {
+                await fetch('http://127.0.0.1:8282/api/v1/portfolios/save', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(holdings)
@@ -114,7 +114,7 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
 
         const recordSnapshot = async () => {
             try {
-                await fetch('http://localhost:8282/api/v1/portfolios/snapshot-equity', {
+                await fetch('http://127.0.0.1:8282/api/v1/portfolios/snapshot-equity', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ total_value: accountEquity }) // Record full equity for the curve
@@ -146,7 +146,7 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
 
             // 1. Record transaction in backend
             try {
-                await fetch('http://localhost:8282/api/v1/trading/record', {
+                await fetch('http://127.0.0.1:8282/api/v1/trading/record', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({

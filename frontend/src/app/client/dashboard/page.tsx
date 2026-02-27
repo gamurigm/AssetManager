@@ -3,7 +3,7 @@
 import AppLayout from "@/components/layout/AppLayout";
 import Watchlist from "@/components/watchlist/Watchlist";
 import React, { useEffect, useState, useRef, useMemo } from "react";
-import { TrendingUp, TrendingDown, DollarSign, BarChart3, ArrowUpRight, ArrowDownRight, X, PieChart as PieIcon, LayoutGrid, ChartPie, ChevronDown, ChevronUp, Star, Activity, FileText } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, BarChart3, ArrowUpRight, ArrowDownRight, X, PieChart as PieIcon, LayoutGrid, ChartPie, ChevronDown, ChevronUp, Star, Activity, FileText, ShieldCheck } from "lucide-react";
 import AssetTreemap from "@/components/charts/AssetTreemap";
 import SectorPieChart from "@/components/charts/SectorPieChart";
 import AllocationDonut from "@/components/charts/AllocationDonut";
@@ -43,11 +43,13 @@ export default function ClientDashboard() {
     useEffect(() => {
         const fetchHistory = async () => {
             try {
-                const res = await fetch('http://localhost:8282/api/v1/trading/history');
+                // Using 127.0.0.1 instead of localhost for Windows reliability
+                const res = await fetch('http://127.0.0.1:8282/api/v1/trading/history');
+                if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
                 const data = await res.json();
                 setTransactions(data);
             } catch (err) {
-                console.error("Failed to fetch history:", err);
+                console.warn("Retrying history fetch... (Backend may be initializing)");
             }
         };
         fetchHistory();
@@ -218,41 +220,64 @@ export default function ClientDashboard() {
                         {activeTab === "portfolio" ? (
                             <>
                                 {/* Condensed Header */}
-                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-border/10 pb-3">
-                                    <div className="flex items-center gap-3">
-                                        <div className="h-2 w-2 rounded-full bg-accent animate-pulse" />
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6 border-b border-border/10 pb-6 mb-4 relative overflow-hidden group">
+                                    <div className="absolute bottom-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-accent/30 to-transparent" />
+
+                                    <div className="flex items-center gap-6">
+                                        <div className="relative">
+                                            <div className="h-14 w-14 rounded-2xl bg-accent/10 border border-accent/20 flex items-center justify-center shadow-lg group-hover:shadow-accent/20 transition-all duration-500">
+                                                <Activity size={24} className="text-accent animate-pulse" />
+                                            </div>
+                                            <div className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-green border-4 border-background animate-pulse shadow-[0_0_10px_#10b981]" />
+                                        </div>
                                         <div>
-                                            <p className="text-muted text-[9px] font-black uppercase tracking-[0.4em]">Portfolio</p>
-                                            <h1 className="text-lg font-black tracking-tight mt-px">Asset Mandate Alpha</h1>
+                                            <p className="text-accent text-[10px] font-black uppercase tracking-[0.4em] mb-1">Terminal System Node: ALPHA-9</p>
+                                            <h1 className="text-3xl font-black tracking-tighter dark:text-white text-zinc-900">Institutional Asset Mandate <span className="text-muted font-light">/ Alpha Core</span></h1>
+                                            <div className="flex items-center gap-4 mt-1.5 capitalize text-[11px] font-bold text-muted">
+                                                <span className="flex items-center gap-1.5"><Star size={10} className="text-yellow-500" /> Tier 1 Liquidity</span>
+                                                <span className="flex items-center gap-1.5"><ShieldCheck size={10} className="text-emerald-500" /> Risk Audited</span>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-2 px-2 py-1 rounded-md border border-border/30 bg-card/40">
-                                        <span className={`flex h-1.5 w-1.5 rounded-full ${loading ? 'bg-yellow-400' : 'bg-green animate-pulse'}`} />
-                                        <span className="text-[9px] text-muted font-black tracking-widest uppercase">{loading ? 'Syncing...' : 'Live'}</span>
+
+                                    <div className="flex items-center gap-4">
+                                        <div className="flex flex-col items-end mr-4 hidden md:flex">
+                                            <span className="text-[9px] dark:text-muted text-zinc-500 font-black tracking-widest uppercase">Connectivity</span>
+                                            <span className="text-xs font-black text-green animate-pulse">UPSTREAM: ACTIVE</span>
+                                        </div>
+                                        <button
+                                            onClick={async () => {
+                                                const btn = document.getElementById('audit-btn');
+                                                if (btn) { btn.textContent = '⏳ Generating…'; (btn as any).disabled = true; }
+                                                try {
+                                                    const res = await fetch('http://127.0.0.1:8282/api/v1/portfolios/report', {
+                                                        method: 'POST',
+                                                        headers: { 'Content-Type': 'application/json' },
+                                                        body: JSON.stringify({
+                                                            holdings: activeHoldings,
+                                                            total_value: totalValue,
+                                                            total_pnl: totalPnL
+                                                        })
+                                                    });
+                                                    if (res.ok) {
+                                                        const data = await res.json();
+                                                        window.open(data.url, '_blank');
+                                                    } else {
+                                                        alert("Report generation failed (backend error).");
+                                                    }
+                                                } catch (e) {
+                                                    alert("Cannot reach backend. Make sure it's running.");
+                                                } finally {
+                                                    if (btn) { btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>Generate Portfolio Audit'; (btn as any).disabled = false; }
+                                                }
+                                            }}
+                                            id="audit-btn"
+                                            className="px-6 py-3 bg-white text-black hover:bg-zinc-200 text-[11px] font-black uppercase tracking-widest rounded-2xl transition-all shadow-2xl flex items-center gap-3 active:scale-95 disabled:opacity-50"
+                                        >
+                                            <FileText size={14} />
+                                            Generate Portfolio Audit
+                                        </button>
                                     </div>
-                                    <button
-                                        onClick={async () => {
-                                            const res = await fetch('http://localhost:8282/api/v1/portfolios/report', {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({
-                                                    holdings: activeHoldings,
-                                                    total_value: totalValue,
-                                                    total_pnl: totalPnL
-                                                })
-                                            });
-                                            if (res.ok) {
-                                                const data = await res.json();
-                                                window.open(data.url, '_blank');
-                                            } else {
-                                                alert("Failed to generate report");
-                                            }
-                                        }}
-                                        className="px-3 py-1.5 bg-accent hover:bg-accent-hover text-white text-[9px] font-black uppercase tracking-widest rounded-lg transition-all shadow-lg shadow-accent/20 flex items-center gap-2"
-                                    >
-                                        <Activity size={10} />
-                                        Generate Executive PDF Report
-                                    </button>
                                 </div>
 
                                 {/* Stat Cards */}
@@ -356,7 +381,7 @@ export default function ClientDashboard() {
                                                             // Record each one as a SELL
                                                             for (const h of activeHoldings) {
                                                                 try {
-                                                                    await fetch('http://localhost:8282/api/v1/trading/record', {
+                                                                    await fetch('http://127.0.0.1:8282/api/v1/trading/record', {
                                                                         method: 'POST',
                                                                         headers: { 'Content-Type': 'application/json' },
                                                                         body: JSON.stringify({
@@ -893,9 +918,9 @@ function InternalChart({ symbol }: { symbol: string }) {
                     </div>
                     {showMacd && (
                         <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                            <input type="number" value={macdFast} min={2} max={50} onChange={e => setMacdFast(+e.target.value || 12)} className="w-10 px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[10px] text-white font-mono text-center focus:outline-none" />
-                            <input type="number" value={macdSlow} min={2} max={100} onChange={e => setMacdSlow(+e.target.value || 26)} className="w-10 px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[10px] text-white font-mono text-center focus:outline-none" />
-                            <input type="number" value={macdSignal} min={2} max={50} onChange={e => setMacdSignal(+e.target.value || 9)} className="w-10 px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[10px] text-white font-mono text-center focus:outline-none" />
+                            <input type="number" value={macdFast} min={2} max={50} onChange={e => setMacdFast(+e.target.value || 12)} className={`w-10 px-1 py-0.5 border rounded text-[10px] font-mono text-center focus:outline-none ${isLight ? "bg-zinc-100 border-zinc-200 text-zinc-900" : "bg-white/5 border-white/10 text-white"}`} />
+                            <input type="number" value={macdSlow} min={2} max={100} onChange={e => setMacdSlow(+e.target.value || 26)} className={`w-10 px-1 py-0.5 border rounded text-[10px] font-mono text-center focus:outline-none ${isLight ? "bg-zinc-100 border-zinc-200 text-zinc-900" : "bg-white/5 border-white/10 text-white"}`} />
+                            <input type="number" value={macdSignal} min={2} max={50} onChange={e => setMacdSignal(+e.target.value || 9)} className={`w-10 px-1 py-0.5 border rounded text-[10px] font-mono text-center focus:outline-none ${isLight ? "bg-zinc-100 border-zinc-200 text-zinc-900" : "bg-white/5 border-white/10 text-white"}`} />
                         </div>
                     )}
                 </div>
@@ -914,9 +939,9 @@ function InternalChart({ symbol }: { symbol: string }) {
                     </div>
                     {showStoch && (
                         <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
-                            <input type="number" value={stochK} min={2} max={50} onChange={e => setStochK(+e.target.value || 14)} className="w-10 px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[10px] text-white font-mono text-center focus:outline-none" />
-                            <input type="number" value={stochD} min={2} max={50} onChange={e => setStochD(+e.target.value || 3)} className="w-10 px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[10px] text-white font-mono text-center focus:outline-none" />
-                            <input type="number" value={stochSmooth} min={1} max={20} onChange={e => setStochSmooth(+e.target.value || 3)} className="w-10 px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[10px] text-white font-mono text-center focus:outline-none" />
+                            <input type="number" value={stochK} min={2} max={50} onChange={e => setStochK(+e.target.value || 14)} className={`w-10 px-1 py-0.5 border rounded text-[10px] font-mono text-center focus:outline-none ${isLight ? "bg-zinc-100 border-zinc-200 text-zinc-900" : "bg-white/5 border-white/10 text-white"}`} />
+                            <input type="number" value={stochD} min={2} max={50} onChange={e => setStochD(+e.target.value || 3)} className={`w-10 px-1 py-0.5 border rounded text-[10px] font-mono text-center focus:outline-none ${isLight ? "bg-zinc-100 border-zinc-200 text-zinc-900" : "bg-white/5 border-white/10 text-white"}`} />
+                            <input type="number" value={stochSmooth} min={1} max={20} onChange={e => setStochSmooth(+e.target.value || 3)} className={`w-10 px-1 py-0.5 border rounded text-[10px] font-mono text-center focus:outline-none ${isLight ? "bg-zinc-100 border-zinc-200 text-zinc-900" : "bg-white/5 border-white/10 text-white"}`} />
                         </div>
                     )}
                 </div>
@@ -934,25 +959,38 @@ function StatCard({ label, value, sub, icon, accent }: {
     accent: string;
 }) {
     const colors: Record<string, string> = {
-        blue: "text-blue-400 bg-blue-500/10",
-        green: "text-green bg-green/10",
-        red: "text-red bg-red/10",
-        purple: "text-purple-400 bg-purple-500/10",
-        emerald: "text-emerald-400 bg-emerald-500/10",
+        blue: "text-blue-400 bg-blue-500/10 border-blue-500/20 shadow-blue-500/5",
+        green: "text-green bg-green/10 border-green/20 shadow-green/5",
+        red: "text-red bg-red/10 border-red/20 shadow-red/5",
+        purple: "text-purple-400 bg-purple-500/10 border-purple-500/20 shadow-purple-500/5",
+        emerald: "text-emerald-400 bg-emerald-500/10 border-emerald-500/20 shadow-emerald-500/5",
     };
+
     return (
-        <div className="bg-card border border-border rounded-xl p-4 hover:border-accent/30 transition-all group relative overflow-hidden shadow-sm">
-            <div className="shimmer absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" />
+        <div className="glass-card rounded-[24px] p-6 hover:translate-y-[-4px] transition-all duration-500 group relative overflow-hidden shadow-2xl">
+            <div className="absolute top-0 left-0 w-full h-[2px] bg-gradient-to-r from-transparent via-current to-transparent opacity-20" style={{ color: colors[accent]?.split(' ')[0].replace('text-', '') }} />
+
             <div className="relative z-10">
-                <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] text-muted font-black uppercase tracking-[0.1em]">{label}</span>
-                    <div className={`h-6 w-6 rounded-md flex items-center justify-center ${colors[accent] || colors.blue}`}>
-                        {React.cloneElement(icon as React.ReactElement<any>, { size: 14 })}
+                <div className="flex items-center justify-between mb-4">
+                    <span className="text-[10px] text-muted font-black uppercase tracking-[0.2em] opacity-60">{label}</span>
+                    <div className={`h-10 w-10 rounded-2xl flex items-center justify-center border animate-pulse-glow ${colors[accent] || colors.blue}`}>
+                        {React.cloneElement(icon as React.ReactElement<any>, { size: 18 })}
                     </div>
                 </div>
-                <p className="text-xl font-black font-mono tracking-tighter">{value}</p>
-                {sub && <p className={`text-[10px] font-bold mt-0.5 ${accent === "red" ? "text-red" : "text-green"}`}>{sub}</p>}
+                <p className="text-3xl font-black tracking-tighter leading-none mb-2">{value}</p>
+                {sub && (
+                    <div className="flex items-center gap-2">
+                        <span className={`text-xs font-black px-2 py-0.5 rounded-lg ${accent === "red" ? "bg-red/10 text-red" : "bg-green/10 text-green"}`}>
+                            {sub}
+                        </span>
+                        <span className="text-[9px] text-muted font-bold uppercase tracking-widest opacity-40">Period Delta</span>
+                    </div>
+                )}
             </div>
+
+            {/* Subtle background glow */}
+            <div className={`absolute -bottom-10 -right-10 w-32 h-32 rounded-full blur-[60px] opacity-10 transition-opacity group-hover:opacity-20
+                ${accent === 'blue' ? 'bg-blue-500' : accent === 'green' ? 'bg-green' : accent === 'red' ? 'bg-red' : accent === 'purple' ? 'bg-purple-500' : 'bg-emerald-500'}`} />
         </div>
     );
 }

@@ -18,6 +18,7 @@ export const metadata: Metadata = {
 };
 
 import ChatWidget from "@/components/ai/ChatWidget";
+import GlobalSearch from "@/components/layout/GlobalSearch";
 import { PortfolioProvider } from "@/context/PortfolioContext";
 
 export default function RootLayout({
@@ -31,6 +32,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
         <PortfolioProvider>
+          <GlobalSearch />
           {children}
           <ChatWidget />
         </PortfolioProvider>
@@ -38,3 +40,4 @@ export default function RootLayout({
     </html>
   );
 }
+

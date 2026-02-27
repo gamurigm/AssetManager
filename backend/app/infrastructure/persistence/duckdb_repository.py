@@ -13,12 +13,13 @@ import threading
 import duckdb
 from typing import List, Dict, Any, Optional
 from ...domain.interfaces.data_repository import IHistoricalRepository
+from ...domain.interfaces.portfolio_repository import IPortfolioRepository
 from ...domain.entities.market import Candle
 
 DB_PATH = os.path.join(os.path.dirname(__file__), "../../../data/market.duckdb")
 
 
-class DuckDBRepository(IHistoricalRepository):
+class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
 
     def __init__(self):
         os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
@@ -85,6 +86,22 @@ class DuckDBRepository(IHistoricalRepository):
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """)
+            
+            # Migration: Add missing columns to transactions
+            cols_t = conn.execute("PRAGMA table_info('transactions')").fetchall()
+            existing_t = [c[1] for c in cols_t]
+            if 'type' not in existing_t:
+                conn.execute("ALTER TABLE transactions ADD COLUMN type VARCHAR")
+            if 'symbol' not in existing_t:
+                conn.execute("ALTER TABLE transactions ADD COLUMN symbol VARCHAR")
+            if 'shares' not in existing_t:
+                conn.execute("ALTER TABLE transactions ADD COLUMN shares DOUBLE")
+            if 'realized_pnl' not in existing_t:
+                conn.execute("ALTER TABLE transactions ADD COLUMN realized_pnl DOUBLE DEFAULT 0")
+            if 'date' not in existing_t:
+                conn.execute("ALTER TABLE transactions ADD COLUMN date VARCHAR")
+            if 'time' not in existing_t:
+                conn.execute("ALTER TABLE transactions ADD COLUMN time VARCHAR")
 
             # Equity Snapshots Table (Realized vs Total)
             conn.execute("""
