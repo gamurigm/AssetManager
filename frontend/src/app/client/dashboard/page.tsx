@@ -515,15 +515,15 @@ export default function ClientDashboard() {
                                                 <div className="space-y-3">
                                                     <div className="flex justify-between text-[11px]">
                                                         <span className="text-muted">Management Fee (2.75%)</span>
-                                                        <span className="font-mono text-white">${(totalValue * 0.0275 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                        <span className="font-mono dark:text-white text-zinc-900">${(totalValue * 0.0275 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                                     </div>
                                                     <div className="flex justify-between text-[11px]">
                                                         <span className="text-muted">Service Fee (0.75%)</span>
-                                                        <span className="font-mono text-white">${(totalValue * 0.0075 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                        <span className="font-mono dark:text-white text-zinc-900">${(totalValue * 0.0075 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                                     </div>
                                                     <div className="flex justify-between text-[11px]">
                                                         <span className="text-muted">Other Exp. & Interest (0.59%)</span>
-                                                        <span className="font-mono text-white">${(totalValue * 0.0059 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                        <span className="font-mono dark:text-white text-zinc-900">${(totalValue * 0.0059 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                                     </div>
                                                     <div className="flex justify-between text-[11px]">
                                                         <span className="text-muted">Reimbursements & Waivers</span>
@@ -538,7 +538,7 @@ export default function ClientDashboard() {
                                                 <div className="space-y-2 pt-4 border-t border-border/20">
                                                     <div className="flex justify-between text-xs">
                                                         <span className="text-muted">High-Water Mark (HWM)</span>
-                                                        <span className="font-mono text-white">${totalValue > 1250500 ? totalValue.toLocaleString() : "1,250,500.00"}</span>
+                                                        <span className="font-mono dark:text-white text-zinc-900">${totalValue > 1250500 ? totalValue.toLocaleString() : "1,250,500.00"}</span>
                                                     </div>
                                                     <div className="p-3 rounded-lg bg-green/5 border border-green/10 flex items-center justify-between">
                                                         <span className="text-[10px] text-green font-bold uppercase tracking-tight">Accrued Perf. Fee (20% above HWM)</span>

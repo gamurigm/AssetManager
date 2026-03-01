@@ -323,6 +323,9 @@ class ReportService:
         pdf.set_xy(14, box_y + 14)
         pdf.cell(0, 5, f"Target: {hs.get('primary_hedge_target', 'N/A')}  |  Hedge Ratio: {hs.get('hedge_ratio', 'N/A')}")
 
+        # ── Theoretical Foundations ─────────────────────────────────
+        self._add_theoretical_foundations(pdf)
+
         # 4. Save
         filename = f"alpha_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
         filepath = os.path.join(self.reports_dir, filename)
@@ -337,6 +340,68 @@ class ReportService:
                     pass
 
         return filename
+
+    def _add_theoretical_foundations(self, pdf: AlphaReport):
+        """Appends a theoretical appendix to the risk report."""
+        pdf.add_page()
+        pdf.section_title("Algorithmic Risk Theory & Statistical Foundations")
+        
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.set_text_color(44, 62, 80)
+        pdf.cell(0, 6, "1. Value at Risk (VaR) vs Modified VaR (Cornish-Fisher)", ln=True)
+        pdf.set_font("Helvetica", "", 8)
+        pdf.set_text_color(40, 40, 40)
+        text_var = (
+            "Standard Value at Risk (VaR) assumes that asset returns follow a normal distribution. However, "
+            "financial markets exhibit 'fat tails' and skewness, meaning extreme events occur more frequently "
+            "than a normal distribution predicts. Our system implements the Cornish-Fisher expansion (Modified VaR) "
+            "to adjust the standard Z-score using the calculated Skewness and Excess Kurtosis of the portfolio. "
+            "This provides a much more robust risk threshold during market drawdowns."
+        )
+        pdf.multi_cell(0, 5, text_var)
+        pdf.ln(5)
+
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.set_text_color(44, 62, 80)
+        pdf.cell(0, 6, "2. Gradient Descent & Momentum Prediction", ln=True)
+        pdf.set_font("Helvetica", "", 8)
+        pdf.set_text_color(40, 40, 40)
+        text_gd = (
+            "Rather than relying on lagging indicators like Simple Moving Averages, the system models asset trajectory "
+            "using Linear Regression optimized via Gradient Descent over a rolling 30-day epoch window. By minimizing the Mean "
+            "Squared Error (MSE) between the regression line and normalized price action, we mathematically extract the structural slope "
+            "(momentum) of the asset. A positive slope indicates definitive capital inflow, while a negative slope signifies distribution."
+        )
+        pdf.multi_cell(0, 5, text_gd)
+        pdf.ln(5)
+
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.set_text_color(44, 62, 80)
+        pdf.cell(0, 6, "3. Risk-Adjusted Return (RAR) & Sharpe Architecture", ln=True)
+        pdf.set_font("Helvetica", "", 8)
+        pdf.set_text_color(40, 40, 40)
+        text_sharpe = (
+            "The Sharpe Ratio evaluates return per unit of standard deviation (volatility), subtracting the risk-free rate. "
+            "Our RAR (Risk-Adjusted Return) metric takes this further by computing Expected Return (E[R]) normalized against "
+            "both Volatility (σ) and total Capital at Risk (C). This ensures that heavy allocations in highly volatile assets "
+            "are mathematically penalized if they do not provide geometrically outsized expectations."
+        )
+        pdf.multi_cell(0, 5, text_sharpe)
+        pdf.ln(5)
+        
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.set_text_color(44, 62, 80)
+        pdf.cell(0, 6, "4. Skewness and Excess Kurtosis Dynamics", ln=True)
+        pdf.set_font("Helvetica", "", 8)
+        pdf.set_text_color(40, 40, 40)
+        text_kurt = (
+            "Skewness measures the asymmetry of the return distribution. Negative skewness indicates a tendency for large "
+            "losses and small gains. Kurtosis measures the 'tailedness'. Excess Kurtosis > 0 (Leptokurtic distribution) indicates a high "
+            "probability of black swan tail events. The risk engine continuously monitors these metrics to algorithmically trigger "
+            "Protective Put Collar strategies when the structural tail risk exceeds the portfolio's mandate thresholds."
+        )
+        pdf.multi_cell(0, 5, text_kurt)
+        pdf.ln(6)
 
     def generate_custom_intelligence_report(
         self,

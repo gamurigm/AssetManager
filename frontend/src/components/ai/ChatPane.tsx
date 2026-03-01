@@ -6,7 +6,7 @@ import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 
 import {
-    Send, Sparkles, Bot, Activity, FileText, Copy, Check, ShieldCheck, Loader2
+    Send, Sparkles, Bot, Activity, FileText, Copy, Check, ShieldCheck, Loader2, Trash2
 } from "lucide-react";
 
 interface Session {
@@ -253,6 +253,14 @@ export default function ChatPane({
                         <option value="Macro Analyst" className={isDarkMode ? "bg-zinc-950" : "bg-white text-zinc-900"}>🌍 Macro Analyst</option>
                         <option value="Strategy Analyst" className={isDarkMode ? "bg-zinc-950" : "bg-white text-zinc-900"}>⚡ Strategy Analyst</option>
                     </select>
+                    <button
+                        onClick={() => onUpdateMessages(session.id, () => [])}
+                        title="Clear Chat"
+                        className={`h-7 w-7 rounded-lg flex items-center justify-center transition-all 
+                        ${isDarkMode ? "bg-white/5 text-zinc-400 hover:bg-red-500/20 hover:text-red-400" : "bg-zinc-100 text-zinc-500 hover:bg-red-50 hover:text-red-500"}`}
+                    >
+                        <Trash2 size={12} />
+                    </button>
                 </div>
             </div>
 
@@ -293,7 +301,7 @@ export default function ChatPane({
                         <div className={`${isMaximized ? "max-w-[85%]" : "max-w-[92%]"} space-y-2`}>
 
                             {m.role === "user" ? (
-                                <div className={`py-3 px-5 rounded-2xl rounded-tr-sm text-[14px] leading-relaxed font-bold shadow-md
+                                <div className={`py-3 px-5 rounded-2xl rounded-tr-sm text-[15.2px] leading-relaxed font-bold shadow-md
                                     ${isDarkMode
                                         ? "bg-gradient-to-br from-fuchsia-600 to-violet-700 text-white shadow-fuchsia-600/20"
                                         : "bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-indigo-600/20"}`}>
@@ -343,8 +351,8 @@ export default function ChatPane({
                                         </div>
                                     )}
 
-                                    <div className={`px-4 py-3 text-[14px] leading-[1.8] group
-                                        prose prose-sm max-w-full break-normal
+                                    <div className={`px-4 py-3 text-[15.2px] leading-[1.8] group
+                                        prose prose-base max-w-full break-normal
                                         ${isDarkMode ? "prose-invert" : "prose-zinc"}
                                         prose-p:mb-4 last:prose-p:mb-0
                                         prose-headings:font-black prose-headings:tracking-tight
@@ -403,7 +411,7 @@ export default function ChatPane({
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && !isLoading && handleSend()}
-                        className={`w-full bg-transparent py-3.5 px-5 text-[15px] font-medium focus:outline-none
+                        className={`w-full bg-transparent py-3.5 px-5 text-[16.5px] font-medium focus:outline-none
                             ${isDarkMode ? "text-white placeholder:text-zinc-700" : "text-zinc-900 placeholder:text-zinc-400"}`}
                         placeholder={`Type a directive for ${session.title}…`}
                         disabled={isLoading}

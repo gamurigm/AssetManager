@@ -44,14 +44,20 @@ class GetHistoricalUseCase:
         # 1. Check DuckDB state
         latest_date = self._repo.get_latest_date(symbol)
         count = self._repo.get_count(symbol)
+        last_sync = self._repo.get_last_sync_time(symbol)
 
         # 2. Determine if sync is needed
         sync_required = True
         if latest_date:
             from datetime import datetime
+            
             is_today = latest_date >= datetime.now().strftime("%Y-%m-%d")
-            if is_today and count >= min(limit, 500):
+            seconds_since_sync = (now - last_sync) if last_sync else 999999
+            
+            # Skip sync if we already synced in the last 6 hours (21600s), OR if we have today's full candle
+            if (seconds_since_sync < 21600 or is_today) and count >= min(limit, 500):
                 sync_required = False
+                
             if count < 100:
                 sync_required = True
 

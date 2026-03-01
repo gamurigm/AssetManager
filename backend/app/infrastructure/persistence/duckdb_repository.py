@@ -200,6 +200,16 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
             conn.close()
         return res[0] if res else 0
 
+    def get_last_sync_time(self, symbol: str) -> Optional[float]:
+        conn = self._connect(read_only=True)
+        try:
+            res = conn.execute(
+                "SELECT CAST(MAX(epoch(updated_at)) AS DOUBLE) FROM ohlcv WHERE symbol = ?", [symbol]
+            ).fetchone()
+        finally:
+            conn.close()
+        return res[0] if res and res[0] else None
+
     # --- Portfolio Persistence ---
 
     def save_portfolio(self, holdings: List[Dict[str, Any]]):

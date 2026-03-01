@@ -113,7 +113,7 @@ export default function ManagerDashboard() {
                             <Activity size={16} />
                             <span className="text-[10px] font-black uppercase tracking-[0.3em]">Equity Oracle v2</span>
                         </div>
-                        <h1 className="text-4xl font-black tracking-tight text-white">Dual Equity Analysis</h1>
+                        <h1 className="text-4xl font-black tracking-tight dark:text-white text-zinc-900">Dual Equity Analysis</h1>
                         <p className="text-muted text-sm font-medium">Tracking Realized Capital vs Market-Adjusted Exposure.</p>
                     </div>
 
@@ -121,7 +121,7 @@ export default function ManagerDashboard() {
                         <div className="bg-card/40 backdrop-blur-md border border-border/50 p-4 rounded-xl shadow-xl flex items-center gap-4">
                             <div className="text-right border-r border-border/50 pr-4">
                                 <p className="text-[9px] text-blue-400 font-black uppercase tracking-widest">Realized Balance</p>
-                                <p className="text-xl font-mono font-black text-white">
+                                <p className="text-xl font-mono font-black dark:text-white text-zinc-900">
                                     ${currentBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                                 </p>
                             </div>
@@ -157,7 +157,7 @@ export default function ManagerDashboard() {
                                     <TrendingUp size={32} className="text-muted/40" />
                                 </div>
                                 <div className="space-y-1">
-                                    <p className="text-sm font-black uppercase tracking-widest text-white">No historical data recorded</p>
+                                    <p className="text-sm font-black uppercase tracking-widest dark:text-white text-zinc-900">No historical data recorded</p>
                                     <p className="text-xs text-muted max-w-xs">Start trading or wait for the system to generate value snapshots to visualize your equity curve.</p>
                                 </div>
                             </div>
@@ -184,15 +184,15 @@ export default function ManagerDashboard() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div className="bg-card/20 border border-border/30 p-6 rounded-2xl space-y-2">
                         <p className="text-[10px] font-black text-muted uppercase tracking-widest">Growth Metric</p>
-                        <p className="text-xs text-white leading-relaxed">The <span className="text-green font-bold">Baseline Chart</span> visualizes your performance relative to your initial starting point. Green zones represent profit expansion, while red zones indicate periods of drawdown.</p>
+                        <p className="text-xs dark:text-white text-zinc-900 leading-relaxed">The <span className="text-green font-bold">Baseline Chart</span> visualizes your performance relative to your initial starting point. Green zones represent profit expansion, while red zones indicate periods of drawdown.</p>
                     </div>
                     <div className="bg-card/20 border border-border/30 p-6 rounded-2xl space-y-2">
                         <p className="text-[10px] font-black text-muted uppercase tracking-widest">Audit Period</p>
-                        <p className="text-xs text-white leading-relaxed">This view captures every transition in your net value, providing a high-fidelity audit trail for institutional reporting and risk management.</p>
+                        <p className="text-xs dark:text-white text-zinc-900 leading-relaxed">This view captures every transition in your net value, providing a high-fidelity audit trail for institutional reporting and risk management.</p>
                     </div>
                     <div className="bg-card/20 border border-border/30 p-6 rounded-2xl space-y-2">
                         <p className="text-[10px] font-black text-muted uppercase tracking-widest">Update Frequency</p>
-                        <p className="text-xs text-white leading-relaxed">Snapshots are automatically synchronized every 30 seconds or upon significant portfolio mutations (liquidations, acquisitions).</p>
+                        <p className="text-xs dark:text-white text-zinc-900 leading-relaxed">Snapshots are automatically synchronized every 30 seconds or upon significant portfolio mutations (liquidations, acquisitions).</p>
                     </div>
                 </div>
             </div>

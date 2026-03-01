@@ -130,6 +130,23 @@ async def get_macro_indicators(ctx: RunContext[TeamContext]) -> str:
     formatted = "\n".join([f"- {n.get('title', 'N/A')}" for n in news])
     return f"Latest Global Macro News:\n{formatted}"
 
+async def general_web_search(ctx: RunContext[TeamContext], query: str, max_results: int = 5) -> str:
+    """Perform a general web search (e.g., using DuckDuckGo) to find live information on the internet. Useful for recent events, market events, or general knowledge."""
+    from duckduckgo_search import DDGS
+    
+    def _search():
+        with DDGS() as ddgs:
+            return list(ddgs.text(query, max_results=max_results))
+
+    try:
+        results = await asyncio.to_thread(_search)
+        if not results:
+            return f"No results found on the web for '{query}'."
+        formatted = "\n".join([f"- {r.get('title', 'No Title')}: {r.get('body', 'No Body')} ({r.get('href', 'No URL')})" for r in results])
+        return f"Web Search Results for '{query}':\n{formatted}"
+    except Exception as e:
+        return f"Error performing web search: {e}"
+
 # --- Tools for Risk Manager ---
 async def calculate_risk_metrics(ctx: RunContext[TeamContext], symbol: str) -> str:
     """Calculate VaR and Sharpe ratio for a specific asset using Polygon historical data."""
@@ -200,7 +217,7 @@ fundamental_analyst = TeamAgent(
     name="Fundamental Analyst",
     role="Specialist in qualitative analysis, news, company fundamentals, and financial statements (balance sheets)",
     model_name=NEMOTRON_253B,
-    tools=[get_market_news, get_company_profile, get_balance_sheet, search_knowledge_base, read_textbook_section]
+    tools=[get_market_news, get_company_profile, get_balance_sheet, search_knowledge_base, read_textbook_section, general_web_search]
 )
 
 quant_analyst = TeamAgent(
@@ -217,14 +234,14 @@ risk_manager = TeamAgent(
          "summarizing neural insights, risk outliers, and strategic positioning "
          "to include in the custom PDF.",
     model_name=MISTRAL_LARGE,
-    tools=[calculate_risk_metrics, generate_detailed_alpha_report]
+    tools=[calculate_risk_metrics, generate_detailed_alpha_report, general_web_search]
 )
 
 macro_analyst = TeamAgent(
     name="Macro Analyst",
     role="Specialist in global economics and macro trends",
     model_name=NEMOTRON_253B,
-    tools=[get_macro_indicators]
+    tools=[get_macro_indicators, general_web_search]
 )
 
 trader = TeamAgent(
@@ -268,7 +285,7 @@ strategy_analyst = TeamAgent(
     name="Strategy Analyst",
     role="Specialist in quantitative trading strategies — detects ORB, FVG, and Engulfing setups",
     model_name=NEMOTRON_253B, # Switched from MIXTRAL to avoid tool parsing block
-    tools=[run_strategy_signal, search_knowledge_base, read_textbook_section],
+    tools=[run_strategy_signal, search_knowledge_base, read_textbook_section, general_web_search],
 )
 
 # Export map for Orchestrator lookup

@@ -41,24 +41,19 @@ export default function ChatWidget() {
     const dragRef = useRef<{ startX: number; startY: number; startPosX: number; startPosY: number; moved: boolean; } | null>(null);
     const inactivityTimer = useRef<NodeJS.Timeout | null>(null);
 
-    // ── Persistence
+    // ── Persistence removed as requested by user
+    // "solo recordar la sesion actual luego al desconcetar borrar automaticamente hata nuevo aviso"
+
+    // We only keep selectedModel and activeSessions persistence if desired, or remove all. 
+    // Usually keeping model preference is good, but NOT messages.
     useEffect(() => {
         try {
-            const saved = localStorage.getItem("mmam_sessions");
             const savedModel = localStorage.getItem("mmam_chat_model");
-            const savedActive = localStorage.getItem("mmam_active_session_ids");
-            if (saved) setSessions(JSON.parse(saved));
             if (savedModel) setSelectedModel(savedModel as Model);
-            if (savedActive) setActiveSessionIds(JSON.parse(savedActive));
         } catch { }
     }, []);
 
-    useEffect(() => {
-        if (sessions.length > 0) localStorage.setItem("mmam_sessions", JSON.stringify(sessions));
-    }, [sessions]);
-
     useEffect(() => { localStorage.setItem("mmam_chat_model", selectedModel); }, [selectedModel]);
-    useEffect(() => { localStorage.setItem("mmam_active_session_ids", JSON.stringify(activeSessionIds)); }, [activeSessionIds]);
 
     // Theme sync
     useEffect(() => {

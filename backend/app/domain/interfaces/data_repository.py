@@ -41,3 +41,7 @@ class IHistoricalRepository(ABC):
         """Get the total number of candles stored for a symbol."""
         ...
 
+    @abstractmethod
+    def get_last_sync_time(self, symbol: str) -> Optional[float]:
+        """Get the unix timestamp of the last database upsert for a symbol to avoid constant fetching."""
+        ...

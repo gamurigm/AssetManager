@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import os
 import threading
+import asyncio
 import duckdb
 import pandas as pd
+from datetime import date
 from typing import Protocol, List, TypedDict, Optional, runtime_checkable
 
 
@@ -59,6 +61,12 @@ class IIntradayRepository(Protocol):
 
     def has_data(self, symbol: str, interval: str, start: str, end: str) -> bool:
         """Check whether sufficient data already exists (avoids redundant downloads)."""
+        ...
+
+    async def fetch_intraday(
+        self, symbol: str, interval: str, start: date, end: date
+    ) -> List[CandleRow]:
+        """Fetch candles (Local Cache -> Remote API -> Sync)."""
         ...
 
 
@@ -226,6 +234,63 @@ class DuckDBIntradayRepository:
                 [symbol, interval, start, end],
             ).fetchone()[0]
         return count >= min_count
+
+    async def fetch_intraday(
+        self, symbol: str, interval: str, start: date, end: date
+    ) -> List[CandleRow]:
+        """
+        High-level orchestrator: RAM -> DuckDB -> Yahoo Finance Fallback -> DuckDB -> Return.
+        """
+        # 1. Local Cache Check
+        # Convert date to timestamp strings for query
+        start_ts = start.isoformat() + " 00:00:00"
+        end_ts = end.isoformat() + " 23:59:59"
+
+        if self.has_data(symbol, interval, start_ts, end_ts, min_count=20):
+            print(f"[IntradayRepo] 🦆 Cache hit for {symbol} ({interval})")
+            return self.get(symbol, interval, start_ts, end_ts)
+
+        # 2. Yahoo Finance Fallback
+        print(f"[IntradayRepo] ⚡ Cache miss for {symbol}. Syncing {interval} from Yahoo...")
+        import yfinance as yf
+        
+        # Normalize symbol for Yahoo
+        yf_sym = symbol
+        if symbol == "BTC/USD": yf_sym = "BTC-USD"
+        elif symbol == "ETH/USD": yf_sym = "ETH-USD"
+        elif "/" in symbol: yf_sym = symbol.replace("/", "-")
+        
+        def _sync_fetch():
+            ticker = yf.Ticker(yf_sym)
+            # Use '1mo' period to get recent intraday if start/end are close
+            return ticker.history(start=start, end=end, interval=interval)
+
+        try:
+            df = await asyncio.to_thread(_sync_fetch)
+            if df.empty:
+                print(f"[IntradayRepo] ⚠️ Yahoo returned no data for {symbol} ({interval})")
+                return []
+            
+            # 3. Transform to CandleRow
+            candles = []
+            for ts, row in df.iterrows():
+                candles.append(CandleRow(
+                    timestamp=ts.strftime("%Y-%m-%dT%H:%M:%S") if hasattr(ts, 'strftime') else str(ts),
+                    open=float(row["Open"]),
+                    high=float(row["High"]),
+                    low=float(row["Low"]),
+                    close=float(row["Close"]),
+                    volume=int(row.get("Volume", 0)),
+                ))
+            
+            # 4. Persist and Return
+            if candles:
+                self.save(symbol, interval, candles, source="yahoo_sync")
+            return candles
+
+        except Exception as e:
+            print(f"[IntradayRepo] ❌ Remote fetch failed for {symbol}: {e}")
+            return []
 
     def get_stats(self) -> dict:
         """Diagnostic stats — mirrors DuckDBStore.get_stats()."""

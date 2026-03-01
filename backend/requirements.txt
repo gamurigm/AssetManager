@@ -25,3 +25,4 @@ pandas
 hmmlearn
 scikit-learn
 plotly
+duckduckgo-search

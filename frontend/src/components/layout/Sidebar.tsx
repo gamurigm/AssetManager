@@ -31,17 +31,23 @@ export default function Sidebar({ collapsed, setCollapsed }: { collapsed: boolea
 
     useEffect(() => {
         setMounted(true);
+        const savedTheme = localStorage.getItem("mmam_theme");
+        if (savedTheme === "light") {
+            setIsDarkMode(false);
+        }
     }, []);
 
-    // Sync theme with document
+    // Sync theme with document and localStorage
     useEffect(() => {
         if (!mounted) return;
         if (isDarkMode) {
             document.documentElement.classList.remove("light");
             document.documentElement.classList.add("dark");
+            localStorage.setItem("mmam_theme", "dark");
         } else {
             document.documentElement.classList.remove("dark");
             document.documentElement.classList.add("light");
+            localStorage.setItem("mmam_theme", "light");
         }
     }, [isDarkMode, mounted]);
 
