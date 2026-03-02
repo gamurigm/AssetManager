@@ -131,11 +131,14 @@ frontend/.env*
 # --- Media & Docs ---
 **/*.md
 !**/README.md
+!.agent/workflows/*.md
 *.pdf
 *.docx
 *.pptx
 *.xlsx
 
+# --- DuckDB & Embedded dbs ---
 *.duckdb
 *.db-shm
 *.db-wal
+.rate_limit_cache/

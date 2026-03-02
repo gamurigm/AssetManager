@@ -203,11 +203,20 @@ async def openbb_cli(body: dict = Body(...)):
                 lines = [f"  {r.get('symbol', '?'):>10}  │  {r.get('name', '?')}" for r in results[:15]]
                 return {"output": f"── Search: \"{query}\" ({len(results)} results) ──\n" + "\n".join(lines)}
 
-        # 2. Native OpenBB execution via subprocess container
-        result = await openbb_native.execute(command, kwargs)
-        if "error" in result:
-            return {"output": result["error"], "type": "error"}
-        return {"output": result.get("output", "Command executed.")}
+        # 2. OpenBB REST API (primary — fast, no subprocess overhead)
+        rest_result = await openbb_rest.execute(command, kwargs)
+        if "error" not in rest_result:
+            return {"output": rest_result.get("output", "Command executed.")}
+
+        # 3. Fallback to native subprocess if REST server is offline
+        if "not running" in rest_result.get("error", "").lower() or "offline" in rest_result.get("error", "").lower():
+            native_result = await openbb_native.execute(command, kwargs)
+            if "error" in native_result:
+                return {"output": native_result["error"], "type": "error"}
+            return {"output": native_result.get("output", "Command executed.")}
+
+        # REST returned an error (but server was reachable)
+        return {"output": rest_result.get("error", "Unknown error"), "type": "error"}
 
     except TypeError as e:
         return {"output": f"Parameter error: {str(e)}", "type": "error"}
