@@ -42,6 +42,10 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
     def _init_schema(self):
         conn = self._connect()
         try:
+            # PERFORMANCE PRAGMAS
+            conn.execute("PRAGMA memory_limit='1GB'")
+            conn.execute("PRAGMA threads=4")
+            
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS ohlcv (
                     symbol VARCHAR NOT NULL, date DATE NOT NULL,
@@ -111,6 +115,28 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
                     total_equity DOUBLE
                 )
             """)
+
+            # Insider Trading Table
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS insider_trading (
+                    ticker VARCHAR NOT NULL,
+                    owner VARCHAR NOT NULL,
+                    relationship VARCHAR,
+                    trade_date DATE NOT NULL,
+                    transaction VARCHAR,
+                    cost DOUBLE,
+                    shares BIGINT,
+                    value DOUBLE,
+                    shares_total BIGINT,
+                    sec_form_4 VARCHAR,
+                    sec_url VARCHAR,
+                    type VARCHAR,
+                    scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (ticker, owner, trade_date, transaction, shares, value)
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_insider_ticker ON insider_trading(ticker)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_insider_date ON insider_trading(trade_date)")
 
             # Initial Seed: If empty, start with 1200 from 2 years ago
             res = conn.execute("SELECT COUNT(*) FROM equity_snapshots").fetchone()
@@ -359,3 +385,67 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
             return []
         finally:
             conn.close()
+
+    # --- Insider Trading Persistence ---
+
+    def save_insider_trades(self, trades: List[Dict[str, Any]]) -> int:
+        """Upsert insider trading records. Deduplicates by primary key."""
+        if not trades:
+            return 0
+        
+        with self._write_lock:
+            conn = self._connect(read_only=False)
+            try:
+                count = 0
+                for t in trades:
+                    # Map 'date' to 'trade_date' and exclude internal '_row_class'
+                    try:
+                        conn.execute("""
+                            INSERT OR IGNORE INTO insider_trading (
+                                ticker, owner, relationship, trade_date, transaction,
+                                cost, shares, value, shares_total, sec_form_4,
+                                sec_url, type, scraped_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                        """, [
+                            t.get('ticker'), t.get('owner'), t.get('relationship'),
+                            t.get('date'), t.get('transaction'), t.get('cost'),
+                            t.get('shares'), t.get('value'), t.get('shares_total'),
+                            t.get('sec_form_4'), t.get('sec_url'), t.get('type')
+                        ])
+                        count += conn.get_connection().cursor().rowcount
+                    except Exception as e:
+                        # Skip individual failures (e.g. malformed dates)
+                        continue
+                return count
+            except Exception as e:
+                print(f"[DuckDB] Insider trade save error: {e}")
+                return 0
+            finally:
+                conn.close()
+
+    def get_insider_trades(self, ticker: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
+        """Retrieve recent insider trades, optionally filtered by ticker."""
+        conn = self._connect(read_only=True)
+        try:
+            query = "SELECT * FROM insider_trading"
+            params = []
+            if ticker:
+                query += " WHERE ticker = ?"
+                params.append(ticker.upper())
+            
+            query += " ORDER BY trade_date DESC, scraped_at DESC LIMIT ?"
+            params.append(limit)
+            
+            result = conn.execute(query, params).fetchall()
+            columns = [
+                "ticker", "owner", "relationship", "date", "transaction",
+                "cost", "shares", "value", "shares_total", "sec_form_4",
+                "sec_url", "type", "scraped_at"
+            ]
+            return [dict(zip(columns, row)) for row in result]
+        except Exception as e:
+            print(f"[DuckDB] Insider trades load error: {e}")
+            return []
+        finally:
+            conn.close()
+

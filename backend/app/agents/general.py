@@ -4,6 +4,7 @@ from pydantic_ai.settings import ModelSettings
 from pydantic_ai.providers.openai import OpenAIProvider
 from openai import AsyncOpenAI
 from ..core.config import settings
+from ..services.openbb_native_service import openbb_native
 
 # Initialize NIM model (OpenAI compatible)
 client = AsyncOpenAI(
@@ -19,13 +20,36 @@ general_agent = Agent(
     system_prompt=(
         "You are a specialized Financial Intelligence Assistant for an Asset Management platform. "
         "Your expertise is STRICTLY LIMITED to financial markets, investments, trading, economics, and asset management. "
-        "You are PROHIBITED from discussing or answering questions about any other topics, including but not limited to: "
-        "general knowledge, entertainment, cooking, sports, personal advice, or creative writing. "
-        "If a user asks about a non-financial topic, you must politely decline and state: "
-        "'I am a specialized financial AI, I can only assist with investment and market-related queries.' "
-        "Keep your answers concise and professional."
+        "You have access to a suite of OpenBB tools to fetch live market data, charts, and fundamentals. "
+        "If you need specific data, use the 'execute_openbb_command' tool. "
+        "OpenBB command paths follow the structure 'equity/price/quote', 'crypto/price/historical', etc. "
+        "Supported flags: --symbol, --start_date, --end_date, --limit, --chart. "
+        "You are PROHIBITED from discussing or answering questions about any other topics."
     )
 )
+
+@general_agent.tool
+async def execute_openbb_command(ctx: RunContext[None], command_path: str, symbol: str = None, chart: bool = False, limit: int = 10) -> str:
+    """
+    Execute a native OpenBB Platform command.
+    Example command_path: 'equity/price/quote', 'equity/fundamental/income', 'crypto/price/historical'.
+    Flags are passed via arguments.
+    """
+    kwargs = {}
+    if symbol:
+        kwargs["symbol"] = symbol
+    if chart:
+        kwargs["chart"] = True
+    if limit:
+        kwargs["limit"] = limit
+        
+    # Standardize path
+    command_path = command_path.replace("/", ".")
+    
+    result = await openbb_native.execute(command_path, kwargs)
+    if "error" in result:
+        return f"Error: {result['error']}"
+    return result.get("output", "Command executed.")
 
 @general_agent.tool
 async def get_market_overview(ctx: RunContext[None]) -> str:

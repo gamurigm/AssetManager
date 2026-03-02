@@ -10,6 +10,8 @@ from ...services.polygon_service import polygon_service
 from ...services.alpha_vantage_service import alpha_vantage_service
 from ...services.twelve_data_service import twelve_data_service
 from ...services.market_data import market_data_service
+from ...services.openbb_rest_service import openbb_rest
+from ...services.openbb_native_service import openbb_native
 from ...core.container import search_knowledge_base_uc, read_book_section_uc
 from ...core.config import settings
 import asyncio
@@ -94,6 +96,49 @@ async def search_knowledge_base(ctx: RunContext[TeamContext], query: str) -> str
 async def read_textbook_section(ctx: RunContext[TeamContext], file_path: str, start_line: int, end_line: int) -> str:
     """Read a specific section from a textbook found during search."""
     return read_book_section_uc.execute(file_path, start_line, end_line)
+
+async def query_openbb_api(ctx: RunContext[TeamContext], endpoint: str, params: dict = None) -> str:
+    """
+    GENERIC tool to fetch data from the local OpenBB REST API.
+    Use this if you know the OpenAPI endpoint (e.g. `/api/v1/equity/price/quote`).
+    Always start your endpoint with `/api/v1/`.
+    Pass parameters as a standard JSON dictionary.
+    """
+    if params is None:
+        params = {}
+    
+    result = await openbb_rest.fetch(endpoint, params)
+    
+    if "error" in result:
+         return f"OpenBB API Error on {endpoint}: {result.get('error')} - {result.get('detail', '')}\nEnsure uvicorn is running OpenBB on port 8000."
+         
+    # OpenBB wrapping standard: results are inside the 'results' key
+    # Cap output length so the LLM context doesn't explode
+    import json
+    res_str = json.dumps(result, indent=2)
+    return res_str[:4000] + ("...\n[Truncated]" if len(res_str) > 4000 else "")
+
+async def execute_openbb_terminal_command(ctx: RunContext[TeamContext], command_path: str, symbol: str = None, chart: bool = False, limit: int = 10) -> str:
+    """
+    Execute a native OpenBB Platform command via the terminal.
+    Example command_path: 'equity.price.quote', 'equity.fundamental.income', 'crypto.price.historical'.
+    If 'chart' is True, a native window will open on the system.
+    """
+    kwargs = {}
+    if symbol:
+        kwargs["symbol"] = symbol
+    if chart:
+        kwargs["chart"] = True
+    if limit:
+        kwargs["limit"] = limit
+        
+    # Standardize path
+    command_path = command_path.replace("/", ".")
+    
+    result = await openbb_native.execute(command_path, kwargs)
+    if "error" in result:
+        return f"Error: {result['error']}"
+    return result.get("output", "Command executed.")
 
 # --- Tools for Quantitative Analyst ---
 async def get_price(ctx: RunContext[TeamContext], symbol: str) -> str:
@@ -217,14 +262,14 @@ fundamental_analyst = TeamAgent(
     name="Fundamental Analyst",
     role="Specialist in qualitative analysis, news, company fundamentals, and financial statements (balance sheets)",
     model_name=NEMOTRON_253B,
-    tools=[get_market_news, get_company_profile, get_balance_sheet, search_knowledge_base, read_textbook_section, general_web_search]
+    tools=[get_market_news, get_company_profile, get_balance_sheet, search_knowledge_base, read_textbook_section, general_web_search, query_openbb_api, execute_openbb_terminal_command]
 )
 
 quant_analyst = TeamAgent(
     name="Quantitative Analyst",
     role="Specialist in technical analysis, price data, and metrics",
     model_name=NEMOTRON_253B, # Switched from MIXTRAL to avoid tool parsing block
-    tools=[get_price, get_technical_indicator]
+    tools=[get_price, get_technical_indicator, query_openbb_api, execute_openbb_terminal_command]
 )
 
 risk_manager = TeamAgent(
@@ -241,7 +286,7 @@ macro_analyst = TeamAgent(
     name="Macro Analyst",
     role="Specialist in global economics and macro trends",
     model_name=NEMOTRON_253B,
-    tools=[get_macro_indicators, general_web_search]
+    tools=[get_macro_indicators, general_web_search, query_openbb_api, execute_openbb_terminal_command]
 )
 
 trader = TeamAgent(
@@ -274,18 +319,63 @@ async def run_strategy_signal(ctx: RunContext[TeamContext], symbol: str) -> str:
         f"  Take Profit:{signal['tp']:.5f}\n"
         f"  Risk Pips:  {signal['risk_pips']:.5f}\n"
         f"  Confidence: {signal['confidence']}\n"
-        f"  FVG Zone:   [{signal['fvg_bottom']:.5f} – {signal['fvg_top']:.5f}]\n"
+            f"  FVG Zone:   [{signal['fvg_bottom']:.5f} – {signal['fvg_top']:.5f}]\n"
         f"  Signal ID:  {signal['signal_id']}\n"
         f"  Source:     {source}"
     )
 
+async def create_or_edit_strategy_engine(ctx: RunContext[TeamContext], strategy_name: str, code: str, description: str) -> str:
+    """
+    Creates or updates a Python strategy engine based on theoretical textbooks or user ideas.
+    
+    CRITICAL INSTRUCTIONS FOR THE CODE PARAMETER:
+    1. You MUST import the interface: `from app.agents.strategies.engine.interfaces import IStrategyEngine`
+    2. You MUST import models: `from app.agents.strategies.engine.models import StrategyConfig, TradeSignal`
+    3. You MUST import typing: `from typing import List, Optional, Dict`
+    4. Your class MUST inherit from `IStrategyEngine`.
+    5. Your class MUST implement: 
+       `def run_session(self, m5_candles: List[dict], m1_candles: List[dict], account_size: float, config: StrategyConfig) -> Optional[TradeSignal]:`
+    6. Return a `TradeSignal` if criteria met, else `None`.
+    
+    This tool dynamically loads the code, registers it in the StrategyFactory, 
+    and saves the file to disk so it can be backtested immediately.
+    """
+    import os
+    from ...agents.strategies.engine.strategy_factory import StrategyFactory
+    
+    # Clean the code string (remove markdown blocks if present)
+    if code.startswith("```python"):
+        code = code[9:]
+    elif code.startswith("```"):
+        code = code[3:]
+    if code.endswith("```"):
+        code = code[:-3]
+    code = code.strip()
+    
+    try:
+        # Dynamically load and register
+        StrategyFactory.load_from_code(strategy_name, code)
+        
+        # Save to disk for persistence
+        file_name = f"{strategy_name.lower().replace(' ', '_')}.py"
+        engine_dir = os.path.join(os.path.dirname(__file__), "..", "strategies", "engine")
+        os.makedirs(engine_dir, exist_ok=True)
+        
+        file_path = os.path.join(engine_dir, file_name)
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(code)
+            
+        return f"SUCCESS: Strategy '{strategy_name}' was verified, generated, and registered successfully. It is now available for Backtesting or live tracking. File saved at: {file_name}\nDescription: {description}"
+        
+    except Exception as e:
+        return f"FAILED to create strategy: {str(e)}\nPlease review your Python code for syntax errors or missing required methods (run_session)."
 
-# --- Initialize Strategy Analyst Agent ---
+
 strategy_analyst = TeamAgent(
     name="Strategy Analyst",
-    role="Specialist in quantitative trading strategies — detects ORB, FVG, and Engulfing setups",
+    role="Specialist in quantitative trading strategies. Your main job is to read theoretical books, design algorithmic strategies, and WRITE executable Python code for the backtest engine.",
     model_name=NEMOTRON_253B, # Switched from MIXTRAL to avoid tool parsing block
-    tools=[run_strategy_signal, search_knowledge_base, read_textbook_section, general_web_search],
+    tools=[run_strategy_signal, create_or_edit_strategy_engine, search_knowledge_base, read_textbook_section, general_web_search, query_openbb_api],
 )
 
 # Export map for Orchestrator lookup

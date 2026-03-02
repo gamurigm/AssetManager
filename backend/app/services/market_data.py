@@ -9,6 +9,7 @@ from .twelve_data_service import twelve_data_service
 from .alpha_vantage_service import alpha_vantage_service
 from .polygon_service import polygon_service
 from .yahoo_finance_service import yahoo_finance_service
+from .bybit_service import bybit_service
 from .duckdb_store import duckdb_store
 from .intraday_repository import intraday_repository, DuckDBIntradayRepository
 from ..core.rate_limiter import get_bucket
@@ -25,6 +26,30 @@ cache = Cache(CACHE_DIR)
 
 class MarketDataService:
     CACHE_QUOTE_TTL = 60    # 1 minute for quotes to respect rate limits
+
+    # Common crypto base symbols for auto-detection
+    _CRYPTO_BASES = {
+        "BTC", "ETH", "SOL", "XRP", "ADA", "DOT", "AVAX", "MATIC", "LINK",
+        "UNI", "DOGE", "SHIB", "LTC", "BCH", "ATOM", "FIL", "APT", "ARB",
+        "OP", "SUI", "SEI", "TIA", "NEAR", "FTM", "ALGO", "AAVE", "MKR",
+        "CRV", "SNX", "COMP", "SAND", "MANA", "AXS", "ENJ", "GALA",
+        "PEPE", "WIF", "BONK", "FLOKI", "INJ", "TRX", "BNB", "TON",
+    }
+
+    @staticmethod
+    def _is_crypto(symbol: str) -> bool:
+        """Detect if a symbol is a cryptocurrency pair."""
+        sym = symbol.upper().replace("/", "").replace("-", "").replace("=", "")
+        # Direct match: BTCUSDT, ETHUSDC, etc.
+        for base in MarketDataService._CRYPTO_BASES:
+            if sym.startswith(base):
+                return True
+        # Slash notation: BTC/USD, ETH/USDT
+        if "/" in symbol:
+            base = symbol.split("/")[0].upper()
+            if base in MarketDataService._CRYPTO_BASES:
+                return True
+        return False
 
     @staticmethod
     def _normalize_symbol(symbol: str, provider: str) -> str:
@@ -55,6 +80,17 @@ class MarketDataService:
             return cached
 
         # --- CASCADE WITH RATE LIMITING ---
+
+        # 0. Bybit (Crypto-native, fastest for crypto pairs)
+        if MarketDataService._is_crypto(symbol):
+            bybit_bucket = get_bucket("bybit")
+            if bybit_bucket.can_request():
+                bybit_bucket.consume()
+                print(f"[MarketData] ✅ {symbol} → Bybit (Crypto)")
+                bybit_data = await bybit_service.get_quote(symbol)
+                if bybit_data and "price" in bybit_data and "error" not in bybit_data:
+                    cache.set(cache_key, bybit_data, expire=MarketDataService.CACHE_QUOTE_TTL)
+                    return bybit_data
 
         # 1. Yahoo Finance (Stable, generous limits)
         yf_bucket = get_bucket("yahoo")

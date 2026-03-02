@@ -22,7 +22,7 @@ async def delegate_task(ctx: RunContext[TeamContext], specialist_name: str, inst
         return f"Error: Specialist '{specialist_name}' not found. Available: {list(specialists_map.keys())}"
 
     from app.core.logging import logger
-    logger.info(f"[SEQ] → {specialist_name}: {instruction[:80]}…")
+    logger.info(f"[SEQ] -> {specialist_name}: {instruction[:80]}...")
     ctx.deps.add_message("system", f"Delegating to {specialist_name}: {instruction}", "Head of Strategy")
 
     result = await agent.run(instruction, ctx.deps)
@@ -44,8 +44,8 @@ async def delegate_parallel_tasks(ctx: RunContext[TeamContext], tasks: List[Dict
         if not agent:
             return f"⚠ {name}: not found."
 
-        logger.info(f"[PAR] → {name}: {instr[:60]}…")
-        ctx.deps.add_message("system", f"Parallel → {name}: {instr}", "Head of Strategy")
+        logger.info(f"[PAR] -> {name}: {instr[:60]}...")
+        ctx.deps.add_message("system", f"Parallel -> {name}: {instr}", "Head of Strategy")
 
         try:
             res = await agent.run(instr, ctx.deps)
@@ -58,6 +58,8 @@ async def delegate_parallel_tasks(ctx: RunContext[TeamContext], tasks: List[Dict
 
 
 # ── Orchestrator class ──────────────────────────────────────────────
+
+from .specialists import query_openbb_api, execute_openbb_terminal_command
 
 class HeadOfStrategy(TeamAgent):
     """
@@ -73,9 +75,10 @@ class HeadOfStrategy(TeamAgent):
             "IMPORTANT: When the user asks for a comprehensive analysis, a full report, "
             "or multi-ticker research, ALWAYS use 'delegate_parallel_tasks' to trigger "
             "specialists (Fundamental Analyst, Quantitative Analyst, Risk Manager, "
-            "Macro Analyst, Strategy Analyst) simultaneously to maximise efficiency.",
+            "Macro Analyst, Strategy Analyst) simultaneously to maximise efficiency. "
+            "You also have direct access to the OpenBB Terminal to fetch rapid quantitative or macro data natively and open charts.",
             ORCHESTRATOR_MODEL,
-            tools=[delegate_task, delegate_parallel_tasks],
+            tools=[delegate_task, delegate_parallel_tasks, query_openbb_api, execute_openbb_terminal_command],
         )
         # session_id → TeamContext (multi-conversation support)
         self._sessions: Dict[str, TeamContext] = {}

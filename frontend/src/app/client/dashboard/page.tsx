@@ -3,16 +3,54 @@
 import AppLayout from "@/components/layout/AppLayout";
 import Watchlist from "@/components/watchlist/Watchlist";
 import React, { useEffect, useState, useRef, useMemo } from "react";
-import { TrendingUp, TrendingDown, DollarSign, BarChart3, ArrowUpRight, ArrowDownRight, X, PieChart as PieIcon, LayoutGrid, ChartPie, ChevronDown, ChevronUp, Star, Activity, FileText, ShieldCheck } from "lucide-react";
+import { TrendingUp, TrendingDown, DollarSign, BarChart3, ArrowUpRight, ArrowDownRight, X, PieChart as PieIcon, LayoutGrid, ChartPie, ChevronDown, ChevronUp, Star, Activity, FileText, ShieldCheck, Pin, PinOff } from "lucide-react";
 import AssetTreemap from "@/components/charts/AssetTreemap";
 import SectorPieChart from "@/components/charts/SectorPieChart";
 import AllocationDonut from "@/components/charts/AllocationDonut";
 import { usePortfolio } from "@/context/PortfolioContext";
 import { logger } from "@/lib/logger";
+import { LineChart, Line, ResponsiveContainer, YAxis } from "recharts";
 
+const sparklineCache: Record<string, any[]> = {};
 
+const AssetSparkline = React.memo(({ symbol, color }: { symbol: string, color: string }) => {
+    const [data, setData] = useState<any[]>(sparklineCache[symbol] || []);
 
+    useEffect(() => {
+        if (sparklineCache[symbol]) return; // Skip fetch if cached
 
+        let isMounted = true;
+        fetch(`http://127.0.0.1:8282/api/v1/market/historical/${encodeURIComponent(symbol)}?limit=30`)
+            .then(res => res.json())
+            .then(json => {
+                if (isMounted && json && json.historical) {
+                    const sorted = [...json.historical].sort((a: any, b: any) => a.date.localeCompare(b.date));
+                    const finalData = sorted.slice(-30);
+                    sparklineCache[symbol] = finalData; // Save to cache
+                    setData(finalData);
+                }
+            })
+            .catch(() => { });
+        return () => { isMounted = false; };
+    }, [symbol]);
+
+    return (
+        <div className="h-8 w-24 ml-auto">
+            {data.length > 0 ? (
+                <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={data}>
+                        <YAxis domain={['auto', 'auto']} hide />
+                        <Line type="monotone" dataKey="close" stroke={color} strokeWidth={2} dot={false} isAnimationActive={false} />
+                    </LineChart>
+                </ResponsiveContainer>
+            ) : (
+                <div className="h-full w-full flex items-center justify-end">
+                    <div className="h-1 w-8 bg-border/50 rounded animate-pulse" />
+                </div>
+            )}
+        </div>
+    );
+});
 interface DashboardHolding {
     symbol: string;
     name: string;
@@ -25,6 +63,7 @@ interface DashboardHolding {
     source: string;
     sector: string;
     type: string;
+    purchaseDate?: string;
 }
 
 export default function ClientDashboard() {
@@ -33,7 +72,8 @@ export default function ClientDashboard() {
     const [activeTab, setActiveTab] = useState("portfolio");
     const [openTabs, setOpenTabs] = useState<{ id: string; title: string; symbol: string | null }[]>([{ id: "portfolio", title: "My Portfolio", symbol: null }]);
     const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-    const [watchlistVisible, setWatchlistVisible] = useState(true);
+    const [watchlistPinned, setWatchlistPinned] = useState(false);
+    const watchlistExpanded = watchlistPinned;
     const [transactions, setTransactions] = useState<any[]>([]);
 
     const togglePanel = (id: string) => {
@@ -214,9 +254,9 @@ export default function ClientDashboard() {
                     ))}
                 </div>
 
-                <div className="flex-1 flex overflow-hidden">
+                <div className="flex-1 flex overflow-hidden relative">
                     {/* Main Content Area */}
-                    <div className="flex-1 overflow-y-auto p-4 lg:px-8 lg:py-6 space-y-4">
+                    <div className={`flex-1 overflow-y-auto p-4 lg:px-8 lg:py-6 space-y-4 transition-[padding] ease-[cubic-bezier(0.16,1,0.3,1)] duration-500 ${watchlistPinned ? 'pr-[355px]' : 'pr-[60px]'}`}>
                         {activeTab === "portfolio" ? (
                             <>
                                 {/* Condensed Header */}
@@ -356,14 +396,14 @@ export default function ClientDashboard() {
                                 </div>
 
                                 {/* Main Grid */}
-                                <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                                <div className="space-y-6">
                                     {/* Holdings Table */}
-                                    <div className={`xl:col-span-2 bg-card border border-border rounded-2xl overflow-hidden shadow-sm transition-all duration-300 ${collapsed['holdings'] ? 'h-[60px]' : ''}`}>
+                                    <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm transition-all duration-300 ${collapsed['holdings'] ? 'h-[60px]' : ''}`}>
                                         <div
                                             onClick={() => togglePanel('holdings')}
                                             className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/30 cursor-pointer hover:bg-card-hover/50 transition-colors"
                                         >
-                                            <h2 className="text-xs font-black uppercase tracking-widest text-muted">Positions</h2>
+                                            <h2 className="text-xs font-bold uppercase tracking-widest text-muted">Positions</h2>
                                             <div className="flex items-center gap-4">
                                                 <div className="flex items-center gap-2">
                                                     {holdings.length > activeHoldings.length && (
@@ -372,7 +412,7 @@ export default function ClientDashboard() {
                                                             <span className="text-[9px] text-yellow-400 font-black uppercase">{holdings.length - activeHoldings.length} Sync</span>
                                                         </div>
                                                     )}
-                                                    <span className="text-[10px] text-accent font-black">{activeHoldings.length} Active</span>
+                                                    <span className="text-[10px] text-accent font-bold">{activeHoldings.length} Active</span>
                                                 </div>
                                                 <button
                                                     onClick={async (e) => {
@@ -398,7 +438,7 @@ export default function ClientDashboard() {
                                                             setHoldings([]);
                                                         }
                                                     }}
-                                                    className="px-2 py-0.5 rounded border border-red/40 bg-red/5 text-[9px] font-black text-red uppercase tracking-tighter hover:bg-red hover:text-white transition-all ml-2"
+                                                    className="px-2 py-0.5 rounded border border-red/40 bg-red/5 text-[9px] font-bold text-red uppercase tracking-tighter hover:bg-red hover:text-white transition-all ml-2"
                                                 >
                                                     Liquidate All
                                                 </button>
@@ -409,14 +449,14 @@ export default function ClientDashboard() {
                                             <div className="overflow-x-auto animate-in fade-in slide-in-from-top-2 duration-300">
                                                 <table className="w-full text-sm">
                                                     <thead>
-                                                        <tr className="text-left text-muted text-[10px] font-black uppercase tracking-widest border-b border-border bg-background/50">
+                                                        <tr className="text-left text-muted text-[10px] font-bold uppercase tracking-widest border-b border-border bg-background/50">
                                                             <th className="px-6 py-3">Posicion</th>
                                                             <th className="px-4 py-3 text-right">Tipo</th>
                                                             <th className="px-4 py-3 text-right">Volumen</th>
                                                             <th className="px-4 py-3 text-right">Beneficio Neto</th>
                                                             <th className="px-4 py-3 text-right">Valor Mercado</th>
-                                                            <th className="px-4 py-3 text-right">Precio Apertura</th>
-                                                            <th className="px-4 py-3 text-right">Precio Mercado</th>
+                                                            <th className="px-4 py-3 text-right">Fecha Adq.</th>
+                                                            <th className="px-4 py-3 text-right">Evolución</th>
                                                             <th className="px-6 py-3 text-right">Acción</th>
                                                         </tr>
                                                     </thead>
@@ -467,17 +507,17 @@ export default function ClientDashboard() {
                                                                             {h.shares >= 0 ? "Buy" : "Sell"}
                                                                         </td>
                                                                         <td className="px-4 py-4 text-right font-mono text-xs font-bold">{Math.abs(h.shares)}</td>
-                                                                        <td className={`px-4 py-4 text-right font-mono font-black text-sm ${h.change >= 0 ? 'text-green' : 'text-red'}`}>
+                                                                        <td className={`px-4 py-4 text-right font-mono font-bold text-sm tracking-tight ${h.change >= 0 ? 'text-green' : 'text-red'}`}>
                                                                             {h.change >= 0 ? "+" : ""}{h.change.toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
                                                                         </td>
-                                                                        <td className={`px-4 py-4 text-right font-mono font-black text-sm ${h.change >= 0 ? 'text-green' : 'text-red'}`}>
+                                                                        <td className={`px-4 py-4 text-right font-mono font-bold text-sm tracking-tight ${h.change >= 0 ? 'text-green' : 'text-red'}`}>
                                                                             ${(Math.abs(h.shares) * h.price).toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
                                                                         </td>
-                                                                        <td className="px-4 py-4 text-right font-mono text-xs text-muted">
-                                                                            ${(h as any).entryPrice?.toLocaleString("en-US", { minimumFractionDigits: 3 })}
+                                                                        <td className="px-4 py-4 text-right font-mono text-[10px] text-muted tracking-tighter uppercase whitespace-nowrap">
+                                                                            {(h as any).purchaseDate || "N/A"}
                                                                         </td>
-                                                                        <td className="px-4 py-4 text-right font-mono text-xs text-muted">
-                                                                            ${h.price.toLocaleString("en-US", { minimumFractionDigits: 3 })}
+                                                                        <td className="px-4 py-4 pr-6 flex justify-end">
+                                                                            <AssetSparkline symbol={h.symbol} color={badgeColor} />
                                                                         </td>
                                                                         <td className="px-6 py-4 text-right">
                                                                             <button
@@ -499,110 +539,113 @@ export default function ClientDashboard() {
                                         )}
                                     </div>
 
-                                    {/* Fee Analysis Panel */}
-                                    <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['economics'] ? 'h-[50px]' : ''}`}>
-                                        <div
-                                            onClick={() => togglePanel('economics')}
-                                            className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/30 cursor-pointer hover:bg-card-hover/50 transition-colors"
-                                        >
-                                            <h2 className="text-xs font-black uppercase tracking-widest text-muted">Economics</h2>
-                                            <div className="flex items-center gap-4">
-                                                {collapsed['economics'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
+                                    {/* Bottom Panels Row */}
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                        {/* Fee Analysis Panel */}
+                                        <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['economics'] ? 'h-[50px]' : ''}`}>
+                                            <div
+                                                onClick={() => togglePanel('economics')}
+                                                className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/30 cursor-pointer hover:bg-card-hover/50 transition-colors"
+                                            >
+                                                <h2 className="text-xs font-bold uppercase tracking-widest text-muted">Economics</h2>
+                                                <div className="flex items-center gap-4">
+                                                    {collapsed['economics'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
+                                                </div>
                                             </div>
+                                            {!collapsed['economics'] && (
+                                                <div className="p-6 space-y-5 flex-1 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-300">
+                                                    <div className="space-y-3">
+                                                        <div className="flex justify-between text-xs">
+                                                            <span className="text-muted font-medium">Management Fee (2.75%)</span>
+                                                            <span className="font-mono dark:text-white text-zinc-900">${(totalValue * 0.0275 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                        </div>
+                                                        <div className="flex justify-between text-xs">
+                                                            <span className="text-muted font-medium">Service Fee (0.75%)</span>
+                                                            <span className="font-mono dark:text-white text-zinc-900">${(totalValue * 0.0075 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                        </div>
+                                                        <div className="flex justify-between text-xs">
+                                                            <span className="text-muted font-medium">Other Exp. & Interest (0.59%)</span>
+                                                            <span className="font-mono dark:text-white text-zinc-900">${(totalValue * 0.0059 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                        </div>
+                                                        <div className="flex justify-between text-xs">
+                                                            <span className="text-muted font-medium">Reimbursements & Waivers</span>
+                                                            <span className="font-mono text-green-500">-${(totalValue * 0.0059 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                        </div>
+                                                        <div className="pt-2 border-t border-border/50 flex justify-between text-xs font-bold">
+                                                            <span className="text-accent uppercase tracking-tighter">Total Net Expenses (3.50%)</span>
+                                                            <span className="font-mono text-accent">~${(totalValue * 0.0350 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })} / mo</span>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="space-y-2 pt-4 border-t border-border/20">
+                                                        <div className="flex justify-between text-xs">
+                                                            <span className="text-muted">High-Water Mark (HWM)</span>
+                                                            <span className="font-mono dark:text-white text-zinc-900">${totalValue > 1250500 ? totalValue.toLocaleString() : "1,250,500.00"}</span>
+                                                        </div>
+                                                        <div className="p-3 rounded-lg bg-green/5 border border-green/10 flex items-center justify-between">
+                                                            <span className="text-[10px] text-green font-bold uppercase tracking-tight">Accrued Perf. Fee (20% above HWM)</span>
+                                                            <span className="text-sm font-bold text-green font-mono">
+                                                                ${totalValue > 1250500 ? ((totalValue - 1250500) * 0.20).toFixed(2) : "0.00"}
+                                                            </span>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="mt-auto pt-4 border-t border-border/50">
+                                                        <p className="text-[10px] text-muted leading-relaxed">
+                                                            Fees are calculated based on the <span className="text-foreground">Net Asset Value (NAV)</span> at the end of each billing cycle. Performance fees are subject to HWM principles as per the investment mandate.
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
-                                        {!collapsed['economics'] && (
-                                            <div className="p-6 space-y-5 flex-1 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-300">
-                                                <div className="space-y-3">
-                                                    <div className="flex justify-between text-[11px]">
-                                                        <span className="text-muted">Management Fee (2.75%)</span>
-                                                        <span className="font-mono dark:text-white text-zinc-900">${(totalValue * 0.0275 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                                    </div>
-                                                    <div className="flex justify-between text-[11px]">
-                                                        <span className="text-muted">Service Fee (0.75%)</span>
-                                                        <span className="font-mono dark:text-white text-zinc-900">${(totalValue * 0.0075 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                                    </div>
-                                                    <div className="flex justify-between text-[11px]">
-                                                        <span className="text-muted">Other Exp. & Interest (0.59%)</span>
-                                                        <span className="font-mono dark:text-white text-zinc-900">${(totalValue * 0.0059 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                                    </div>
-                                                    <div className="flex justify-between text-[11px]">
-                                                        <span className="text-muted">Reimbursements & Waivers</span>
-                                                        <span className="font-mono text-green-400">-${(totalValue * 0.0059 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                                    </div>
-                                                    <div className="pt-2 border-t border-border/50 flex justify-between text-xs font-bold">
-                                                        <span className="text-accent uppercase tracking-tighter">Total Net Expenses (3.50%)</span>
-                                                        <span className="font-mono text-accent">~${(totalValue * 0.0350 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })} / mo</span>
-                                                    </div>
-                                                </div>
 
-                                                <div className="space-y-2 pt-4 border-t border-border/20">
-                                                    <div className="flex justify-between text-xs">
-                                                        <span className="text-muted">High-Water Mark (HWM)</span>
-                                                        <span className="font-mono dark:text-white text-zinc-900">${totalValue > 1250500 ? totalValue.toLocaleString() : "1,250,500.00"}</span>
-                                                    </div>
-                                                    <div className="p-3 rounded-lg bg-green/5 border border-green/10 flex items-center justify-between">
-                                                        <span className="text-[10px] text-green font-bold uppercase tracking-tight">Accrued Perf. Fee (20% above HWM)</span>
-                                                        <span className="text-sm font-black text-green font-mono">
-                                                            ${totalValue > 1250500 ? ((totalValue - 1250500) * 0.20).toFixed(2) : "0.00"}
-                                                        </span>
-                                                    </div>
+                                        {/* Recent Activity Panel */}
+                                        <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['activity'] ? 'h-[50px]' : 'h-[400px]'}`}>
+                                            <div
+                                                onClick={() => togglePanel('activity')}
+                                                className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/30 cursor-pointer hover:bg-card-hover/50 transition-colors"
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    <Activity size={12} className="text-accent" />
+                                                    <h2 className="text-xs font-bold uppercase tracking-widest text-muted">Recent Activity</h2>
                                                 </div>
-
-                                                <div className="mt-auto pt-4 border-t border-border/50">
-                                                    <p className="text-[10px] text-muted leading-relaxed">
-                                                        Fees are calculated based on the <span className="text-foreground">Net Asset Value (NAV)</span> at the end of each billing cycle. Performance fees are subject to HWM principles as per the investment mandate.
-                                                    </p>
+                                                <div className="flex items-center gap-4">
+                                                    <span className="text-[10px] text-accent font-bold">{transactions.length} Events</span>
+                                                    {collapsed['activity'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
                                                 </div>
                                             </div>
-                                        )}
-                                    </div>
-
-                                    {/* Recent Activity Panel */}
-                                    <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['activity'] ? 'h-[50px]' : 'h-[400px]'}`}>
-                                        <div
-                                            onClick={() => togglePanel('activity')}
-                                            className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/30 cursor-pointer hover:bg-card-hover/50 transition-colors"
-                                        >
-                                            <div className="flex items-center gap-2">
-                                                <Activity size={12} className="text-accent" />
-                                                <h2 className="text-xs font-black uppercase tracking-widest text-muted">Recent Activity</h2>
-                                            </div>
-                                            <div className="flex items-center gap-4">
-                                                <span className="text-[10px] text-accent font-black">{transactions.length} Events</span>
-                                                {collapsed['activity'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
-                                            </div>
-                                        </div>
-                                        {!collapsed['activity'] && (
-                                            <div className="flex-1 overflow-y-auto p-0 animate-in fade-in slide-in-from-top-2 duration-300">
-                                                {transactions.length === 0 ? (
-                                                    <div className="h-full flex flex-col items-center justify-center p-8 text-center">
-                                                        <Activity size={32} className="text-muted/20 mb-3" />
-                                                        <p className="text-xs text-muted font-bold uppercase tracking-widest">No recent transactions</p>
-                                                        <p className="text-[10px] text-muted/60 mt-1 max-w-[180px]">Automated and manual liquidations will appear here.</p>
-                                                    </div>
-                                                ) : (
-                                                    <div className="divide-y divide-border/50">
-                                                        {transactions.map((t, i) => (
-                                                            <div key={i} className="px-5 py-3 hover:bg-card-hover/20 transition-colors flex items-center justify-between group">
-                                                                <div className="flex items-center gap-3">
-                                                                    <div className={`h-8 w-8 rounded-lg flex items-center justify-center font-black text-[10px] ${t.type === 'BUY' ? 'bg-green/10 text-green' : 'bg-red/10 text-red'}`}>
-                                                                        {t.type.slice(0, 1)}
+                                            {!collapsed['activity'] && (
+                                                <div className="flex-1 overflow-y-auto p-0 animate-in fade-in slide-in-from-top-2 duration-300">
+                                                    {transactions.length === 0 ? (
+                                                        <div className="h-full flex flex-col items-center justify-center p-8 text-center">
+                                                            <Activity size={32} className="text-muted/20 mb-3" />
+                                                            <p className="text-xs text-muted font-bold uppercase tracking-widest">No recent transactions</p>
+                                                            <p className="text-[10px] text-muted/60 mt-1 max-w-[180px]">Automated and manual liquidations will appear here.</p>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="divide-y divide-border/50">
+                                                            {transactions.map((t, i) => (
+                                                                <div key={i} className="px-5 py-3 hover:bg-card-hover/20 transition-colors flex items-center justify-between group">
+                                                                    <div className="flex items-center gap-3">
+                                                                        <div className={`h-8 w-8 rounded-lg flex items-center justify-center font-bold text-[10px] ${t.type === 'BUY' ? 'bg-green/10 text-green' : 'bg-red/10 text-red'}`}>
+                                                                            {t.type.slice(0, 1)}
+                                                                        </div>
+                                                                        <div className="flex flex-col">
+                                                                            <span className="text-xs font-bold group-hover:text-accent transition-colors">{t.symbol}</span>
+                                                                            <span className="text-[9px] text-muted font-bold uppercase tracking-tighter">{t.date} • {t.time}</span>
+                                                                        </div>
                                                                     </div>
-                                                                    <div className="flex flex-col">
-                                                                        <span className="text-xs font-black group-hover:text-accent transition-colors">{t.symbol}</span>
-                                                                        <span className="text-[9px] text-muted font-bold uppercase tracking-tighter">{t.date} • {t.time}</span>
+                                                                    <div className="text-right flex flex-col">
+                                                                        <span className="text-xs font-mono font-bold">${(t.price * t.shares).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                                        <span className="text-[9px] text-muted font-bold tracking-tighter">{t.shares} units @ ${t.price.toFixed(2)}</span>
                                                                     </div>
                                                                 </div>
-                                                                <div className="text-right flex flex-col">
-                                                                    <span className="text-xs font-mono font-black">${(t.price * t.shares).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                                                    <span className="text-[9px] text-muted font-bold tracking-tighter">{t.shares} units @ ${t.price.toFixed(2)}</span>
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                )}
-                                            </div>
-                                        )}
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
 
                                     {/* Watchlist Panel - Always Visible */}
@@ -617,29 +660,43 @@ export default function ClientDashboard() {
                         )}
                     </div>
 
-                    {/* TradingView-style Watchlist Sidebar */}
-                    {watchlistVisible && (
-                        <div className="w-[300px] border-l border-border bg-card/10 animate-in slide-in-from-right duration-300 hidden xl:flex flex-col shadow-2xl z-20">
+                    {/* Sliding Watchlist Area */}
+                    <div
+                        className={`absolute right-0 top-0 h-full transition-transform ease-[cubic-bezier(0.16,1,0.3,1)] duration-500 z-50 flex ${watchlistExpanded ? 'translate-x-0' : 'translate-x-[calc(100%-45px)]'}`}
+                    >
+                        {/* Minimalist Vertical Toggle Bar (always visible edge) */}
+                        <div className="w-[45px] border-l border-border bg-background/50 backdrop-blur-3xl flex flex-col items-center py-4 gap-6 h-full shadow-[-10px_0_30px_rgba(0,0,0,0.05)]">
+                            <button
+                                onClick={() => setWatchlistPinned(!watchlistPinned)}
+                                className={`p-2 rounded-lg transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${watchlistPinned ? 'bg-accent/10 text-accent opacity-100' : 'text-muted hover:text-foreground hover:bg-card/80 opacity-40 hover:opacity-100'}`}
+                                title={watchlistPinned ? "Unpin Watchlist" : "Pin Watchlist"}
+                            >
+                                {watchlistPinned ? <PinOff size={16} /> : <Pin size={16} />}
+                            </button>
+                            <div className="h-px w-6 bg-border/50" />
+
+                            {/* Extra Tools */}
+                            <button className="text-muted hover:text-foreground transition-all duration-300 p-2 rounded-lg hover:bg-card/80 opacity-60 hover:opacity-100" title="Chart View">
+                                <ChartPie size={16} />
+                            </button>
+                            <button className="text-muted hover:text-foreground transition-all duration-300 p-2 rounded-lg hover:bg-card/80 opacity-60 hover:opacity-100" title="Advanced Layout">
+                                <LayoutGrid size={16} />
+                            </button>
+                            <button className="text-muted hover:text-foreground transition-all duration-300 p-2 rounded-lg hover:bg-card/80 opacity-60 hover:opacity-100" title="Activity Logs">
+                                <Activity size={16} />
+                            </button>
+                            <button className="text-muted hover:text-foreground transition-all duration-300 p-2 rounded-lg hover:bg-card/80 opacity-60 hover:opacity-100" title="Statements">
+                                <FileText size={16} />
+                            </button>
+                            <button className="text-muted hover:text-foreground transition-all duration-300 p-2 rounded-lg hover:bg-card/80 opacity-60 hover:opacity-100" title="Security Settings">
+                                <ShieldCheck size={16} />
+                            </button>
+                        </div>
+
+                        {/* TradingView-style Watchlist Sidebar */}
+                        <div className="w-[300px] border-l border-border/50 bg-background/70 backdrop-blur-3xl flex flex-col shadow-[-20px_0_50px_rgba(0,0,0,0.03)] h-full">
                             <Watchlist onSelectSymbol={openSymbolTab} />
                         </div>
-                    )}
-
-                    {/* Minimalist Vertical Toggle Bar */}
-                    <div className="w-[45px] border-l border-border bg-card/20 flex flex-col items-center py-4 gap-6 z-30">
-                        <button
-                            onClick={() => setWatchlistVisible(!watchlistVisible)}
-                            className={`p-2 rounded-lg transition-all ${watchlistVisible ? 'bg-accent/10 text-accent' : 'text-muted hover:text-foreground hover:bg-card/50'}`}
-                            title="Toggle Watchlist"
-                        >
-                            <Star size={18} className={watchlistVisible ? 'fill-accent' : ''} />
-                        </button>
-                        <div className="h-px w-6 bg-border" />
-                        <button className="text-muted hover:text-foreground transition-colors p-2 rounded-lg hover:bg-card/50">
-                            <ChartPie size={18} />
-                        </button>
-                        <button className="text-muted hover:text-foreground transition-colors p-2 rounded-lg hover:bg-card/50">
-                            <LayoutGrid size={18} />
-                        </button>
                     </div>
                 </div>
             </div>

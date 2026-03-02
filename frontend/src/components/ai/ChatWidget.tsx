@@ -80,19 +80,25 @@ export default function ChatWidget() {
         };
     }, [resetInactivityTimer]);
 
-    // Dragging
-    const handleMouseDown = (e: React.MouseEvent) => {
+    // Dragging Logic
+    const handleMouseDownIcon = (e: React.MouseEvent) => {
         if (isOpen || isStellarMode) return;
+        setIsDragging(true);
+        dragRef.current = { startX: e.clientX, startY: e.clientY, startPosX: iconPos.x, startPosY: iconPos.y, moved: false };
+    };
+
+    const handleMouseDownHeader = (e: React.MouseEvent) => {
+        if (!isOpen || isMaximized || isStellarMode) return;
         setIsDragging(true);
         dragRef.current = { startX: e.clientX, startY: e.clientY, startPosX: iconPos.x, startPosY: iconPos.y, moved: false };
     };
 
     useEffect(() => {
         const handleResize = () => {
-            if (!isDragging && !isOpen && !isStellarMode) {
+            if (!isDragging && !isStellarMode) {
                 setIconPos(prev => ({
-                    x: Math.min(prev.x, window.innerWidth - 80),
-                    y: Math.min(prev.y, window.innerHeight - 80),
+                    x: Math.min(prev.x, window.innerWidth - (isOpen ? 400 : 80)),
+                    y: Math.min(prev.y, window.innerHeight - (isOpen ? 600 : 80)),
                 }));
             }
         };
@@ -106,15 +112,29 @@ export default function ChatWidget() {
             const dX = dragRef.current.startX - e.clientX;
             const dY = dragRef.current.startY - e.clientY;
             if (Math.abs(dX) > 5 || Math.abs(dY) > 5) dragRef.current.moved = true;
+
+            // Define bounds based on whether it's open (it's much larger) or closed (just an icon)
+            const padding = 20;
+            const curWidth = isOpen ? (activeSessionIds.length > 1 ? Math.min(1200, window.innerWidth * 0.95) : Math.min(520, window.innerWidth)) : 70;
+            const curHeight = isOpen ? Math.min(800, window.innerHeight - 80) : 70;
+
+            const maxRight = window.innerWidth - curWidth - padding;
+            const maxBottom = window.innerHeight - curHeight - padding;
+
+            // X and Y are relative to bottom-right in the old CSS, 
+            // but it's easier to keep them as "Offset from bottom right" 
             setIconPos({
-                x: Math.min(Math.max(20, dragRef.current.startPosX + dX), window.innerWidth - 70),
-                y: Math.min(Math.max(20, dragRef.current.startPosY + dY), window.innerHeight - 70),
+                x: Math.min(Math.max(padding, dragRef.current.startPosX + dX), Math.max(padding, maxRight)),
+                y: Math.min(Math.max(padding, dragRef.current.startPosY + dY), Math.max(padding, maxBottom)),
             });
         };
         const handleMouseUp = () => {
             if (!isDragging) return;
             setIsDragging(false);
-            if (dragRef.current && !dragRef.current.moved) setIsOpen(true);
+            // If dragging icon, not moved -> open it
+            if (!isOpen && dragRef.current && !dragRef.current.moved) {
+                setIsOpen(true);
+            }
             dragRef.current = null;
         };
         if (isDragging) {
@@ -125,7 +145,7 @@ export default function ChatWidget() {
             window.removeEventListener("mousemove", handleMouseMove);
             window.removeEventListener("mouseup", handleMouseUp);
         };
-    }, [isDragging]);
+    }, [isDragging, isOpen, activeSessionIds.length]);
 
     // ── Session Management
     const createSession = () => {
@@ -190,11 +210,11 @@ export default function ChatWidget() {
     // ── RENDER ──────────────────────────────────────────────────────
     return (
         <div
-            className={`fixed z-[9999] flex flex-col items-end transition-all ease-[cubic-bezier(0.2,0.8,0.2,1)] duration-700 ${isDragging ? "select-none scale-105 transition-none" : ""}`}
+            className={`fixed z-[9999] flex flex-col items-end transition-all ease-[cubic-bezier(0.2,0.8,0.2,1)] duration-700 ${isDragging ? "select-none transition-none shadow-2xl" : ""}`}
             style={{
-                right: isStellarMode ? 20 : (isMaximized ? 0 : (isOpen ? (window.innerWidth < 640 ? 0 : 40) : iconPos.x)),
+                right: isStellarMode ? 20 : (isMaximized ? 0 : iconPos.x),
                 top: isStellarMode ? 20 : "auto",
-                bottom: isStellarMode ? "auto" : (isMaximized ? 0 : (isOpen ? (window.innerWidth < 640 ? 0 : 40) : iconPos.y)),
+                bottom: isStellarMode ? "auto" : (isMaximized ? 0 : iconPos.y),
                 width: isStellarMode ? "12px" : (isMaximized ? "100%" : (isOpen ? (activeSessionIds.length > 1 ? "min(1200px, 95vw)" : "min(520px, 100vw)") : "56px")),
                 height: isStellarMode ? "12px" : (isMaximized ? "100%" : (isOpen ? (window.innerWidth < 640 ? "100vh" : "min(800px, calc(100vh - 80px))") : "56px")),
             }}
@@ -210,7 +230,9 @@ export default function ChatWidget() {
                     ${isMaximized || (typeof window !== "undefined" && window.innerWidth < 640) ? "rounded-none border-none" : "rounded-[32px]"} ring-1 ring-black/5`}>
 
                     {/* ── HEADER ─────────────────────────────────── */}
-                    <header className={`px-5 py-3.5 flex justify-between items-center border-b transition-colors relative z-10
+                    <header
+                        onMouseDown={handleMouseDownHeader}
+                        className={`px-5 py-3.5 flex justify-between items-center border-b transition-colors relative z-10 ${!isMaximized ? "cursor-grab active:cursor-grabbing" : ""}
                         ${isDarkMode ? "bg-white/[0.04] border-white/5" : "bg-white/40 border-zinc-100"}`}>
                         <div className="flex items-center gap-3">
                             <div className={`h-9 w-9 rounded-xl flex items-center justify-center text-white shadow-lg
@@ -340,7 +362,7 @@ export default function ChatWidget() {
             ) : (
                 /* ── FLOATING ICON ──────────────────────────── */
                 <button
-                    onMouseDown={handleMouseDown}
+                    onMouseDown={handleMouseDownIcon}
                     className={`h-14 w-14 flex items-center justify-center transition-all duration-500 group overflow-hidden relative shadow-2xl
                         ${isDarkMode
                             ? "bg-zinc-950 border-2 border-fuchsia-500/50 rounded-[22px] ring-4 ring-fuchsia-500/10 shadow-[0_0_30px_-5px_#d946ef80]"

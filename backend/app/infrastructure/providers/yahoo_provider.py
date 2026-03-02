@@ -24,15 +24,38 @@ class YahooProvider(IMarketDataProvider):
         return "yahoo"
 
     def normalize_symbol(self, symbol: str) -> str:
+        # Common Index mappings
+        index_map = {
+            "SPX": "^GSPC",
+            "SP500": "^GSPC",
+            "S&P 500": "^GSPC",
+            "NASDAQ": "^IXIC",
+            "NDX": "^NDX",
+            "DOW": "^DJI",
+            "DJIA": "^DJI",
+            "VIX": "^VIX"
+        }
+        
+        upper_sym = symbol.upper()
+        if upper_sym in index_map:
+            return index_map[upper_sym]
+            
         if symbol == "BTC/USD":
             return "BTC-USD"
         if symbol == "ETH/USD":
             return "ETH-USD"
+            
+        fiat_currencies = ["EUR", "USD", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD"]
+        
         if "/" in symbol:
-            fiat = ["EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD"]
-            if any(c in symbol for c in fiat):
+            if any(c in symbol for c in fiat_currencies):
                 return symbol.replace("/", "") + "=X"
             return symbol.replace("/", "-")
+            
+        # Handle 6-letter fiat pairs sent without slashes (e.g. "EURGBP")
+        if len(symbol) == 6 and symbol[:3] in fiat_currencies and symbol[3:] in fiat_currencies:
+            return symbol + "=X"
+            
         return symbol
 
     # ─── Blocking helpers (run in background thread) ──────────────────

@@ -1,32 +1,53 @@
 "use client"
 
 import Sidebar from "@/components/layout/Sidebar";
+import OpenBBTerminal from "@/components/layout/OpenBBTerminal";
 import { useState, useEffect } from "react";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-    const [collapsed, setCollapsed] = useState(false);
+    const [mounted, setMounted] = useState(false);
+    const [terminalHeight, setTerminalHeight] = useState(0);
 
     useEffect(() => {
-        const handleResize = () => {
-            if (window.innerWidth < 1024) setCollapsed(true);
-            else setCollapsed(false);
-        };
-        handleResize();
-        window.addEventListener("resize", handleResize);
-        return () => window.removeEventListener("resize", handleResize);
+        setMounted(true);
     }, []);
 
+    // Listen for terminal open/close/resize events
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const h = (e as CustomEvent).detail?.height ?? 0;
+            setTerminalHeight(h);
+        };
+        window.addEventListener('terminal-resize', handler);
+        return () => window.removeEventListener('terminal-resize', handler);
+    }, []);
+
+    // Sidebar permanently collapsed
+    const expanded = false;
+
+    if (!mounted) {
+        return (
+            <div className="flex min-h-screen bg-background">
+                <div className="fixed top-0 left-0 h-screen z-40 w-[68px] border-r border-border bg-card" />
+                <main className="flex-1 ml-[68px]">
+                    {children}
+                </main>
+            </div>
+        );
+    }
+
     return (
-        <div className="flex min-h-screen">
-            <Sidebar collapsed={collapsed} setCollapsed={setCollapsed} />
+        <div className="flex min-h-screen bg-background text-foreground">
+            <div className="z-[100] fixed top-0 left-0 h-screen pointer-events-auto">
+                <Sidebar expanded={expanded} />
+            </div>
             <main
-                className={`flex-1 transition-all duration-300 ${collapsed
-                        ? "ml-[68px]"
-                        : "lg:ml-[240px] ml-[68px]"
-                    }`}
+                className="flex-1 ml-[68px] transition-all duration-300 w-full overflow-auto"
+                style={{ paddingBottom: terminalHeight > 0 ? `${terminalHeight}px` : undefined }}
             >
                 {children}
             </main>
+            <OpenBBTerminal />
         </div>
     );
 }

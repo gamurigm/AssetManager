@@ -1,7 +1,8 @@
 "use client"
 
-import { useState, useEffect } from "react";
-import { Star, Plus, X, ExternalLink, TrendingUp, TrendingDown } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Plus, MoreHorizontal, ChevronDown, ChevronRight, ExternalLink, LayoutGrid, Pencil, X } from "lucide-react";
+import styles from "./Watchlist.module.css";
 
 declare global {
     interface Window {
@@ -14,107 +15,309 @@ declare global {
 interface WatchlistItem {
     symbol: string;
     price: number;
+    change: number;
     changePercent: number;
+}
+
+interface WatchlistGroup {
+    name: string;
+    expanded: boolean;
+    symbols: string[];
+}
+
+// ── Icon map for popular symbols ──────────────────────────────────
+const SYMBOL_ICONS: Record<string, { bg: string; label: string; textColor?: string }> = {
+    "BTC/USD": { bg: "#F7931A", label: "₿" },
+    "BTCUSD": { bg: "#F7931A", label: "₿" },
+    "USDX": { bg: "#26A69A", label: "$" },
+    "OILUSD": { bg: "#1a1a1a", label: "●", textColor: "#fff" },
+    "CHFUSD": { bg: "#D32F2F", label: "+" },
+    "USDMXN": { bg: "#D32F2F", label: "$" },
+    "CHFEUR": { bg: "#D32F2F", label: "+" },
+    "TLT": { bg: "#1565C0", label: "i" },
+    "NASDAQ": { bg: "#1565C0", label: "N" },
+    "SOLANA": { bg: "#9945FF", label: "S" },
+    "SOL/USD": { bg: "#9945FF", label: "S" },
+    "RSP": { bg: "#E91E63", label: "R" },
+    "GOOG": { bg: "#4285F4", label: "G" },
+    "EURGBP": { bg: "#3949AB", label: "€" },
+    "ETH/USD": { bg: "#627EEA", label: "Ξ" },
+    "NVDA": { bg: "#76B900", label: "N" },
+    "AAPL": { bg: "#555555", label: "" },
+    "MSFT": { bg: "#00A4EF", label: "M" },
+    "AMZN": { bg: "#FF9900", label: "A" },
+    "TSLA": { bg: "#CC0000", label: "T" },
+    "META": { bg: "#0081FB", label: "M" },
+};
+
+function getSymbolIcon(symbol: string) {
+    const key = symbol.toUpperCase().replace("/", "");
+    const match = SYMBOL_ICONS[symbol] || SYMBOL_ICONS[key] || Object.entries(SYMBOL_ICONS).find(([k]) => key.includes(k))?.[1];
+    if (match) return match;
+    let hash = 0;
+    for (let i = 0; i < symbol.length; i++) hash = symbol.charCodeAt(i) + ((hash << 5) - hash);
+    const hue = Math.abs(hash) % 360;
+    return { bg: `hsl(${hue}, 55%, 50%)`, label: symbol[0]?.toUpperCase() || "?" };
+}
+
+// ── Format price with superscript last digits ──────────────────────
+function PriceDisplay({ price }: { price: number }) {
+    if (price === 0) return <span className={styles.wlPriceZero}>—</span>;
+    let decimals = 2;
+    if (price < 1) decimals = 5;
+    else if (price < 100) decimals = 4;
+    else if (price < 10000) decimals = 3;
+
+    const str = price.toFixed(decimals);
+    const [whole, dec] = str.split(".");
+    if (!dec) return <span>{whole}</span>;
+    const mainDec = dec.substring(0, Math.max(0, dec.length - 2));
+    const superDec = dec.substring(Math.max(0, dec.length - 2));
+    return (
+        <span className={styles.wlPrice}>
+            {whole}.{mainDec}
+            <sup className={styles.wlPriceSuper}>{superDec}</sup>
+        </span>
+    );
 }
 
 export default function Watchlist({ onSelectSymbol }: { onSelectSymbol: (s: string) => void }) {
     const [items, setItems] = useState<WatchlistItem[]>([]);
+    const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
     const [newSymbol, setNewSymbol] = useState("");
-    const [loading, setLoading] = useState(false);
+    const [showAddInput, setShowAddInput] = useState(false);
+    const addInputRef = useRef<HTMLInputElement>(null);
 
-    // Note: In a real app, we'd fetch this from the /watchlist API
-    // Using a local default for the demo
-    const [symbols, setSymbols] = useState(["AAPL", "BTC/USD", "NVDA", "ETH/USD"]);
+    const [groups, setGroups] = useState<WatchlistGroup[]>([
+        { name: "CRIPTO", expanded: true, symbols: ["BTC/USD", "ETH/USD", "SOL/USD"] },
+        { name: "FOREX", expanded: true, symbols: ["USDMXN", "EURGBP", "CHFEUR"] },
+        { name: "STOCKS", expanded: true, symbols: ["AAPL", "NVDA", "GOOG", "MSFT"] },
+        { name: "INDICES", expanded: true, symbols: ["NASDAQ", "RSP"] },
+    ]);
 
+    const allSymbols = groups.flatMap(g => g.symbols);
+
+    // Fetch quote data
     useEffect(() => {
-        const fetchWatchlistData = async () => {
+        const fetchAll = async () => {
             const data = await Promise.all(
-                symbols.map(async (s) => {
+                allSymbols.map(async (s) => {
                     try {
                         const res = await fetch(`http://127.0.0.1:8282/api/v1/market/quote/${encodeURIComponent(s)}`);
                         const d = await res.json();
+                        const prc = d.price || 0;
+                        const chgPct = d.changePercentage || 0;
                         return {
                             symbol: s,
-                            price: d.price || 0,
-                            changePercent: d.changePercentage || 0,
+                            price: prc,
+                            change: prc * (chgPct / 100),
+                            changePercent: chgPct,
                         };
-                    } catch (e) {
-                        return { symbol: s, price: 0, changePercent: 0 };
+                    } catch {
+                        return { symbol: s, price: 0, change: 0, changePercent: 0 };
                     }
                 })
             );
             setItems(data);
         };
-
-        fetchWatchlistData();
-        const timer = setInterval(fetchWatchlistData, 30000);
+        fetchAll();
+        const timer = setInterval(fetchAll, 30000);
         return () => clearInterval(timer);
-    }, [symbols]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [allSymbols.join(",")]);
 
-    const addSymbol = () => {
-        if (newSymbol && !symbols.includes(newSymbol.toUpperCase())) {
-            setSymbols([...symbols, newSymbol.toUpperCase()]);
-            setNewSymbol("");
-        }
+    const toggleGroup = (name: string) => {
+        setGroups(prev => prev.map(g => g.name === name ? { ...g, expanded: !g.expanded } : g));
     };
 
-    const removeSymbol = (s: string) => {
-        setSymbols(symbols.filter(item => item !== s));
+    const addSymbol = () => {
+        if (!newSymbol.trim()) return;
+        const sym = newSymbol.toUpperCase().trim();
+        if (allSymbols.includes(sym)) { setNewSymbol(""); return; }
+        setGroups(prev => {
+            const copy = [...prev];
+            if (copy.length > 0) {
+                copy[0] = { ...copy[0], symbols: [...copy[0].symbols, sym] };
+            }
+            return copy;
+        });
+        setNewSymbol("");
+        setShowAddInput(false);
+    };
+
+    const handleSelectSymbol = (symbol: string) => {
+        setSelectedSymbol(symbol);
+        onSelectSymbol(symbol);
+    };
+
+    const selectedItem = items.find(i => i.symbol === selectedSymbol);
+
+    useEffect(() => {
+        if (showAddInput && addInputRef.current) {
+            addInputRef.current.focus();
+        }
+    }, [showAddInput]);
+
+    const formatChange = (val: number) => {
+        const abs = Math.abs(val);
+        if (abs === 0) return "0.00";
+        if (abs < 0.01) return val.toFixed(5);
+        if (abs < 1) return val.toFixed(4);
+        if (abs < 100) return val.toFixed(3);
+        return val.toFixed(1);
     };
 
     return (
-        <div className="flex flex-col h-full overflow-hidden">
-            {/* Minimalist Toolbar - No redundant title */}
-            <div className="px-5 py-2.5 border-b border-border/30 flex items-center justify-between gap-2 bg-card-hover/10 group">
-                <div className="flex items-center gap-2">
-                    <Star size={12} className="text-accent fill-accent/20 animate-pulse" />
-                    <span className="text-[9px] font-black uppercase text-accent/60 tracking-[0.2em]">Market Feed</span>
+        <div className={styles.wlRoot}>
+            {/* ── Header Bar ────────────────────────────── */}
+            <div className={styles.wlHeader}>
+                <div className={styles.wlHeaderLeft}>
+                    <span className={styles.wlTitle}>Lista de seguimiento</span>
+                    <ChevronDown size={12} className={styles.wlTitleArrow} />
                 </div>
-                <div className="flex items-center gap-2">
-                    <input
-                        type="text"
-                        value={newSymbol}
-                        onChange={(e) => setNewSymbol(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && addSymbol()}
-                        placeholder="TICKER"
-                        className="bg-background/40 border border-border/40 rounded px-2 py-0.5 text-[10px] font-bold w-16 focus:outline-none focus:ring-1 focus:ring-accent transition-all placeholder:text-muted/30"
-                    />
-                    <button onClick={addSymbol} className="p-1 hover:bg-accent/20 rounded text-accent transition-all">
-                        <Plus size={14} />
+                <div className={styles.wlHeaderActions}>
+                    <button
+                        className={styles.wlHeaderBtn}
+                        title="Agregar símbolo"
+                        onClick={() => setShowAddInput(!showAddInput)}
+                    >
+                        <Plus size={16} />
+                    </button>
+                    <button className={styles.wlHeaderBtn} title="Vista">
+                        <LayoutGrid size={16} />
+                    </button>
+                    <button className={styles.wlHeaderBtn} title="Más opciones">
+                        <MoreHorizontal size={16} />
                     </button>
                 </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                {items.map((item) => (
-                    <div
-                        key={item.symbol}
-                        onClick={() => onSelectSymbol(item.symbol)}
-                        className="group flex items-center justify-between p-3 rounded-xl hover:bg-card-hover transition-all border border-transparent hover:border-border/50 cursor-pointer"
-                    >
-                        <div className="flex items-center gap-3">
-                            <div>
-                                <p className="text-sm font-bold group-hover:text-accent transition-colors">{item.symbol}</p>
-                                <div className="flex items-center gap-1">
-                                    <span className={`text-[10px] font-bold ${item.changePercent >= 0 ? 'text-green' : 'text-red'}`}>
-                                        {item.changePercent >= 0 ? '+' : ''}{item.changePercent.toFixed(2)}%
-                                    </span>
-                                </div>
-                            </div>
+            {/* ── Add Symbol Input ──────────────────────── */}
+            {showAddInput && (
+                <div className={styles.wlAddBar}>
+                    <input
+                        ref={addInputRef}
+                        type="text"
+                        value={newSymbol}
+                        onChange={(e) => setNewSymbol(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === "Enter") addSymbol();
+                            if (e.key === "Escape") setShowAddInput(false);
+                        }}
+                        placeholder="Buscar símbolo... (ej: AAPL)"
+                        className={styles.wlAddInput}
+                    />
+                    <button onClick={addSymbol} className={styles.wlAddBtn}>Agregar</button>
+                    <button onClick={() => setShowAddInput(false)} className={styles.wlAddClose}>
+                        <X size={14} />
+                    </button>
+                </div>
+            )}
+
+            {/* ── Column Headers ───────────────────────── */}
+            <div className={styles.wlColHeaders}>
+                <span>Symbol</span>
+                <span className={styles.wlColLast}>Last</span>
+                <span className={styles.wlColChg}>Chg</span>
+                <span className={styles.wlColChgpct}>Chg%</span>
+            </div>
+
+            {/* ── Scrollable List ──────────────────────── */}
+            <div className={styles.wlList}>
+                {groups.map((group) => (
+                    <div key={group.name}>
+                        {/* Group Header */}
+                        <div
+                            className={styles.wlGroupHeader}
+                            onClick={() => toggleGroup(group.name)}
+                        >
+                            {group.expanded
+                                ? <ChevronDown size={12} className={styles.wlGroupArrow} />
+                                : <ChevronRight size={12} className={styles.wlGroupArrow} />
+                            }
+                            <span className={styles.wlGroupName}>{group.name}</span>
                         </div>
 
-                        <div className="flex items-center gap-3">
-                            <p className="text-xs font-mono font-semibold">${item.price.toFixed(item.symbol.includes('/') ? 2 : 2)}</p>
-                            <button
-                                onClick={(e) => { e.stopPropagation(); removeSymbol(item.symbol); }}
-                                className="p-1 text-muted opacity-0 group-hover:opacity-100 hover:text-red transition-all"
-                            >
-                                <X size={14} />
-                            </button>
-                        </div>
+                        {/* Group Items */}
+                        {group.expanded && group.symbols.map((sym) => {
+                            const item = items.find(i => i.symbol === sym);
+                            const iconInfo = getSymbolIcon(sym);
+                            const isPositive = (item?.changePercent || 0) >= 0;
+                            const colorClass = isPositive ? styles.wlPositive : styles.wlNegative;
+                            const isSelected = selectedSymbol === sym;
+
+                            return (
+                                <div
+                                    key={sym}
+                                    className={`${styles.wlRow} ${isSelected ? styles.wlRowSelected : ""}`}
+                                    onClick={() => handleSelectSymbol(sym)}
+                                >
+                                    <div className={styles.wlRowSymbol}>
+                                        <div
+                                            className={styles.wlIcon}
+                                            style={{ backgroundColor: iconInfo.bg, color: iconInfo.textColor || "#fff" }}
+                                        >
+                                            {iconInfo.label}
+                                        </div>
+                                        <span className={styles.wlSymName}>{sym}</span>
+                                    </div>
+                                    <span className={styles.wlRowLast}>
+                                        {item ? <PriceDisplay price={item.price} /> : "—"}
+                                    </span>
+                                    <span className={`${styles.wlRowChg} ${colorClass}`}>
+                                        {item ? formatChange(item.change) : "—"}
+                                    </span>
+                                    <span className={`${styles.wlRowChgpct} ${colorClass}`}>
+                                        {item ? `${item.changePercent.toFixed(2)}%` : "—"}
+                                    </span>
+                                </div>
+                            );
+                        })}
                     </div>
                 ))}
             </div>
+
+            {/* ── Bottom Detail Panel (selected symbol) ── */}
+            {selectedItem && selectedItem.price > 0 && (
+                <div className={styles.wlDetail}>
+                    <div className={styles.wlDetailHeader}>
+                        <div className={styles.wlDetailLeft}>
+                            <div
+                                className={styles.wlDetailIcon}
+                                style={{ backgroundColor: getSymbolIcon(selectedItem.symbol).bg, color: getSymbolIcon(selectedItem.symbol).textColor || "#fff" }}
+                            >
+                                {getSymbolIcon(selectedItem.symbol).label}
+                            </div>
+                            <span className={styles.wlDetailSym}>{selectedItem.symbol}</span>
+                        </div>
+                        <div className={styles.wlDetailActions}>
+                            <button className={styles.wlDetailBtn}><LayoutGrid size={14} /></button>
+                            <button className={styles.wlDetailBtn}><Pencil size={14} /></button>
+                            <button className={styles.wlDetailBtn}><MoreHorizontal size={14} /></button>
+                        </div>
+                    </div>
+                    <div className={styles.wlDetailMeta}>
+                        <span className={styles.wlDetailName}>{selectedItem.symbol}</span>
+                        <ExternalLink size={10} className={styles.wlDetailExtlink} />
+                    </div>
+                    <div className={styles.wlDetailPriceRow}>
+                        <span className={styles.wlDetailPrice}>
+                            {selectedItem.price.toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+                        </span>
+                        <span className={styles.wlDetailCurrency}>USD</span>
+                        <span className={`${styles.wlDetailChg} ${selectedItem.changePercent >= 0 ? styles.wlPositive : styles.wlNegative}`}>
+                            {selectedItem.change >= 0 ? "+" : ""}{formatChange(selectedItem.change)}
+                        </span>
+                        <span className={`${styles.wlDetailChgpct} ${selectedItem.changePercent >= 0 ? styles.wlPositive : styles.wlNegative}`}>
+                            {selectedItem.changePercent >= 0 ? "+" : ""}{selectedItem.changePercent.toFixed(2)}%
+                        </span>
+                    </div>
+                    <div className={styles.wlDetailStatus}>
+                        <span className={styles.wlDetailDot} />
+                        <span>Market open</span>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

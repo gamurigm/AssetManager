@@ -1,0 +1,421 @@
+/* ═══════════════════════════════════════════
+   WATCHLIST – TradingView-style
+   Supports light and dark themes via CSS vars
+   ═══════════════════════════════════════════ */
+
+.wlRoot {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    background: var(--card);
+    color: var(--foreground);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 13px;
+    user-select: none;
+}
+
+/* ── Header ─────────────────────── */
+.wlHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+}
+
+.wlHeaderLeft {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+}
+
+.wlTitle {
+    font-weight: 700;
+    font-size: 13px;
+    font-style: italic;
+}
+
+.wlTitleArrow {
+    color: var(--muted);
+}
+
+.wlHeaderActions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.wlHeaderBtn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.wlHeaderBtn:hover {
+    background: var(--card-hover);
+    color: var(--foreground);
+}
+
+/* ── Add Symbol Bar ─────────────── */
+.wlAddBar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--card-hover);
+    flex-shrink: 0;
+}
+
+.wlAddInput {
+    flex: 1;
+    background: var(--background);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 12px;
+    color: var(--foreground);
+    outline: none;
+    transition: border-color 0.15s;
+}
+
+.wlAddInput:focus {
+    border-color: var(--accent);
+}
+
+.wlAddInput::placeholder {
+    color: var(--muted);
+    opacity: 0.6;
+}
+
+.wlAddBtn {
+    padding: 4px 10px;
+    border-radius: 4px;
+    border: none;
+    background: var(--accent);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: opacity 0.15s;
+}
+
+.wlAddBtn:hover {
+    opacity: 0.85;
+}
+
+.wlAddClose {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    border-radius: 4px;
+}
+
+.wlAddClose:hover {
+    background: var(--card-hover);
+    color: var(--foreground);
+}
+
+/* ── Column Headers ─────────────── */
+.wlColHeaders {
+    display: grid;
+    grid-template-columns: 1fr 80px 70px 60px;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    color: var(--muted);
+    font-weight: 400;
+    flex-shrink: 0;
+}
+
+.wlColLast,
+.wlColChg,
+.wlColChgpct {
+    text-align: right;
+}
+
+/* ── Scrollable List ────────────── */
+.wlList {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+}
+
+/* ── Group ──────────────────────── */
+.wlGroupHeader {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 12px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    letter-spacing: 0.03em;
+    transition: background 0.15s;
+}
+
+.wlGroupHeader:hover {
+    background: var(--card-hover);
+}
+
+.wlGroupArrow {
+    color: var(--muted);
+    flex-shrink: 0;
+}
+
+.wlGroupName {
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+}
+
+/* ── Row ────────────────────────── */
+.wlRow {
+    display: grid;
+    grid-template-columns: 1fr 80px 70px 60px;
+    align-items: center;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: background 0.12s ease;
+    border-bottom: 1px solid transparent;
+}
+
+.wlRow:hover {
+    background: var(--card-hover);
+}
+
+.wlRowSelected {
+    background: var(--card-hover);
+    border-left: 2px solid var(--accent);
+    padding-left: 10px;
+}
+
+/* ── Row cells ──────────────────── */
+.wlRowSymbol {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.wlIcon {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 800;
+    flex-shrink: 0;
+    line-height: 1;
+}
+
+.wlSymName {
+    font-weight: 700;
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.wlRowLast {
+    text-align: right;
+    font-weight: 500;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+}
+
+.wlRowChg {
+    text-align: right;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+.wlRowChgpct {
+    text-align: right;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ── Colors ─────────────────────── */
+.wlPositive {
+    color: #26A69A;
+}
+
+.wlNegative {
+    color: #EF5350;
+}
+
+/* ── Price display ───────────────── */
+.wlPrice {
+    font-variant-numeric: tabular-nums;
+}
+
+.wlPriceSuper {
+    font-size: 0.7em;
+    vertical-align: super;
+    line-height: 0;
+    color: var(--muted);
+}
+
+.wlPriceZero {
+    color: var(--muted);
+}
+
+/* ── Bottom Detail Panel ────────── */
+.wlDetail {
+    flex-shrink: 0;
+    border-top: 1px solid var(--border);
+    padding: 12px 14px 14px;
+    background: var(--card);
+}
+
+.wlDetailHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+}
+
+.wlDetailLeft {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.wlDetailIcon {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.wlDetailSym {
+    font-weight: 800;
+    font-size: 16px;
+}
+
+.wlDetailActions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.wlDetailBtn {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+}
+
+.wlDetailBtn:hover {
+    background: var(--card-hover);
+    color: var(--foreground);
+}
+
+.wlDetailMeta {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 6px;
+}
+
+.wlDetailName {
+    font-weight: 500;
+}
+
+.wlDetailExtlink {
+    color: var(--accent);
+}
+
+.wlDetailPriceRow {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin-bottom: 4px;
+    flex-wrap: wrap;
+}
+
+.wlDetailPrice {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+}
+
+.wlDetailCurrency {
+    font-size: 13px;
+    color: var(--muted);
+    font-weight: 500;
+}
+
+.wlDetailChg {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.wlDetailChgpct {
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.wlDetailStatus {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: #26A69A;
+    font-weight: 500;
+}
+
+.wlDetailDot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #26A69A;
+    animation: wlPulse 2s ease-in-out infinite;
+}
+
+@keyframes wlPulse {
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.4;
+    }
+}

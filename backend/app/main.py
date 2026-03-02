@@ -9,6 +9,7 @@ import logfire
 import socketio
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from contextlib import asynccontextmanager
 
 # Configure Logfire — try cloud, fall back silently if unreachable
@@ -45,7 +46,7 @@ except ImportError:
 
 # App setup
 from .core.config import settings
-from .api.routes import auth, clients, portfolios, trading, agents, market_data, openbb_config, watchlist, analytics, simulation
+from .api.routes import auth, clients, portfolios, trading, agents, market_data, openbb_config, watchlist, analytics, simulation, bybit, finviz
 
 # Socket.IO setup
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
@@ -63,6 +64,9 @@ async def lifespan(app: FastAPI):
 # FastAPI app
 app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
 logfire.instrument_fastapi(app)
+
+# Performance: Compress large JSON responses (like historical data arrays)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # CORS
 app.add_middleware(
@@ -101,6 +105,8 @@ app.include_router(watchlist.router, prefix=f"{settings.API_V1_STR}/watchlist", 
 app.include_router(analytics.router, prefix=f"{settings.API_V1_STR}/analytics", tags=["analytics"])
 app.include_router(simulation.router, prefix=f"{settings.API_V1_STR}/simulation", tags=["simulation"])
 app.include_router(openbb_config.router, prefix="", tags=["openbb"])
+app.include_router(bybit.router, prefix=f"{settings.API_V1_STR}/bybit", tags=["bybit"])
+app.include_router(finviz.router, prefix=f"{settings.API_V1_STR}/finviz", tags=["finviz"])
 
 @app.get("/")
 async def root():
@@ -127,4 +133,15 @@ sio_app = socketio.ASGIApp(sio, app)
 if __name__ == "__main__":
     import uvicorn
     logger.info("Starting MMAM Backend on http://0.0.0.0:8282")
-    uvicorn.run("app.main:sio_app", host="0.0.0.0", port=8282, reload=True, log_level="info")
+    # PERFORMANCE: Disable reload for production-like runs to reduce overhead
+    # using workers=4 and optimized loop/http implementations
+    uvicorn.run(
+        "app.main:sio_app", 
+        host="0.0.0.0", 
+        port=8282, 
+        reload=False, 
+        workers=4,
+        loop="auto",
+        http="auto",
+        log_level="info"
+    )

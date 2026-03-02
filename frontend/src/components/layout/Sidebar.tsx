@@ -5,13 +5,8 @@ import { usePathname } from "next/navigation";
 import {
     LayoutDashboard,
     ArrowLeftRight,
-    Users,
     PieChart,
     Briefcase,
-    Bot,
-    Settings,
-    ChevronLeft,
-    ChevronRight,
     Sun,
     Moon,
 } from "lucide-react";
@@ -24,22 +19,18 @@ const unifiedNav = [
     { label: "Strategies", href: "/manager/clients", icon: Briefcase },
 ];
 
-export default function Sidebar({ collapsed, setCollapsed }: { collapsed: boolean, setCollapsed: (val: boolean) => void }) {
+export default function Sidebar({ expanded }: { expanded: boolean }) {
     const pathname = usePathname();
     const [isDarkMode, setIsDarkMode] = useState(true);
-    const [mounted, setMounted] = useState(false);
 
     useEffect(() => {
-        setMounted(true);
         const savedTheme = localStorage.getItem("mmam_theme");
         if (savedTheme === "light") {
             setIsDarkMode(false);
         }
     }, []);
 
-    // Sync theme with document and localStorage
     useEffect(() => {
-        if (!mounted) return;
         if (isDarkMode) {
             document.documentElement.classList.remove("light");
             document.documentElement.classList.add("dark");
@@ -49,48 +40,43 @@ export default function Sidebar({ collapsed, setCollapsed }: { collapsed: boolea
             document.documentElement.classList.add("light");
             localStorage.setItem("mmam_theme", "light");
         }
-    }, [isDarkMode, mounted]);
+    }, [isDarkMode]);
 
-    if (!mounted) {
-        return (
-            <aside className="fixed top-0 left-0 h-screen z-40 w-[240px] border-r border-border bg-card" />
-        );
-    }
+    const isCollapsed = !expanded;
 
     return (
         <aside
             suppressHydrationWarning
-            className={`fixed top-0 left-0 h-screen z-40 flex flex-col border-r transition-all duration-300 ${collapsed ? "w-[68px]" : "w-[240px]"} 
-                ${isDarkMode
-                    ? "bg-background/40 backdrop-blur-2xl border-white/5"
-                    : "bg-white/70 backdrop-blur-2xl border-slate-200 shadow-xl"}`}
+            className={`h-screen flex flex-col border-r transition-[width] ease-[cubic-bezier(0.16,1,0.3,1)] duration-500 group ${expanded ? "w-[240px]" : "w-[68px]"
+                } ${isDarkMode
+                    ? "bg-zinc-950/70 backdrop-blur-3xl border-white/5"
+                    : "bg-white/70 backdrop-blur-3xl border-slate-200 shadow-[20px_0_40px_rgba(0,0,0,0.03)]"
+                }`}
         >
             {/* Logo */}
-            <div className={`flex items-center gap-3 px-5 h-16 border-b shrink-0 ${isDarkMode ? "border-white/5" : "border-slate-100"}`}>
+            <div className={`flex items-center gap-3 px-[15px] h-16 border-b shrink-0 overflow-hidden relative ${isDarkMode ? "border-white/5" : "border-slate-100"}`}>
                 <div className="h-9 w-9 rounded-full overflow-hidden flex items-center justify-center shrink-0 shadow-[0_0_20px_-5px_#3b82f6] border border-white/10">
-                    <img src="/logoMM.png" alt="MMAM Logo" className="h-full w-full object-cover" />
+                    <img src="/logoMM.png" alt="MMAM Logo" className="h-[28px] w-[28px] object-contain" />
                 </div>
-                {!collapsed && (
-                    <span className={`text-sm font-black uppercase tracking-tighter truncate animate-fade-in ${isDarkMode ? "text-white/90" : "text-slate-800"}`}>
+                <div className={`w-[140px] shrink-0 ${isCollapsed ? "opacity-0 invisible" : "opacity-100 visible delay-100"} transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]`}>
+                    <span className={`text-sm font-bold uppercase tracking-tight truncate ${isDarkMode ? "text-white/90" : "text-slate-800"}`}>
                         MMAM <span className="text-accent underline decoration-accent/30 underline-offset-4">Intelligence</span>
                     </span>
-                )}
+                </div>
             </div>
 
             {/* Navigation */}
-            <nav className="flex-1 px-3 py-6 space-y-2 stagger overflow-y-auto">
-                {!collapsed && (
-                    <p className={`text-[10px] uppercase tracking-[0.2em] px-2 pb-2 font-black ${isDarkMode ? "text-white/30" : "text-slate-400"}`}>
-                        Management
-                    </p>
-                )}
+            <nav className="flex-1 px-3 py-6 space-y-2 overflow-y-auto overflow-x-hidden">
+                <p className={`text-[10px] uppercase tracking-[0.2em] px-2 pb-2 font-bold whitespace-nowrap ${isCollapsed ? "opacity-0 invisible" : "opacity-100 visible delay-100"} transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${isDarkMode ? "text-white/30" : "text-slate-400"}`}>
+                    Management
+                </p>
                 {unifiedNav.map((item) => {
                     const isActive = pathname === item.href;
                     return (
                         <Link
                             key={item.href}
                             href={item.href}
-                            className={`flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-bold transition-all group relative ${isActive
+                            className={`flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-bold transition-all relative ${isActive
                                 ? (isDarkMode
                                     ? "bg-accent/20 text-accent shadow-[inset_0_0_10px_rgba(59,130,246,0.1)] border border-accent/20"
                                     : "bg-accent/15 text-accent border border-accent/30 shadow-sm")
@@ -104,11 +90,13 @@ export default function Sidebar({ collapsed, setCollapsed }: { collapsed: boolea
                             )}
                             <item.icon
                                 size={18}
-                                className={`shrink-0 transition-transform group-hover:scale-110 ${isActive
+                                className={`shrink-0 transition-transform ${isActive
                                     ? (isDarkMode ? "text-accent drop-shadow-[0_0_8px_#3b82f6]" : "text-accent")
-                                    : (isDarkMode ? "text-white/40 group-hover:text-white" : "text-slate-400 group-hover:text-slate-900")}`}
+                                    : (isDarkMode ? "text-white/40" : "text-slate-400")}`}
                             />
-                            {!collapsed && <span className="truncate tracking-tight">{item.label}</span>}
+                            <span className={`truncate tracking-tight whitespace-nowrap ${isCollapsed ? "opacity-0 invisible w-0" : "opacity-100 visible w-auto delay-100"} transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]`}>
+                                {item.label}
+                            </span>
                         </Link>
                     );
                 })}
@@ -118,21 +106,14 @@ export default function Sidebar({ collapsed, setCollapsed }: { collapsed: boolea
             <div className={`px-3 pb-4 space-y-1 border-t pt-3 ${isDarkMode ? "border-white/5" : "border-slate-100"}`}>
                 <button
                     onClick={() => setIsDarkMode(!isDarkMode)}
-                    className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-bold transition-all ${isDarkMode
+                    className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-bold transition-all overflow-hidden ${isDarkMode
                         ? "text-white/40 hover:text-white hover:bg-white/5"
                         : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"}`}
                 >
-                    {isDarkMode ? <Sun size={18} className="text-yellow-400 drop-shadow-[0_0_8px_#facc15]" /> : <Moon size={18} className="text-slate-600" />}
-                    {!collapsed && <span>{isDarkMode ? "Light Mode" : "Dark Mode"}</span>}
-                </button>
-                <button
-                    onClick={() => setCollapsed(!collapsed)}
-                    className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-bold transition-all ${isDarkMode
-                        ? "text-white/40 hover:text-white hover:bg-white/5"
-                        : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"}`}
-                >
-                    {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
-                    {!collapsed && <span>Collapse</span>}
+                    {isDarkMode ? <Sun size={18} className="text-yellow-400 drop-shadow-[0_0_8px_#facc15] shrink-0" /> : <Moon size={18} className="text-slate-600 shrink-0" />}
+                    <span className={`truncate tracking-tight whitespace-nowrap ${isCollapsed ? "opacity-0 invisible w-0" : "opacity-100 visible w-auto delay-100"} transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]`}>
+                        {isDarkMode ? "Light Mode" : "Dark Mode"}
+                    </span>
                 </button>
             </div>
         </aside>

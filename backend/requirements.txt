@@ -26,3 +26,5 @@ hmmlearn
 scikit-learn
 plotly
 duckduckgo-search
+beautifulsoup4
+lxml

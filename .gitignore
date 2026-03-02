@@ -128,9 +128,13 @@ backend/.env
 frontend/.env*
 !frontend/.env.example
 
-# --- Root Markdown Files ---
-/*.md
-!/README.md
+# --- Media & Docs ---
+**/*.md
+!**/README.md
+*.pdf
+*.docx
+*.pptx
+*.xlsx
 
 *.duckdb
 *.db-shm

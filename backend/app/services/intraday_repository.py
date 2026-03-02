@@ -121,6 +121,10 @@ class DuckDBIntradayRepository:
 
     def _init_schema(self) -> None:
         with self._connection() as conn:
+            # PERFORMANCE PRAGMAS
+            conn.execute("PRAGMA memory_limit='1GB'")
+            conn.execute("PRAGMA threads=4")
+            
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS ohlcv_intraday (
                     symbol    VARCHAR      NOT NULL,

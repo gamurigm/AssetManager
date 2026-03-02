@@ -29,6 +29,10 @@ class DuckDBStore:
         """Create tables if they don't exist."""
         conn = self._get_conn()
         try:
+            # PERFORMANCE: Optimization settings
+            conn.execute("PRAGMA memory_limit='2GB'")
+            conn.execute("PRAGMA threads=4")
+            
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS ohlcv (
                     symbol      VARCHAR NOT NULL,

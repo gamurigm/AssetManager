@@ -14,24 +14,14 @@ interface AssetData {
 const CustomizedContent = (props: any) => {
     const { x, y, width, height, index, symbol, value, change } = props;
 
-    // Ultra-nuanced Heatmap: High granularity around 0%
-    // Adjusted palette: < 1% Yellow tones, > 1% Green tones
     const getHeatmapColor = (changeValue: number) => {
-        // POSITIVE SPECTRUM (> 1%)
-        if (changeValue > 5) return '#065f46';      // Dark Emerald
-        if (changeValue > 2.5) return '#10b981';    // Emerald
-        if (changeValue > 1) return '#4ade80';      // Light Green
-
-        // NEUTRAL/STALE SPECTRUM (< 1% and > -1%) - Yellow/Orange tones
-        if (changeValue >= 0.5) return '#fde047';   // Bright Yellow
-        if (changeValue >= 0.1) return '#facc15';   // Golden Yellow
-        if (changeValue > -0.1) return '#71717a';   // Grey (True Neutral)
-        if (changeValue >= -0.5) return '#fbbf24';  // Amber
-        if (changeValue >= -1) return '#f97316';    // Orange
-
-        // NEGATIVE SPECTRUM (< -1%)
-        if (changeValue >= -3) return '#f43f5e';    // Rose
-        return '#ef4444';                           // Red (Crisis)
+        if (changeValue >= 2.5) return '#30cc5a';         // +3% (Bright Green)
+        if (changeValue >= 1.5) return '#2bb05b';         // +2% (Medium Green)
+        if (changeValue > 0.2) return '#35764e';          // +1% (Dark Green)
+        if (changeValue > -0.2 && changeValue <= 0.2) return '#414554'; // 0% (Neutral Grey)
+        if (changeValue > -1.5) return '#8b444e';         // -1% (Dark Red)
+        if (changeValue > -2.5) return '#bf4045';         // -2% (Medium Red)
+        return '#f63538';                                 // -3% (Bright Red)
     };
 
     const color = getHeatmapColor(change || 0);
@@ -57,8 +47,8 @@ const CustomizedContent = (props: any) => {
                     textAnchor="middle"
                     fill="#fff"
                     fontSize={Math.max(Math.min(width / 6, 24), 12)}
-                    fontWeight="900"
-                    className="select-none pointer-events-none drop-shadow-[0_2px_2px_rgba(0,0,0,0.8)]"
+                    fontWeight="700"
+                    className="select-none pointer-events-none drop-shadow-md"
                 >
                     {symbol}
                 </text>
@@ -70,8 +60,8 @@ const CustomizedContent = (props: any) => {
                     textAnchor="middle"
                     fill="#fff"
                     fontSize={Math.max(Math.min(width / 10, 16), 10)}
-                    fontWeight="700"
-                    className="select-none pointer-events-none drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]"
+                    fontWeight="500"
+                    className="select-none pointer-events-none drop-shadow-sm"
                 >
                     {(change || 0) >= 0 ? '+' : ''}{(change || 0).toFixed(2)}%
                 </text>

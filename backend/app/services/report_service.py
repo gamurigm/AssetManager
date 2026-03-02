@@ -19,6 +19,19 @@ from ..core.container import duckdb_repo
 class AlphaReport(FPDF):
     """Premium dark-header institutional PDF report."""
 
+    def safe_text(self, text: str) -> str:
+        """Strips non-ASCII characters that cause FPDF crashes with standard fonts."""
+        if not text: return ""
+        # Standard fonts like Helvetica/Times only support Latin-1/WinAnsi.
+        # We'll encode to latin-1 and ignore or replace errors to keep it safe.
+        try:
+            # We first try standard normalization or simple stripping
+            # For this context, skipping characters fpdf doesn't like is safest.
+            return text.encode("latin-1", "ignore").decode("latin-1")
+        except Exception:
+            # Full fallback to ASCII if latin-1 also fails somehow
+            return text.encode("ascii", "ignore").decode("ascii")
+
     def header(self):
         # Dark header band
         self.set_fill_color(30, 30, 35)
@@ -29,7 +42,8 @@ class AlphaReport(FPDF):
         self.cell(0, 10, "ASSET MANDATE ALPHA", align="L")
         self.set_font("Helvetica", "", 8)
         self.set_text_color(160, 160, 170)
-        self.cell(0, 10, f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}", align="R")
+        date_str = f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        self.cell(0, 10, self.safe_text(date_str), align="R")
         self.ln(9)
         self.set_font("Helvetica", "I", 9)
         self.cell(0, 5, "Institutional Portfolio Alpha Core | Intelligence Generated Financial Report", align="L")
@@ -39,13 +53,15 @@ class AlphaReport(FPDF):
         self.set_y(-12)
         self.set_font("Helvetica", "I", 7)
         self.set_text_color(150, 150, 150)
-        self.cell(0, 10, f"MMAM Intelligence Core | Page {self.page_no()} | ALPHA-9 Node", align="C")
+        footer_text = f"MMAM Intelligence Core | Page {self.page_no()} | ALPHA-9 Node"
+        self.cell(0, 10, self.safe_text(footer_text), align="C")
 
     def section_title(self, title: str):
         self.ln(4)
         self.set_font("Helvetica", "B", 12)
         self.set_text_color(44, 62, 80)
-        self.cell(0, 8, title, new_x="LMARGIN", new_y="NEXT")
+        safe_title = self.safe_text(title)
+        self.cell(0, 8, safe_title, new_x="LMARGIN", new_y="NEXT")
         # Accent line
         self.set_draw_color(52, 152, 219)
         self.set_line_width(0.6)
@@ -64,17 +80,19 @@ class AlphaReport(FPDF):
         self.set_xy(x + 4, y + 2)
         self.set_font("Helvetica", "B", 7)
         self.set_text_color(127, 140, 141)
-        self.cell(w - 6, 5, label.upper())
+        self.cell(w - 6, 5, self.safe_text(label.upper()))
         # Value
         self.set_xy(x + 4, y + 8)
         self.set_font("Helvetica", "B", 12)
         self.set_text_color(26, 26, 26)
-        self.cell(w - 6, 8, value)
+        self.cell(w - 6, 8, self.safe_text(value))
 
     def long_text_box(self, content: str):
         self.set_font("Helvetica", "", 9)
         self.set_text_color(44, 62, 80)
-        self.multi_cell(0, 5, content)
+        # Ensure AI generated text doesn't have characters that crash FPDF
+        safe_content = self.safe_text(content)
+        self.multi_cell(0, 5, safe_content)
         self.ln(2)
 
 
@@ -263,8 +281,8 @@ class ReportService:
             else:
                 pdf.set_fill_color(255, 255, 255)
 
-            sym = h.get("symbol", "N/A")
-            name = h.get("name", "N/A")[:26]
+            sym = pdf.safe_text(h.get("symbol", "N/A"))
+            name = pdf.safe_text(h.get("name", "N/A")[:26])
             shares = h.get("shares", 0)
             entry = h.get("entryPrice", 0)
             price = h.get("price", 0)
@@ -383,7 +401,7 @@ class ReportService:
         text_sharpe = (
             "The Sharpe Ratio evaluates return per unit of standard deviation (volatility), subtracting the risk-free rate. "
             "Our RAR (Risk-Adjusted Return) metric takes this further by computing Expected Return (E[R]) normalized against "
-            "both Volatility (σ) and total Capital at Risk (C). This ensures that heavy allocations in highly volatile assets "
+            "both Volatility (sigma) and total Capital at Risk (C). This ensures that heavy allocations in highly volatile assets "
             "are mathematically penalized if they do not provide geometrically outsized expectations."
         )
         pdf.multi_cell(0, 5, text_sharpe)
@@ -462,8 +480,8 @@ class ReportService:
         pdf.set_font("Helvetica", "", 8)
         pdf.set_text_color(40, 40, 40)
         for h in holdings:
-            pdf.cell(w[0], 6, str(h.get('symbol')), border=1)
-            pdf.cell(w[1], 6, str(h.get('name'))[:30], border=1)
+            pdf.cell(w[0], 6, pdf.safe_text(str(h.get('symbol'))), border=1)
+            pdf.cell(w[1], 6, pdf.safe_text(str(h.get('name'))[:30]), border=1)
             pdf.cell(w[2], 6, f"{h.get('shares'):.2f}", border=1, align="R")
             pdf.cell(w[3], 6, f"${h.get('price', 0):,.2f}", border=1, align="R")
             pdf.cell(w[4], 6, f"${h.get('shares')*h.get('price',0):,.2f}", border=1, align="R")

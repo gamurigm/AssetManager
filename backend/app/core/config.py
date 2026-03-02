@@ -31,6 +31,14 @@ class Settings(BaseSettings):
     TWELVE_DATA_API_KEY: str = os.getenv("TWELVE_DATA_API_KEY", "")
     FINAZON_API_KEY: str = os.getenv("FINAZON_API_KEY", "")
     
+    # Bybit (Crypto Exchange)
+    BYBIT_API_KEY: str = os.getenv("BYBIT_API_KEY", "")
+    BYBIT_API_SECRET: str = os.getenv("BYBIT_API_SECRET", "")
+    
+    # Finviz (Scraping)
+    FINVIZ_EMAIL: str = os.getenv("FINVIZ_EMAIL", "")
+    FINVIZ_PASSWORD: str = os.getenv("FINVIZ_PASSWORD", "")
+    
     # Real-time
     SOCKET_IO_PORT: int = 8000
 

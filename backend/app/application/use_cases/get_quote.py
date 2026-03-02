@@ -1,9 +1,12 @@
 """
 Use Case: Get Quote (SRP — Single Responsibility)
-Orchestrates: Cache check → Provider cascade (with rate limiting) → Return.
+Orchestrates: Cache check → Parallel provider race → Return.
 Depends on abstractions only (DIP).
+
+PERFORMANCE: Providers are queried in parallel (first-wins race).
 """
 
+import asyncio
 import os
 from typing import List, Optional, Dict, Any
 from diskcache import Cache
@@ -19,40 +22,55 @@ QUOTE_TTL = 60  # seconds
 
 class GetQuoteUseCase:
     """
-    Fetches a real-time quote using a prioritized list of providers.
-    Uses Token Bucket rate limiting per provider.
+    Fetches a real-time quote using a parallel-race of providers.
+    The first provider to return valid data wins; the rest are cancelled.
     """
 
     def __init__(self, providers: List[IMarketDataProvider]):
-        # Injected dependencies — never concrete classes (DIP)
         self._providers = providers
 
+    async def _try_provider(self, provider, symbol: str) -> Optional[Dict[str, Any]]:
+        """Attempt a single provider; returns dict on success, None on failure."""
+        bucket = get_bucket(provider.name)
+        if not bucket.can_request():
+            return None
+        bucket.consume()
+        try:
+            quote = await provider.get_quote(symbol)
+            if quote:
+                return quote.to_dict()
+        except Exception as e:
+            print(f"[GetQuote] ⚠️ {provider.name}: {e}")
+        return None
+
     async def execute(self, symbol: str) -> Dict[str, Any]:
-        # 1. Cache check
+        # 1. Cache check (instant)
         cache_key = f"quote_{symbol.replace('/', '_')}"
         cached = _cache.get(cache_key)
         if cached:
             return cached
 
-        # 2. Cascade through providers
-        for provider in self._providers:
-            bucket = get_bucket(provider.name)
-            
-            # Direct request (Rate limits bypassed in rate_limiter.py)
-            if not bucket.can_request():
-                print(f"[GetQuote] ⛔ {provider.name} rate limited for {symbol}")
-                continue
+        # 2. Race first N providers in parallel (first-wins)
+        RACE_SIZE = min(3, len(self._providers))
+        race_providers = self._providers[:RACE_SIZE]
+        tasks = [asyncio.create_task(self._try_provider(p, symbol)) for p in race_providers]
 
-            bucket.consume()
-            
-            try:
-                quote = await provider.get_quote(symbol)
-                if quote:
-                    result = quote.to_dict()
-                    _cache.set(cache_key, result, expire=QUOTE_TTL)
-                    return result
-            except Exception as e:
-                print(f"[GetQuote] ⚠️ Error with {provider.name}: {e}")
-                continue
+        # As each task completes, check if we have a winner
+        for coro in asyncio.as_completed(tasks):
+            result = await coro
+            if result:
+                # Cancel remaining tasks
+                for t in tasks:
+                    t.cancel()
+                result["source"] = result.get("source", "parallel-race")
+                _cache.set(cache_key, result, expire=QUOTE_TTL)
+                return result
+
+        # 3. Fallback: try remaining providers sequentially
+        for provider in self._providers[RACE_SIZE:]:
+            result = await self._try_provider(provider, symbol)
+            if result:
+                _cache.set(cache_key, result, expire=QUOTE_TTL)
+                return result
 
         return {"error": f"All providers exhausted or rate limited for {symbol}."}

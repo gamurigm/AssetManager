@@ -13,6 +13,17 @@ from ...core.config import settings
 class FMPProvider(IMarketDataProvider):
     BASE_URL = "https://financialmodelingprep.com/stable"
     V3_URL = "https://financialmodelingprep.com/api/v3"
+    _shared_client: httpx.AsyncClient | None = None
+
+    @classmethod
+    def _client(cls) -> httpx.AsyncClient:
+        """Reusable connection-pooled HTTP client (no TLS handshake per request)."""
+        if cls._shared_client is None or cls._shared_client.is_closed:
+            cls._shared_client = httpx.AsyncClient(
+                timeout=10.0,
+                limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+            )
+        return cls._shared_client
 
     @property
     def name(self) -> str:
@@ -24,13 +35,13 @@ class FMPProvider(IMarketDataProvider):
     async def get_quote(self, symbol: str) -> Optional[Quote]:
         try:
             fmp_sym = self.normalize_symbol(symbol)
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(
-                    f"{self.BASE_URL}/quote",
-                    params={"symbol": fmp_sym, "apikey": settings.FMP_API_KEY},
-                )
-                resp.raise_for_status()
-                data = resp.json()
+            client = self._client()
+            resp = await client.get(
+                f"{self.BASE_URL}/quote",
+                params={"symbol": fmp_sym, "apikey": settings.FMP_API_KEY},
+            )
+            resp.raise_for_status()
+            data = resp.json()
 
             if not data or not isinstance(data, list) or not data[0].get("price"):
                 return None
@@ -66,13 +77,13 @@ class FMPProvider(IMarketDataProvider):
             else:
                 params["timeseries"] = limit
 
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(
-                    f"{self.V3_URL}/historical-price-full/{fmp_sym}",
-                    params=params,
-                )
-                resp.raise_for_status()
-                data = resp.json()
+            client = self._client()
+            resp = await client.get(
+                f"{self.V3_URL}/historical-price-full/{fmp_sym}",
+                params=params,
+            )
+            resp.raise_for_status()
+            data = resp.json()
 
             if not data or "historical" not in data:
                 return None
@@ -93,13 +104,13 @@ class FMPProvider(IMarketDataProvider):
     async def get_profile(self, symbol: str) -> Optional[dict]:
         """FMP-specific: company profile."""
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(
-                    f"{self.BASE_URL}/profile",
-                    params={"symbol": symbol, "apikey": settings.FMP_API_KEY},
-                )
-                resp.raise_for_status()
-                data = resp.json()
+            client = self._client()
+            resp = await client.get(
+                f"{self.BASE_URL}/profile",
+                params={"symbol": symbol, "apikey": settings.FMP_API_KEY},
+            )
+            resp.raise_for_status()
+            data = resp.json()
             return data[0] if data and isinstance(data, list) else None
         except Exception:
             return None
@@ -107,12 +118,12 @@ class FMPProvider(IMarketDataProvider):
     async def search_ticker(self, query: str, limit: int = 10) -> list:
         """FMP-specific: ticker search."""
         try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(
-                    f"{self.BASE_URL}/search",
-                    params={"query": query, "limit": limit, "apikey": settings.FMP_API_KEY},
-                )
-                resp.raise_for_status()
-                return resp.json()
+            client = self._client()
+            resp = await client.get(
+                f"{self.BASE_URL}/search",
+                params={"query": query, "limit": limit, "apikey": settings.FMP_API_KEY},
+            )
+            resp.raise_for_status()
+            return resp.json()
         except Exception:
             return []

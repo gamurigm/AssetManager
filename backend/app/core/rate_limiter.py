@@ -18,6 +18,7 @@ PROVIDER_LIMITS = {
     "polygon":    {"rpm": 5,    "daily": 500},
     "yahoo":      {"rpm": 99999, "daily": 999999}, # UNLIMITED FOR DEV
     "alphavantage":{"rpm": 5,   "daily": 25},
+    "bybit":      {"rpm": 120,  "daily": 99999},   # Generous public API limits
 }
 
 
