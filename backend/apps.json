@@ -9,27 +9,28 @@
                 "id": "dashboard",
                 "name": "Dashboard",
                 "layout": [
-                    {
-                        "i": "portfolio_overview",
-                        "x": 0,
-                        "y": 0,
-                        "w": 4,
-                        "h": 2
-                    },
-                    {
-                        "i": "market_sentiment",
-                        "x": 4,
-                        "y": 0,
-                        "w": 8,
-                        "h": 4
-                    },
-                    {
-                        "i": "recent_activity",
-                        "x": 0,
-                        "y": 2,
-                        "w": 12,
-                        "h": 6
-                    }
+                    { "i": "portfolio_overview", "x": 0,  "y": 0, "w": 4, "h": 2 },
+                    { "i": "market_sentiment",   "x": 4,  "y": 0, "w": 8, "h": 4 },
+                    { "i": "recent_activity",    "x": 0,  "y": 2, "w": 12, "h": 6 }
+                ]
+            },
+            "Manager": {
+                "id": "manager",
+                "name": "Manager",
+                "layout": [
+                    { "i": "aum_metric",       "x": 0, "y": 0, "w": 4,  "h": 2 },
+                    { "i": "risk_dashboard",   "x": 4, "y": 0, "w": 8,  "h": 4 },
+                    { "i": "sector_allocation","x": 0, "y": 2, "w": 6,  "h": 4 },
+                    { "i": "equity_curve",     "x": 6, "y": 4, "w": 6,  "h": 4 }
+                ]
+            },
+            "Client": {
+                "id": "client",
+                "name": "Client",
+                "layout": [
+                    { "i": "client_summary",   "x": 0,  "y": 0, "w": 5,  "h": 4 },
+                    { "i": "client_pnl",       "x": 5,  "y": 0, "w": 7,  "h": 5 },
+                    { "i": "client_portfolio", "x": 0,  "y": 4, "w": 12, "h": 6 }
                 ]
             }
         }

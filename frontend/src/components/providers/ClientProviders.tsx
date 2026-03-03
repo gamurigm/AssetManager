@@ -16,12 +16,12 @@ const GlobalSearch = dynamic(() => import("@/components/layout/GlobalSearch"), {
 
 export default function ClientProviders({ children }: { children: React.ReactNode }) {
     return (
-        <PortfolioProvider>
-            <BackendGate>
+        <BackendGate>
+            <PortfolioProvider>
                 <GlobalSearch />
                 {children}
                 <ChatWidget />
-            </BackendGate>
-        </PortfolioProvider>
+            </PortfolioProvider>
+        </BackendGate>
     );
 }

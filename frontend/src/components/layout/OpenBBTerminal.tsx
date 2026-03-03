@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Maximize2, Minimize2, Plus, X, ChevronDown, Terminal as TerminalIcon, Loader2 } from "lucide-react";
 
-type Message = { type: 'input' | 'output' | 'error', text: string };
+type Message = { type: 'input' | 'output' | 'error'; text: string };
 
 type Session = {
     id: string;
@@ -11,6 +11,7 @@ type Session = {
     input: string;
     isExecuting: boolean;
     historyIndex: number;
+    pendingCmd: string | null;  // queued while executing
 };
 
 export default function OpenBBTerminal() {
@@ -22,12 +23,13 @@ export default function OpenBBTerminal() {
         input: '',
         isExecuting: false,
         historyIndex: -1,
+        pendingCmd: null,
     }]);
     const [activeId, setActiveId] = useState('1');
     const [isFocused, setIsFocused] = useState(false);
     const [isDark, setIsDark] = useState(true);
     const [isStellar, setIsStellar] = useState(false);
-    const [panelHeight, setPanelHeight] = useState(320);
+    const [panelHeight, setPanelHeight] = useState(260);
 
     const inputRef = useRef<HTMLInputElement>(null);
     const endRef = useRef<HTMLDivElement>(null);
@@ -88,17 +90,9 @@ export default function OpenBBTerminal() {
         if (endRef.current) endRef.current.scrollIntoView({ behavior: 'smooth' });
     }, [activeSession?.history, isOpen, activeId]);
 
-    const handleCommand = async (e: React.FormEvent) => {
-        e.preventDefault();
-        // Capture the session id at command-dispatch time so async closures
-        // always write back to the correct tab even if the user switches.
-        const sessionId = activeId;
-        const session = sessions.find(s => s.id === sessionId)!;
-        const cmd = session.input.trim();
-        if (!cmd || session.isExecuting) return;
-
-        const newHistory: Message[] = [...session.history, { type: 'input', text: cmd }];
-        updateSession(sessionId, { history: newHistory, input: '', historyIndex: -1, isExecuting: true });
+    const runCommand = useCallback(async (sessionId: string, cmd: string, baseHistory: Message[]) => {
+        const newHistory: Message[] = [...baseHistory, { type: 'input', text: cmd }];
+        updateSession(sessionId, { history: newHistory, input: '', historyIndex: -1, isExecuting: true, pendingCmd: null });
 
         if (cmd.toLowerCase() === 'clear') {
             updateSession(sessionId, { history: [], isExecuting: false });
@@ -113,26 +107,115 @@ export default function OpenBBTerminal() {
             });
             if (!response.ok) throw new Error(`HTTP ${response.status}`);
             const data = await response.json();
-            updateSession(sessionId, {
-                history: [...newHistory, { type: data.type === 'error' ? 'error' : 'output', text: data.output }],
-                isExecuting: false,
-            });
+            if (data.type === 'chart_window' && data.html) {
+                const win = window.open('', '_blank', 'width=1440,height=820,menubar=no,toolbar=no,location=no,status=no');
+                if (win) { win.document.open(); win.document.write(data.html); win.document.close(); }
+                updateSession(sessionId, {
+                    history: [...newHistory, { type: 'output', text: '📊 Chart opened in new window.' }],
+                    isExecuting: false,
+                });
+            } else {
+                updateSession(sessionId, {
+                    history: [...newHistory, { type: data.type === 'error' ? 'error' : 'output', text: data.output ?? data.error ?? 'OK' }],
+                    isExecuting: false,
+                });
+            }
         } catch (error: any) {
             updateSession(sessionId, {
                 history: [...newHistory, { type: 'error', text: `Connection failed: ${error.message}` }],
                 isExecuting: false,
             });
         }
+    }, [updateSession]);
+
+    // When a session finishes, auto-run pending command if queued
+    useEffect(() => {
+        sessions.forEach(s => {
+            if (!s.isExecuting && s.pendingCmd) {
+                runCommand(s.id, s.pendingCmd, s.history);
+            }
+        });
+    }, [sessions, runCommand]);
+
+    const handleCommand = async (e: React.FormEvent) => {
+        e.preventDefault();
+        const sessionId = activeId;
+        const session = sessions.find(s => s.id === sessionId)!;
+        const cmd = session.input.trim();
+        if (!cmd) return;
+
+        if (session.isExecuting) {
+            // Queue the command — will run automatically when current finishes
+            updateSession(sessionId, { pendingCmd: cmd, input: '' });
+            return;
+        }
+        await runCommand(sessionId, cmd, session.history);
     };
+
+    // Tab-completion candidates (top-level OpenBB namespaces)
+    const TAB_COMPLETIONS = [
+        // ── Core aliases ──────────────────────────────────────────────────
+        'quote --symbol ', 'historical --symbol ', 'profile --symbol ',
+        'search --query ', 'news', 'income --symbol ', 'balance --symbol ',
+        'calendar', 'cpi', 'gdp', 'treasury', 'options --symbol ',
+        // ── Equity charts ─────────────────────────────────────────────────
+        'equity price historical --symbol ', 'equity price performance --symbol ',
+        'equity historical_market_cap --symbol ',
+        // ── Crypto charts ─────────────────────────────────────────────────
+        'crypto price historical --symbol BTC-USD --chart true',
+        'crypto price historical --symbol ETH-USD --chart true',
+        'crypto price historical --symbol ',
+        // ── Currency / Forex ──────────────────────────────────────────────
+        'currency price historical --symbol EURUSD=X --chart true',
+        'currency price historical --symbol ',
+        // ── ETF ───────────────────────────────────────────────────────────
+        'etf historical --symbol SPY --chart true',
+        'etf historical --symbol ', 'etf holdings --symbol ', 'etf price_performance --symbol ',
+        // ── Derivatives ───────────────────────────────────────────────────
+        'derivatives futures curve --symbol CL --chart true',
+        'derivatives futures historical --symbol ',
+        'derivatives options surface --symbol SPY --chart true',
+        // ── Fixed Income ──────────────────────────────────────────────────
+        'fixedincome government yield_curve --chart true',
+        'fixedincome government yield_curve --date ',
+        // ── Index ─────────────────────────────────────────────────────────
+        'index price historical --symbol ^GSPC --chart true',
+        'index price historical --symbol ^NDX --chart true',
+        'index price historical --symbol ',
+        // ── Economy / Macro ───────────────────────────────────────────────
+        'economy fred_series --symbol GDP --chart true',
+        'economy fred_series --symbol CPIAUCSL --chart true',
+        'economy fred_series --symbol FEDFUNDS --chart true',
+        'economy fred_series --symbol ',
+        'economy shipping chokepoint_info --chart true',
+        'economy shipping port_info --chart true',
+        'economy survey bls_series --symbol ',
+        // ── Technical ─────────────────────────────────────────────────────
+        'technical macd --symbol ', 'technical rsi --symbol ',
+        'technical ema --symbol ', 'technical sma --symbol ',
+        'technical wma --symbol ', 'technical hma --symbol ', 'technical zlma --symbol ',
+        'technical adx --symbol ', 'technical aroon --symbol ',
+        'technical cones --symbol ',
+        'technical relative_rotation --symbol ',
+        // ── System ────────────────────────────────────────────────────────
+        'help', 'clear',
+    ];
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         const inputs = activeSession.history.filter(m => m.type === 'input');
+        const val = activeSession.input;
+
+        // ── History navigation ────────────────────────────────────────
         if (e.key === 'ArrowUp') {
             e.preventDefault();
             if (inputs.length === 0) return;
             const newIndex = activeSession.historyIndex === -1 ? inputs.length - 1 : Math.max(0, activeSession.historyIndex - 1);
             updateActiveSession({ historyIndex: newIndex, input: inputs[newIndex].text });
-        } else if (e.key === 'ArrowDown') {
+            // Move caret to end after state update
+            setTimeout(() => { const el = inputRef.current; if (el) el.setSelectionRange(el.value.length, el.value.length); }, 0);
+            return;
+        }
+        if (e.key === 'ArrowDown') {
             e.preventDefault();
             if (activeSession.historyIndex === -1) return;
             const newIndex = activeSession.historyIndex + 1;
@@ -140,7 +223,65 @@ export default function OpenBBTerminal() {
                 updateActiveSession({ historyIndex: -1, input: '' });
             } else {
                 updateActiveSession({ historyIndex: newIndex, input: inputs[newIndex].text });
+                setTimeout(() => { const el = inputRef.current; if (el) el.setSelectionRange(el.value.length, el.value.length); }, 0);
             }
+            return;
+        }
+
+        // ── Tab completion ────────────────────────────────────────────
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            const trimmed = val.trimStart().toLowerCase();
+            const matches = TAB_COMPLETIONS.filter(c => c.startsWith(trimmed));
+            if (matches.length === 1) {
+                updateActiveSession({ input: matches[0] });
+            } else if (matches.length > 1) {
+                // Show matches as output hint
+                updateSession(activeId, {
+                    history: [...activeSession.history, { type: 'output', text: matches.join('   ') }],
+                });
+            }
+            return;
+        }
+
+        // ── Ctrl shortcuts ────────────────────────────────────────────
+        if (e.ctrlKey) {
+            // Ctrl+V — let browser handle paste natively
+            if (e.key === 'v' || e.key === 'V') return;
+            // Ctrl+A — let browser handle (select all in input)
+            if (e.key === 'a' || e.key === 'A') return;
+            if (e.key === 'l' || e.key === 'L') {
+                e.preventDefault();
+                updateActiveSession({ history: [], input: val });
+                return;
+            }
+            if (e.key === 'c' || e.key === 'C') {
+                // Only intercept Ctrl+C when there's nothing selected (otherwise browser copies selection)
+                if (window.getSelection()?.toString()) return;
+                e.preventDefault();
+                if (activeSession.isExecuting) {
+                    updateActiveSession({ isExecuting: false, pendingCmd: null,
+                        history: [...activeSession.history, { type: 'error', text: '^C' }]
+                    });
+                } else {
+                    updateActiveSession({ input: '',
+                        history: val ? [...activeSession.history, { type: 'input', text: val + '^C' }] : activeSession.history
+                    });
+                }
+                return;
+            }
+            if (e.key === 'u' || e.key === 'U') {
+                e.preventDefault();
+                updateActiveSession({ input: '' });
+                return;
+            }
+        }
+
+        // ── Escape — clear input ──────────────────────────────────────
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            updateActiveSession({ input: '', historyIndex: -1 });
+            return;
         }
     };
 
@@ -152,6 +293,7 @@ export default function OpenBBTerminal() {
             input: '',
             isExecuting: false,
             historyIndex: -1,
+            pendingCmd: null,
         }]);
         setActiveId(id);
     };
@@ -166,63 +308,64 @@ export default function OpenBBTerminal() {
 
     // ─── Theme Tokens ─────────────────────────────────────────────────
     const t = isDark ? {
-        bg: 'bg-[#1a1b26]/50',
-        bgSolid: 'bg-[#16161e]/60',
-        bgTab: 'bg-[#16161e]/50',
-        bgTabActive: 'bg-[#1a1b26]/80',
-        border: 'border-[#292e42]/40',
-        borderTab: 'border-[#292e42]/30',
-        text: 'text-[#a9b1d6]',
-        textBright: 'text-[#c0caf5]',
-        textDim: 'text-[#565f89]',
-        textInput: 'text-[#c0caf5]',
-        textCmd: 'text-[#7aa2f7]',
-        textError: 'text-[#f7768e]',
-        textOutput: 'text-[#a9b1d6]',
-        gutter: 'text-[#3b4261]',
-        gutterActive: 'text-[#7aa2f7]',
-        gutterBg: 'bg-[#16161e]/30',
-        modeNormal: 'bg-[#7aa2f7] text-[#1a1b26]',
-        modeInsert: 'bg-[#9ece6a] text-[#1a1b26]',
-        statusBg: 'bg-[#292e42]/80',
-        statusBg2: 'bg-[#3b4261]',
-        statusBg3: 'bg-[#16161e]/80',
-        cursor: 'bg-[#c0caf5]',
-        cursorBorder: 'border-[#c0caf5]',
-        accentGlow: 'shadow-[0_0_12px_#7aa2f7]',
-        warn: 'text-[#e0af68]',
-        warnDot: 'bg-[#e0af68]',
-        panelBlur: 'backdrop-blur-2xl',
-        tabIndicator: 'bg-[#7aa2f7]',
+        // High-contrast, glowing cyberpunk aesthetic
+        bg: 'bg-zinc-950/80',
+        bgSolid: 'bg-black/90',
+        bgTab: 'bg-zinc-900/60',
+        bgTabActive: 'bg-cyan-950/30',
+        border: 'border-cyan-500/30',
+        borderTab: 'border-cyan-900/40',
+        text: 'text-zinc-100',
+        textBright: 'text-white',
+        textDim: 'text-cyan-500/60',
+        textInput: 'text-cyan-300 drop-shadow-[0_0_5px_rgba(103,232,249,0.4)]',
+        textCmd: 'text-cyan-400 font-bold',
+        textError: 'text-rose-400 font-bold drop-shadow-[0_0_8px_rgba(244,63,94,0.4)]',
+        textOutput: 'text-zinc-200',
+        gutter: 'text-cyan-900/70',
+        gutterActive: 'text-cyan-400 bg-cyan-950/20 shadow-[inset_-2px_0_0_0_rgba(34,211,238,0.5)]',
+        gutterBg: 'bg-zinc-950/40',
+        modeNormal: 'bg-cyan-600 text-white font-bold',
+        modeInsert: 'bg-teal-400 text-black font-bold shadow-[0_0_15px_rgba(45,212,191,0.5)]',
+        statusBg: 'bg-zinc-900/90 border-t border-cyan-900/30',
+        statusBg2: 'bg-cyan-950/80 text-cyan-200',
+        statusBg3: 'bg-black/90',
+        cursor: 'bg-cyan-400',
+        cursorBorder: 'border-cyan-400',
+        accentGlow: 'shadow-[0_0_15px_rgba(34,211,238,0.6)]',
+        warn: 'text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.6)]',
+        warnDot: 'bg-amber-400 shadow-[0_0_12px_rgba(251,191,36,0.8)]',
+        panelBlur: 'backdrop-blur-3xl',
+        tabIndicator: 'bg-cyan-400',
     } : {
-        bg: 'bg-[#eff1f5]/60',
-        bgSolid: 'bg-[#e6e9ef]/70',
-        bgTab: 'bg-[#e6e9ef]/50',
-        bgTabActive: 'bg-[#f4f5f8]/90',
-        border: 'border-[#ccd0da]/60',
-        borderTab: 'border-[#ccd0da]/40',
-        text: 'text-[#4c4f69]',
-        textBright: 'text-[#1e1e2e]',
-        textDim: 'text-[#9ca0b0]',
-        textInput: 'text-[#1e1e2e]',
-        textCmd: 'text-[#1e66f5]',
-        textError: 'text-[#d20f39]',
-        textOutput: 'text-[#4c4f69]',
-        gutter: 'text-[#bcc0cc]',
-        gutterActive: 'text-[#1e66f5]',
-        gutterBg: 'bg-[#e6e9ef]/40',
-        modeNormal: 'bg-[#1e66f5] text-white',
-        modeInsert: 'bg-[#40a02b] text-white',
-        statusBg: 'bg-[#dce0e8]/80',
-        statusBg2: 'bg-[#ccd0da]',
-        statusBg3: 'bg-[#e6e9ef]/80',
-        cursor: 'bg-[#4c4f69]',
-        cursorBorder: 'border-[#4c4f69]',
-        accentGlow: 'shadow-[0_0_12px_rgba(30,102,245,0.3)]',
+        bg: 'bg-[#eff1f5]/80',
+        bgSolid: 'bg-[#e6e9ef]/90',
+        bgTab: 'bg-[#e6e9ef]/60',
+        bgTabActive: 'bg-teal-50/80',
+        border: 'border-teal-500/30',
+        borderTab: 'border-[#ccd0da]/60',
+        text: 'text-slate-800',
+        textBright: 'text-black',
+        textDim: 'text-slate-500',
+        textInput: 'text-teal-700 font-bold',
+        textCmd: 'text-teal-600 font-bold',
+        textError: 'text-red-600 font-bold',
+        textOutput: 'text-slate-800',
+        gutter: 'text-slate-400',
+        gutterActive: 'text-teal-600 font-bold border-r-2 border-teal-500',
+        gutterBg: 'bg-slate-100/50',
+        modeNormal: 'bg-teal-600 text-white',
+        modeInsert: 'bg-emerald-500 text-white shadow-sm',
+        statusBg: 'bg-slate-200/90',
+        statusBg2: 'bg-slate-300',
+        statusBg3: 'bg-slate-100/90',
+        cursor: 'bg-teal-600',
+        cursorBorder: 'border-teal-600',
+        accentGlow: 'shadow-[0_0_12px_rgba(20,184,166,0.3)]',
         warn: 'text-[#df8e1d]',
         warnDot: 'bg-[#df8e1d]',
-        panelBlur: 'backdrop-blur-2xl',
-        tabIndicator: 'bg-[#1e66f5]',
+        panelBlur: 'backdrop-blur-3xl',
+        tabIndicator: 'bg-teal-500',
     };
 
     // ─── Stellar Mode: Tiny glowing orb ───────────────────────────────
@@ -268,25 +411,30 @@ export default function OpenBBTerminal() {
         <div
             className={containerBase}
             style={!isFullscreen ? { height: `${panelHeight}px` } : {}}
-            onMouseDown={() => inputRef.current?.focus()}
         >
-            {/* Resizer */}
+            {/* Resizer Handle */}
             {!isFullscreen && (
                 <div
-                    className={`absolute top-0 left-0 w-full h-1.5 cursor-ns-resize z-10 transition-colors ${isDark ? 'hover:bg-[#7aa2f7]/30' : 'hover:bg-[#1e66f5]/20'}`}
+                    className={`absolute top-0 left-0 w-full h-3 cursor-ns-resize z-20 flex items-center justify-center group transition-colors ${isDark ? 'hover:bg-cyan-500/20' : 'hover:bg-teal-500/15'}`}
+                    title="Drag to resize"
                     onMouseDown={(e) => {
                         e.preventDefault();
                         const startY = e.clientY;
                         const startH = panelHeight;
-                        const move = (ev: MouseEvent) => setPanelHeight(Math.max(180, Math.min(window.innerHeight - 100, startH + startY - ev.clientY)));
+                        const move = (ev: MouseEvent) => {
+                            const next = Math.max(120, Math.min(Math.floor(window.innerHeight * 0.92), startH + startY - ev.clientY));
+                            setPanelHeight(next);
+                        };
                         const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
                         window.addEventListener('mousemove', move);
                         window.addEventListener('mouseup', up);
                     }}
-                />
+                >
+                    <div className={`w-16 h-1 rounded-full transition-all duration-150 group-hover:w-28 group-active:w-36 ${isDark ? 'bg-cyan-500/40 group-hover:bg-cyan-400/70' : 'bg-teal-500/30 group-hover:bg-teal-500/60'}`} />
+                </div>
             )}
 
-            <div className={`flex flex-col h-full w-full font-mono ${isFullscreen ? `border ${t.border} rounded-xl overflow-hidden` : ''}`}>
+            <div className={`flex flex-col h-full w-full font-mono ${isFullscreen ? `border ${t.border} rounded-xl overflow-hidden` : ''}`} data-terminal-panel>
                 {/* Tab Bar */}
                 <div className={`flex items-center justify-between ${t.bgTab} shrink-0 border-b ${t.borderTab} select-none`}>
                     <div className="flex items-center">
@@ -294,7 +442,7 @@ export default function OpenBBTerminal() {
                             <div
                                 key={s.id}
                                 onClick={(e) => { e.stopPropagation(); setActiveId(s.id); }}
-                                className={`group flex items-center gap-2.5 px-6 py-2.5 text-[11px] tracking-wide cursor-pointer transition-all border-r ${t.borderTab} relative ${activeId === s.id ? `${t.textCmd} ${t.bgTabActive} font-bold` : `${t.textDim} ${isDark ? 'hover:bg-[#1a1b26]/30' : 'hover:bg-[#dce0e8]'}`}`}
+                                className={`group flex items-center gap-3 px-6 py-3 text-[12px] tracking-wider cursor-pointer transition-all border-r ${t.borderTab} relative ${activeId === s.id ? `${t.textCmd} ${t.bgTabActive} font-bold shadow-inner` : `${t.textDim} ${isDark ? 'hover:bg-zinc-800' : 'hover:bg-slate-200'}`}`}
                             >
                                 {activeId === s.id && <div className={`absolute bottom-0 left-0 w-full h-[2px] ${t.tabIndicator} ${t.accentGlow}`} />}
                                 <span>{i + 1}:openbb</span>
@@ -309,24 +457,24 @@ export default function OpenBBTerminal() {
                                 )}
                             </div>
                         ))}
-                        <button onClick={(e) => { e.stopPropagation(); newSession(); }} className={`px-5 py-2.5 ${t.textDim} transition-colors border-r ${t.borderTab} ${isDark ? 'hover:text-[#7aa2f7]' : 'hover:text-[#1e66f5]'}`}>
+                        <button onClick={(e) => { e.stopPropagation(); newSession(); }} className={`px-5 py-2.5 ${t.textDim} transition-colors border-r ${t.borderTab} ${isDark ? 'hover:text-cyan-400 hover:bg-zinc-800/50' : 'hover:text-teal-600 hover:bg-slate-200/50'}`}>
                             <Plus size={14} />
                         </button>
                     </div>
 
                     <div className={`flex items-center gap-5 px-5 ${t.textDim}`}>
-                        <div className="hidden sm:flex items-center gap-4 mr-4 text-[9px] font-bold tracking-[0.15em] uppercase opacity-50">
+                        <div className="hidden sm:flex items-center gap-4 mr-4 text-[10px] font-bold tracking-[0.2em] uppercase opacity-70">
                             <span>{isFullscreen ? 'fullscreen' : 'split'}</span>
                             <span>{sessions.length} buf</span>
                         </div>
                         <div className="flex items-center gap-1.5">
                             <button onClick={(e) => { e.stopPropagation(); setIsFullscreen(!isFullscreen); }}
-                                className={`p-2 rounded transition-colors ${isDark ? 'hover:text-[#7aa2f7] hover:bg-[#292e42]' : 'hover:text-[#1e66f5] hover:bg-[#dce0e8]'}`}>
-                                {isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                                className={`p-2 rounded transition-colors ${isDark ? 'hover:text-cyan-400 hover:bg-zinc-800' : 'hover:text-teal-600 hover:bg-slate-300'}`}>
+                                {isFullscreen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
                             </button>
                             <button onClick={(e) => { e.stopPropagation(); setIsOpen(false); setIsFullscreen(false); }}
-                                className={`p-2 rounded transition-colors ${isDark ? 'hover:text-[#f7768e] hover:bg-[#292e42]' : 'hover:text-[#d20f39] hover:bg-[#dce0e8]'}`}>
-                                <ChevronDown size={16} />
+                                className={`p-2 rounded transition-colors ${isDark ? 'hover:text-rose-400 hover:bg-zinc-800' : 'hover:text-red-500 hover:bg-slate-300'}`}>
+                                <ChevronDown size={17} />
                             </button>
                         </div>
                     </div>
@@ -334,7 +482,7 @@ export default function OpenBBTerminal() {
 
                 {/* Buffer Area */}
                 <div className="flex-1 flex min-h-0 overflow-hidden">
-                    <div className={`w-14 ${t.gutterBg} border-r ${t.borderTab} flex flex-col items-end py-5 px-3 ${t.gutter} text-xs select-none overflow-hidden`}>
+                    <div className={`w-12 ${t.gutterBg} border-r ${t.borderTab} flex flex-col items-end py-3 px-2 ${t.gutter} text-xs select-none overflow-hidden`}>
                         {activeSession.history.map((_, i) => (
                             <div key={i} className={`leading-[1.85] ${i === activeSession.history.length - 1 ? t.gutterActive + ' font-bold' : ''}`}>{i + 1}</div>
                         ))}
@@ -343,8 +491,16 @@ export default function OpenBBTerminal() {
                         ))}
                     </div>
 
-                    <div className="flex-1 flex flex-col overflow-hidden">
-                        <div className={`flex-1 overflow-y-auto py-5 px-6 text-[13px] leading-[1.85] ${t.textOutput}`}>
+                    <div className="flex-1 flex flex-col overflow-hidden relative">
+                        <div
+                            className={`flex-1 overflow-y-auto py-4 px-5 text-[14px] leading-relaxed tracking-wide antialiased ${t.textOutput} select-text cursor-text`}
+                            onClick={() => {
+                                // Re-focus input only when clicking without a text selection
+                                if (!window.getSelection()?.toString()) {
+                                    inputRef.current?.focus();
+                                }
+                            }}
+                        >
                             {activeSession.history.map((line, i) => (
                                 <div key={i} className={`whitespace-pre-wrap ${line.type === 'input' ? `${t.textCmd} font-semibold` : line.type === 'error' ? t.textError : t.textOutput}`}>
                                     {line.type === 'input' && <span className={`${t.textCmd} opacity-50 mr-3`}>:</span>}
@@ -360,44 +516,70 @@ export default function OpenBBTerminal() {
                             <div ref={endRef} />
                         </div>
 
-                        {/* Statusline */}
-                        <div className="flex text-[10px] font-bold select-none h-6 shrink-0">
-                            <div className={`${isFocused ? t.modeInsert : t.modeNormal} px-4 flex items-center tracking-widest`}>
-                                {isFocused ? 'INSERT' : 'NORMAL'}
-                            </div>
-                            <div className={`${t.statusBg} ${t.text} px-4 flex items-center font-normal gap-2`}>
-                                <TerminalIcon size={10} /> openbb.cli
-                            </div>
-                            <div className={`flex-1 ${t.statusBg}`} />
-                            <div className={`${t.statusBg3} ${t.textDim} px-3 flex items-center`}>utf-8</div>
-                            <div className={`${t.statusBg2} ${t.textBright} px-4 flex items-center tracking-tight`}>{lineCount}:1</div>
+                        {/* ── Command Input (BOTTOM) ─────────────────────────────── */}
+                        <div className={`h-11 border-t-2 ${isDark ? 'border-cyan-500/40 shadow-[0_-5px_15px_rgba(6,182,212,0.1)]' : 'border-teal-500/30'} shrink-0 flex items-center px-5 gap-3 ${isDark ? 'bg-black/80' : 'bg-slate-200/80'} backdrop-blur-md`}>
+                            {/* Prompt glyph */}
+                            <span className={`shrink-0 select-none font-bold text-[16px] leading-none ${isFocused ? t.textCmd : t.textDim}`}>❯</span>
+                            <form onSubmit={handleCommand} className="flex-1 flex items-center h-full min-w-0">
+                                <input
+                                    ref={inputRef}
+                                    type="text"
+                                    value={activeSession.input}
+                                    onChange={e => updateActiveSession({ input: e.target.value, historyIndex: -1 })}
+                                    onKeyDown={handleKeyDown}
+                                    onFocus={() => setIsFocused(true)}
+                                    onBlur={(e) => {
+                                        const panel = e.currentTarget.closest('[data-terminal-panel]');
+                                        if (panel && panel.contains(e.relatedTarget as Node)) return;
+                                        setIsFocused(false);
+                                    }}
+                                    onPaste={(e) => {
+                                        const text = e.clipboardData.getData('text');
+                                        if (text.includes('\n')) {
+                                            e.preventDefault();
+                                            const cleaned = text.replace(/\r?\n/g, ' ').trim();
+                                            const el = e.currentTarget;
+                                            const start = el.selectionStart ?? el.value.length;
+                                            const end = el.selectionEnd ?? el.value.length;
+                                            const next = el.value.slice(0, start) + cleaned + el.value.slice(end);
+                                            updateActiveSession({ input: next, historyIndex: -1 });
+                                        }
+                                    }}
+                                    className={`w-full bg-transparent border-none outline-none ${t.textInput} focus:ring-0 py-0 px-0 tracking-wider text-[15px] font-semibold antialiased`}
+                                    style={{ caretColor: isDark ? '#22d3ee' : '#0f766e' }}
+                                    spellCheck={false}
+                                    autoComplete="off"
+                                    autoCorrect="off"
+                                    autoCapitalize="off"
+                                    placeholder={activeSession.isExecuting && activeSession.pendingCmd
+                                        ? `queued: ${activeSession.pendingCmd}`
+                                        : activeSession.isExecuting ? 'executing…' : ''}
+                                />
+                            </form>
+                            {activeSession.isExecuting && (
+                                <div className={`shrink-0 flex items-center gap-1.5 text-[9px] font-bold tracking-widest uppercase ${t.warn}`}>
+                                    <Loader2 size={10} className="animate-spin" />
+                                    {activeSession.pendingCmd ? 'queued' : 'running'}
+                                </div>
+                            )}
+                            <span className={`shrink-0 text-[9px] select-none ${t.textDim} hidden sm:block`}>
+                                ↑↓ history · Tab · Ctrl+L · Ctrl+C
+                            </span>
                         </div>
 
-                        {/* Command Line */}
-                        <div className={`h-9 border-t ${t.borderTab} shrink-0 flex items-center px-4 ${isDark ? 'bg-[#1a1b26]/60' : 'bg-[#eff1f5]/60'}`}>
-                            <form onSubmit={handleCommand} className="flex-1 flex items-center h-full">
-                                <span className={`${t.textBright} font-bold mr-2 text-[15px]`}>:</span>
-                                <div className="relative flex-1 flex items-center">
-                                    <input
-                                        ref={inputRef}
-                                        type="text"
-                                        value={activeSession.input}
-                                        onChange={e => updateActiveSession({ input: e.target.value })}
-                                        onKeyDown={handleKeyDown}
-                                        onFocus={() => setIsFocused(true)}
-                                        onBlur={() => setIsFocused(false)}
-                                        className={`w-full bg-transparent border-none outline-none ${t.textInput} focus:ring-0 py-0 px-0 caret-transparent tracking-wide text-[14px] font-medium`}
-                                        spellCheck="false"
-                                        autoComplete="off"
-                                        disabled={activeSession.isExecuting}
-                                    />
-                                    <div className="absolute top-0 left-0 pointer-events-none flex h-full items-center">
-                                        <span className="opacity-0 whitespace-pre text-[14px]">{activeSession.input}</span>
-                                        <span className={`w-[9px] h-[17px] ${isFocused ? `${t.cursor} animate-pulse` : `border ${t.cursorBorder} bg-transparent`}`} />
-                                    </div>
-                                </div>
-                            </form>
+                        {/* Statusline */}
+                        <div className="flex text-[11px] font-bold select-none h-7 shrink-0 tracking-wide">
+                            <div className={`${isFocused ? t.modeInsert : t.modeNormal} px-4 flex items-center tracking-widest leading-none`}>
+                                {isFocused ? 'INSERT' : 'NORMAL'}
+                            </div>
+                            <div className={`${t.statusBg} ${t.text} px-5 flex items-center font-medium gap-2 shadow-inner`}>
+                                <TerminalIcon size={12} className="opacity-70" /> openbb.cli
+                            </div>
+                            <div className={`flex-1 ${t.statusBg}`} />
+                            <div className={`${t.statusBg3} ${t.textDim} px-4 flex items-center shadow-inner`}>utf-8</div>
+                            <div className={`${t.statusBg2} ${t.textBright} px-5 flex items-center tracking-tight shadow-inner`}>{lineCount}:1</div>
                         </div>
+
                     </div>
                 </div>
             </div>

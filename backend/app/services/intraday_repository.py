@@ -99,7 +99,8 @@ class DuckDBIntradayRepository:
         last_exception = None
         for i in range(retries):
             try:
-                conn = duckdb.connect(self._db_path, read_only=read_only)
+                # Force read_only=False to prevent "different configuration" errors
+                conn = duckdb.connect(self._db_path, read_only=False)
                 break
             except Exception as e:
                 last_exception = e

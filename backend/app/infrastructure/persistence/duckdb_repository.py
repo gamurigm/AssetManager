@@ -28,10 +28,11 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
         self._init_schema()
 
     def _connect(self, read_only=False, retries=5, delay=0.2):
-        """Fast transient connection with minimal retries."""
+        """Fast transient connection with minimal retries. Always read_write to avoid configuration conflicts."""
         for i in range(retries):
             try:
-                return duckdb.connect(self.db_path, read_only=read_only)
+                # Force read_only=False to prevent "different configuration" errors
+                return duckdb.connect(self.db_path, read_only=False)
             except Exception as e:
                 if i < retries - 1 and ("used by another process" in str(e).lower() or "io error" in str(e).lower()):
                     time.sleep(delay)

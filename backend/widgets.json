@@ -5,34 +5,99 @@
         "category": "Management",
         "type": "metric",
         "endpoint": "widgets/portfolio",
-        "gridData": {
-            "w": 4,
-            "h": 2
-        },
+        "gridData": { "w": 4, "h": 2 },
         "source": "Asset Manager Backend"
     },
     "market_sentiment": {
         "name": "Market Sentiment",
-        "description": "AI analysis of current market sentiment",
+        "description": "AI analysis of current market sentiment based on portfolio risk metrics",
         "category": "AI Analyst",
         "type": "markdown",
         "endpoint": "widgets/sentiment",
-        "gridData": {
-            "w": 6,
-            "h": 4
-        },
+        "gridData": { "w": 6, "h": 4 },
         "source": "Fundamental Agent"
     },
     "recent_activity": {
         "name": "Recent Trading Activity",
-        "description": "List of latest trades executed by the desk",
+        "description": "List of latest 10 trades executed by the desk",
         "category": "Trading",
         "type": "table",
         "endpoint": "widgets/trades",
-        "gridData": {
-            "w": 8,
-            "h": 4
-        },
+        "gridData": { "w": 8, "h": 4 },
         "source": "Trader Agent"
+    },
+
+    "aum_metric": {
+        "name": "Total AUM",
+        "description": "Assets Under Management — total market value with daily change",
+        "category": "Management",
+        "type": "metric",
+        "endpoint": "widgets/aum",
+        "gridData": { "w": 4, "h": 2 },
+        "source": "Asset Manager Backend"
+    },
+    "sector_allocation": {
+        "name": "Sector Allocation",
+        "description": "Portfolio breakdown by sector: allocation %, market value, and P&L",
+        "category": "Management",
+        "type": "table",
+        "endpoint": "widgets/allocation",
+        "gridData": { "w": 6, "h": 4 },
+        "source": "Asset Manager Backend"
+    },
+    "risk_dashboard": {
+        "name": "Risk Dashboard",
+        "description": "Modified VaR, CVaR, Sharpe ratio, and max drawdown for the portfolio",
+        "category": "Risk",
+        "type": "markdown",
+        "endpoint": "widgets/risk",
+        "gridData": { "w": 6, "h": 4 },
+        "source": "Risk Engine"
+    },
+    "equity_curve": {
+        "name": "Equity Curve",
+        "description": "Historical total equity vs realized balance — last 90 snapshots",
+        "category": "Management",
+        "type": "table",
+        "endpoint": "widgets/equity-curve",
+        "gridData": { "w": 8, "h": 4 },
+        "source": "Asset Manager Backend"
+    },
+
+    "client_portfolio": {
+        "name": "Client Portfolio",
+        "description": "Open positions with entry price, market value, and unrealized P&L",
+        "category": "Client",
+        "type": "table",
+        "endpoint": "widgets/client/portfolio",
+        "params": [
+            { "paramName": "client_id", "value": "default", "label": "Client ID", "type": "text" }
+        ],
+        "gridData": { "w": 12, "h": 6 },
+        "source": "Asset Manager Backend"
+    },
+    "client_pnl": {
+        "name": "Client P&L History",
+        "description": "Realized P&L per trade — last 50 transactions",
+        "category": "Client",
+        "type": "table",
+        "endpoint": "widgets/client/pnl",
+        "params": [
+            { "paramName": "client_id", "value": "default", "label": "Client ID", "type": "text" }
+        ],
+        "gridData": { "w": 8, "h": 5 },
+        "source": "Asset Manager Backend"
+    },
+    "client_summary": {
+        "name": "Client Portfolio Summary",
+        "description": "Key metrics: total value, unrealized P&L, realized P&L, largest position",
+        "category": "Client",
+        "type": "markdown",
+        "endpoint": "widgets/client/summary",
+        "params": [
+            { "paramName": "client_id", "value": "default", "label": "Client ID", "type": "text" }
+        ],
+        "gridData": { "w": 5, "h": 4 },
+        "source": "Asset Manager Backend"
     }
 }

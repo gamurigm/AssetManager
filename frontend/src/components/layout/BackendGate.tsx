@@ -79,16 +79,27 @@ export default function BackendGate({ children }: BackendGateProps) {
         return () => clearInterval(timer);
     }, [checkBackend]);
 
-    const [particles, setParticles] = useState<{ left: string; top: string; delay: string; duration: string }[]>([]);
+    const [particles, setParticles] = useState<{ left: string; top: string; delay: string; duration: string; size: number }[]>([]);
+    const [ripples, setRipples] = useState<{ left: string; top: string; delay: string; duration: string }[]>([]);
 
     useEffect(() => {
-        // Generate random values only on the client after mounting to avoid hydration mismatch
+        // Small dots only — lots of them
         setParticles(
-            Array.from({ length: 20 }).map(() => ({
+            Array.from({ length: 90 }).map(() => ({
                 left: `${Math.random() * 100}%`,
                 top: `${Math.random() * 100}%`,
-                delay: `${Math.random() * 5}s`,
-                duration: `${3 + Math.random() * 4}s`,
+                delay: `${Math.random() * 8}s`,
+                duration: `${2.5 + Math.random() * 5}s`,
+                size: 1 + Math.random() * 3, // 1–4px only
+            }))
+        );
+        // Ripple waves that expand outward
+        setRipples(
+            Array.from({ length: 6 }).map(() => ({
+                left: `${15 + Math.random() * 70}%`,
+                top: `${15 + Math.random() * 70}%`,
+                delay: `${Math.random() * 10}s`,
+                duration: `${4 + Math.random() * 4}s`,
             }))
         );
     }, []);
@@ -99,6 +110,17 @@ export default function BackendGate({ children }: BackendGateProps) {
 
     return (
         <div className="gate-container">
+            {/* Background image — cinematic dark overlay */}
+            <div
+                className="absolute inset-0 bg-cover bg-center bg-no-repeat"
+                style={{ backgroundImage: "url('/fondo-bg1.jpg')", opacity: 0.85 }}
+            />
+            {/* Rich vignette — dark edges, slightly open center */}
+            <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(ellipse 70% 60% at 50% 50%, rgba(0,0,0,0.2) 0%, rgba(0,0,0,0.6) 100%)' }} />
+            {/* Top & bottom hard black bars */}
+            <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black to-transparent pointer-events-none" />
+            <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-black to-transparent pointer-events-none" />
+
             {/* Animated background grid */}
             <div className="gate-grid" />
 
@@ -111,8 +133,27 @@ export default function BackendGate({ children }: BackendGateProps) {
                         style={{
                             left: p.left,
                             top: p.top,
+                            width: `${p.size}px`,
+                            height: `${p.size}px`,
                             animationDelay: p.delay,
                             animationDuration: p.duration,
+                            boxShadow: `0 0 ${p.size * 2}px rgba(255,248,160,0.75)`,
+                        }}
+                    />
+                ))}
+            </div>
+
+            {/* Ripple waves */}
+            <div className="gate-particles">
+                {ripples.map((r, i) => (
+                    <div
+                        key={`ripple-${i}`}
+                        className="gate-ripple"
+                        style={{
+                            left: r.left,
+                            top: r.top,
+                            animationDelay: r.delay,
+                            animationDuration: r.duration,
                         }}
                     />
                 ))}

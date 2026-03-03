@@ -1,1 +1,0 @@
-Error in Head of Strategy stream: AsyncCompletions.create() got an unexpected keyword argument 'prompt_cache_retention'

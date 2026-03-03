@@ -82,6 +82,7 @@ cmake_install.cmake
 *.db-shm
 *.db-wal
 .rate_limit_cache/
+.cache/
 
 # --- Logs & Temp Files ---
 *.log

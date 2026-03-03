@@ -63,27 +63,27 @@ class TokenBucket:
             _rl_cache.set(self._daily_reset_key, now)
 
     def can_request(self) -> bool:
-        """Force Bypass checking."""
-        # self._refill()
-        # minute_tokens = _rl_cache.get(self._minute_key, self.max_tokens_per_min)
-        # daily_tokens = _rl_cache.get(self._daily_key, self.max_daily)
-        return True
+        """Check if a request is allowed (token bucket)."""
+        # Yahoo is unlimited — always allow
+        if self.provider == "yahoo":
+            return True
+        self._refill()
+        minute_tokens = _rl_cache.get(self._minute_key, self.max_tokens_per_min)
+        daily_tokens  = _rl_cache.get(self._daily_key,  self.max_daily)
+        return minute_tokens >= 1 and daily_tokens >= 1
 
     def consume(self) -> bool:
-        """
-        FORCE BYPASS: Always allow request for debugging.
-        """
-        # self._refill()
-        # minute_tokens = _rl_cache.get(self._minute_key, self.max_tokens_per_min)
-        # daily_tokens = _rl_cache.get(self._daily_key, self.max_daily)
-
-        # if minute_tokens < 1 or daily_tokens < 1:
-        #     if self.provider != "yahoo": # Allow only yahoo to bypass if needed, but here we force ALL
-        #         print(f"[RateLimiter] ⛔ {self.provider} BLOCKED (min:{minute_tokens:.1f}, day:{daily_tokens})")
-        #         return False
-        
-        # _rl_cache.set(self._minute_key, minute_tokens - 1)
-        # _rl_cache.set(self._daily_key, daily_tokens - 1)
+        """Consume one token. Returns True if consumed, False if blocked."""
+        if self.provider == "yahoo":
+            return True
+        self._refill()
+        minute_tokens = _rl_cache.get(self._minute_key, self.max_tokens_per_min)
+        daily_tokens  = _rl_cache.get(self._daily_key,  self.max_daily)
+        if minute_tokens < 1 or daily_tokens < 1:
+            print(f"[RateLimiter] ⛔ {self.provider} BLOCKED (min:{minute_tokens:.1f}, day:{daily_tokens})")
+            return False
+        _rl_cache.set(self._minute_key, minute_tokens - 1)
+        _rl_cache.set(self._daily_key,  daily_tokens  - 1)
         return True
 
     def get_status(self) -> dict:

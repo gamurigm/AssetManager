@@ -108,26 +108,33 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
 
     const pnlPercent = (totalPnL / 50000) * 100;
 
-    // 3. Periodic Balance Snapshot for Equity Curve
+    // 3. Periodic Balance Snapshot for Equity Curve — fires every 60s, NOT on every price tick
+    const accountEquityRef = React.useRef(accountEquity);
+    accountEquityRef.current = accountEquity;
+
     React.useEffect(() => {
         if (!isInitialized) return;
 
         const recordSnapshot = async () => {
+            const equity = accountEquityRef.current;
+            if (!equity || equity <= 0) return;
             try {
                 await fetch('http://127.0.0.1:8282/api/v1/portfolios/snapshot-equity', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ total_value: accountEquity }) // Record full equity for the curve
+                    body: JSON.stringify({ total_value: equity }),
+                    signal: AbortSignal.timeout(5000),
                 });
-            } catch (err) {
-                console.error("Failed to snapshot balance:", err);
+            } catch {
+                // Backend not ready yet — silently skip, will retry next interval
             }
         };
 
-        recordSnapshot();
+        // First snapshot after 10s (backend warmup), then every 60s
+        const initial = setTimeout(recordSnapshot, 10000);
         const interval = setInterval(recordSnapshot, 60000);
-        return () => clearInterval(interval);
-    }, [isInitialized, accountEquity]);
+        return () => { clearTimeout(initial); clearInterval(interval); };
+    }, [isInitialized]); // ← solo depende de isInitialized, no de accountEquity
 
     const updateHoldings = (newHoldings: Holding[]) => {
         const timestamp = new Date().toLocaleTimeString();

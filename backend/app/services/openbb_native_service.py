@@ -15,6 +15,7 @@ import sys, json, traceback
 try:
     import pandas as pd
     from openbb import obb
+    from datetime import datetime, timedelta
     sys.stderr.write("[OpenBB Worker] Ready.\n")
     sys.stderr.flush()
 except Exception as e:
@@ -38,6 +39,58 @@ def handle(request):
     path_parts = request["path_parts"]
     kwargs = request.get("kwargs", {})
 
+    # ── Technical indicators: auto-fetch OHLCV data first ──────────
+    is_technical = path_parts[0] == "technical" if path_parts else False
+    is_relative_rotation = is_technical and len(path_parts) > 1 and path_parts[1] == "relative_rotation"
+
+    if is_relative_rotation:
+        # relative_rotation needs ALL symbols + benchmark fetched and stacked into
+        # a single DataFrame with a "symbol" column. Benchmark MUST be present.
+        raw_symbols = kwargs.pop("symbol", "AAPL,MSFT,NVDA")
+        benchmark = kwargs.get("benchmark", "SPY")
+        _default_start = (datetime.today() - timedelta(days=730)).strftime("%Y-%m-%d")  # 2 years
+        start_date = kwargs.pop("start_date", _default_start)
+        kwargs.pop("end_date", None)
+        kwargs.pop("provider", None)
+
+        # Parse symbol list, ensure benchmark is included
+        sym_list = [s.strip() for s in str(raw_symbols).split(",") if s.strip()]
+        if benchmark not in sym_list:
+            sym_list.append(benchmark)
+
+        frames = []
+        for sym in sym_list:
+            try:
+                hist = obb.equity.price.historical(symbol=sym, start_date=start_date, provider="yfinance")
+                df_sym = hist.to_dataframe().reset_index()
+                df_sym["symbol"] = sym
+                frames.append(df_sym)
+            except Exception as e:
+                sys.stderr.write(f"[RR] Failed to fetch {sym}: {e}\n")
+
+        if not frames:
+            return {"error": "Could not fetch data for any of the provided symbols."}
+
+        combined = pd.concat(frames, ignore_index=True)
+        kwargs["data"] = combined
+        # Pass symbols list (without benchmark — it's passed separately via benchmark=)
+        user_syms = [s for s in sym_list if s != benchmark]
+        if user_syms:
+            kwargs["symbols"] = user_syms
+
+    elif is_technical:
+        symbol = kwargs.pop("symbol", "SPY")
+        _default_start = (datetime.today() - timedelta(days=365)).strftime("%Y-%m-%d")  # 1 year
+        start_date = kwargs.pop("start_date", _default_start)
+        kwargs.pop("end_date", None)
+        kwargs.pop("provider", None)
+        try:
+            hist = obb.equity.price.historical(symbol=symbol, start_date=start_date, provider="yfinance")
+            df = hist.to_dataframe().reset_index()
+        except Exception as e:
+            return {"error": f"Failed to fetch data for {symbol}: {e}"}
+        kwargs["data"] = df
+
     obj = obb
     for attr in path_parts:
         if not hasattr(obj, attr):
@@ -45,7 +98,18 @@ def handle(request):
             return {"error": f"'{attr}' not found. Available: {', '.join(available[:15])}"}
         obj = getattr(obj, attr)
 
+    chart_requested = kwargs.get("chart", False)
     res = obj(**kwargs)
+
+    if chart_requested:
+        if hasattr(res, "chart") and res.chart is not None:
+            if hasattr(res.chart, "fig") and res.chart.fig is not None:
+                html = res.chart.fig.to_html(include_plotlyjs="cdn", full_html=True, config={"scrollZoom": True, "displayModeBar": True})
+                return {"html": html, "type": "chart_window"}
+            else:
+                return {"error": "Chart object has no figure."}
+        else:
+            return {"error": "No chart generated for this command."}
 
     if hasattr(res, "to_dataframe"):
         df = res.to_dataframe()
@@ -128,11 +192,6 @@ class OpenBBNativeService:
 
         path_parts = command_path.split(".")
 
-        # If chart is requested, detach and return immediately
-        if kwargs.get('chart'):
-            script = self._build_onetime_script(path_parts, kwargs)
-            subprocess.Popen([self.openbb_python, "-c", script], cwd=self.openbb_dir)
-            return {"output": f"Executing {command_path} natively. Chart window will open shortly."}
 
         # Try the persistent worker (fast path)
         try:
@@ -201,7 +260,177 @@ class OpenBBNativeService:
             return {"error": err_str or output_str or "Unknown Native Exec Error", "type": "error"}
         return {"output": output_str or "Command processed."}
 
+    async def _execute_chart_html(self, path_parts: list, kwargs: dict) -> dict:
+        """Run the chart command and return full Plotly HTML to open in a new window.
+        Uses subprocess.run in a thread for Windows compatibility with uvicorn.
+        """
+        script = self._build_chart_html_script(path_parts, kwargs)
+
+        def _run_chart_subprocess() -> dict:
+            try:
+                result = subprocess.run(
+                    [self.openbb_python, "-c", script],
+                    cwd=self.openbb_dir,
+                    capture_output=True,
+                    text=True,
+                    timeout=90,
+                )
+                html_output = result.stdout.strip()
+                err = result.stderr.strip()
+                if result.returncode != 0 or not html_output:
+                    msg = err or "No chart output produced"
+                    # Strip leading ERROR: prefix if present
+                    msg = msg.replace("ERROR: ", "", 1)
+                    return {"error": msg, "type": "error"}
+                return {"html": html_output, "type": "chart_window"}
+            except subprocess.TimeoutExpired:
+                return {"error": "Chart generation timed out (90s)", "type": "error"}
+            except Exception as e:
+                return {"error": f"Chart subprocess error: {type(e).__name__}: {e}", "type": "error"}
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _run_chart_subprocess)
+
+    def _build_chart_script(self, path_parts: list, kwargs: dict) -> str:
+        """Build a script that opens a Plotly chart in the browser via .show() [legacy]."""
+        return f"""import sys
+from openbb import obb
+
+try:
+    obj = obb
+    for attr in {repr(path_parts)}:
+        if not hasattr(obj, attr):
+            print(f"Error: '{{attr}}' not found", file=sys.stderr)
+            sys.exit(1)
+        obj = getattr(obj, attr)
+
+    res = obj(**{repr(kwargs)})
+
+    # Try native .show() first (opens browser via Plotly)
+    if hasattr(res, "show"):
+        res.show()
+    elif hasattr(res, "chart") and res.chart and hasattr(res.chart, "fig"):
+        res.chart.fig.show()
+    else:
+        # Fallback: generate chart explicitly if supported
+        if hasattr(res, "to_dataframe"):
+            df = res.to_dataframe()
+            if not df.empty:
+                try:
+                    import plotly.express as px
+                    fig = px.line(df.reset_index(), title="{repr('.'.join(path_parts))}")
+                    fig.show()
+                except ImportError:
+                    pass
+except Exception as e:
+    print(f"Chart error: {{e}}", file=sys.stderr)
+    sys.exit(1)
+"""
+
+    def _build_chart_html_script(self, path_parts: list, kwargs: dict) -> str:
+        """Build a script that outputs the full Plotly HTML page to stdout."""
+        # Technical indicators need OHLCV data fetched first.
+        # If the path starts with 'technical', auto-fetch equity historical data.
+        is_technical = path_parts[0] == "technical" if path_parts else False
+
+        if is_technical:
+            symbol = kwargs.get("symbol", "SPY")
+            start_date = kwargs.get("start_date", "2023-01-01")
+            # Build kwargs for the indicator without symbol/start_date (not valid params)
+            indicator_kwargs = {k: v for k, v in kwargs.items()
+                                if k not in ("symbol", "start_date", "end_date", "provider")}
+            indicator_kwargs["chart"] = True
+            return f"""import sys
+from openbb import obb
+
+try:
+    # Step 1: fetch OHLCV data
+    hist = obb.equity.price.historical(
+        symbol={repr(symbol)},
+        start_date={repr(start_date)},
+        provider="yfinance"
+    )
+    df = hist.to_dataframe().reset_index()
+
+    # Step 2: run the technical indicator
+    obj = obb
+    for attr in {repr(path_parts)}:
+        obj = getattr(obj, attr)
+
+    res = obj(data=df, **{repr(indicator_kwargs)})
+
+    if hasattr(res, "chart") and res.chart is not None:
+        if hasattr(res.chart, "fig") and res.chart.fig is not None:
+            html = res.chart.fig.to_html(include_plotlyjs="cdn", full_html=True,
+                                          config={{"scrollZoom": True, "displayModeBar": True}})
+            print(html)
+        else:
+            print("ERROR: Chart object has no figure.", file=sys.stderr)
+            sys.exit(1)
+    else:
+        print("ERROR: No chart generated. Try a different indicator or symbol.", file=sys.stderr)
+        sys.exit(1)
+except Exception as e:
+    print(f"ERROR: {{e}}", file=sys.stderr)
+    sys.exit(1)
+"""
+
+        return f"""import sys
+from openbb import obb
+
+try:
+    obj = obb
+    for attr in {repr(path_parts)}:
+        obj = getattr(obj, attr)
+
+    res = obj(**{repr(kwargs)})
+
+    if hasattr(res, "chart") and res.chart is not None:
+        if hasattr(res.chart, "fig") and res.chart.fig is not None:
+            html = res.chart.fig.to_html(include_plotlyjs="cdn", full_html=True, config={{"scrollZoom": True, "displayModeBar": True}})
+            print(html)
+        else:
+            print("ERROR: Chart object has no figure.", file=sys.stderr)
+            sys.exit(1)
+    else:
+        print("ERROR: No chart generated for this command.", file=sys.stderr)
+        sys.exit(1)
+except Exception as e:
+    print(f"ERROR: {{e}}", file=sys.stderr)
+    sys.exit(1)
+"""
+
     def _build_onetime_script(self, path_parts: list, kwargs: dict) -> str:
+        is_technical = path_parts[0] == "technical" if path_parts else False
+
+        if is_technical:
+            symbol = kwargs.get("symbol", "SPY")
+            start_date = kwargs.get("start_date", "2023-01-01")
+            indicator_kwargs = {k: v for k, v in kwargs.items()
+                                if k not in ("symbol", "start_date", "end_date", "provider", "chart")}
+            return f"""import sys, pandas as pd
+from openbb import obb
+
+try:
+    hist = obb.equity.price.historical(symbol={repr(symbol)}, start_date={repr(start_date)}, provider="yfinance")
+    df = hist.to_dataframe().reset_index()
+    obj = obb
+    for attr in {repr(path_parts)}:
+        obj = getattr(obj, attr)
+    res = obj(data=df, **{repr(indicator_kwargs)})
+    if hasattr(res, "to_dataframe"):
+        out = res.to_dataframe()
+        if out.empty: print("Query returned no data.")
+        else:
+            print(out.head(25).to_string(index=False))
+            if len(out) > 25: print(f"\\n... Showing 25 of {{len(out)}} rows")
+    else:
+        print(str(res))
+except Exception as e:
+    print(f"Error: {{e}}")
+    sys.exit(1)
+"""
+
         return f"""import sys, pandas as pd
 from openbb import obb
 
@@ -248,3 +477,11 @@ except Exception as e:
 
 openbb_native = OpenBBNativeService()
 
+
+async def get_chart_html(command_path: str, kwargs: dict) -> dict:
+    """
+    Execute an OpenBB command with chart=True and return the full Plotly HTML.
+    Returns {"html": "...", "type": "chart_window"} or {"error": "...", "type": "error"}.
+    """
+    kwargs["chart"] = True
+    return await openbb_native.execute(command_path, kwargs)

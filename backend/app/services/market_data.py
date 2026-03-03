@@ -25,7 +25,7 @@ cache = Cache(CACHE_DIR)
 # --- The Data Cascade Router --- #
 
 class MarketDataService:
-    CACHE_QUOTE_TTL = 60    # 1 minute for quotes to respect rate limits
+    CACHE_QUOTE_TTL = 90    # 90s cache — reduces provider calls significantly
 
     # Common crypto base symbols for auto-detection
     _CRYPTO_BASES = {
@@ -51,21 +51,49 @@ class MarketDataService:
                 return True
         return False
 
+    # Known forex currency codes for auto-detection
+    _FOREX_CODES = {
+        "USD", "EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD", "HKD", "SGD",
+        "SEK", "NOK", "DKK", "MXN", "CNY", "INR", "BRL", "ZAR", "TRY", "KRW",
+        "THB", "PLN", "HUF", "CZK", "ILS", "CLP", "PHP", "IDR", "MYR", "RON",
+    }
+
+    @staticmethod
+    def _is_forex(symbol: str) -> bool:
+        """Detect 6-char forex pairs like USDMXN, EURUSD, CHFJPY."""
+        sym = symbol.upper().replace("=X", "").replace("+", "")
+        if len(sym) == 6:
+            base, quote = sym[:3], sym[3:]
+            return base in MarketDataService._FOREX_CODES and quote in MarketDataService._FOREX_CODES
+        return False
+
     @staticmethod
     def _normalize_symbol(symbol: str, provider: str) -> str:
         """Helper to translate symbols based on provider requirements."""
         if provider == "yahoo":
             if symbol == "BTC/USD": return "BTC-USD"
             if symbol == "ETH/USD": return "ETH-USD"
+            # Already has =X suffix
+            if symbol.endswith("=X"): return symbol
+            # Slash forex notation: EUR/USD → EURUSD=X
             if "/" in symbol:
-                if any(curr in symbol for curr in ["EUR", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD"]):
-                    return symbol.replace("/", "") + "=X"
+                base, quote = symbol.split("/", 1)
+                if base.upper() in MarketDataService._FOREX_CODES or quote.upper() in MarketDataService._FOREX_CODES:
+                    return base.upper() + quote.upper() + "=X"
                 return symbol.replace("/", "-")
-            return symbol.replace("=", "-")
+            # 6-char bare forex: USDMXN → USDMXN=X
+            if MarketDataService._is_forex(symbol):
+                sym_clean = symbol.upper().replace("=X", "")
+                return sym_clean + "=X"
+            return symbol
         if provider == "twelve":
             return symbol
         if provider in ["fmp", "polygon"]:
-            return symbol.replace("/", "").replace("=", "")
+            # Strip trailing =X (forex Yahoo suffix) cleanly, then remove remaining /=
+            sym = symbol
+            if sym.endswith("=X"):
+                sym = sym[:-2]  # remove exactly "=X"
+            return sym.replace("/", "").replace("=", "")
         return symbol
 
     @staticmethod
@@ -159,6 +187,18 @@ class MarketDataService:
                 return res
         else:
             print(f"[MarketData] ⛔ Polygon rate limited for {symbol}")
+
+        # ── Stale DuckDB fallback: return last known price rather than error ──
+        if duckdb_store.has_data(symbol, min_rows=1):
+            candles = duckdb_store.get_history(symbol, limit=1)
+            if candles:
+                last = candles[-1]
+                stale_price = float(last.close) if hasattr(last, 'close') else float(last.get('close', 0))
+                print(f"[MarketData] ⚠️ {symbol} → DuckDB stale fallback (all providers exhausted)")
+                return {
+                    "price": stale_price, "change": 0.0, "changePercentage": 0.0,
+                    "source": "DuckDB (Stale)", "symbol": symbol,
+                }
 
         return {"error": f"All providers exhausted or rate limited for {symbol}."}
 
