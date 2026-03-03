@@ -28,7 +28,7 @@ if (Test-Path $openbbVenv) {
     }
     else {
         Write-Host " - Iniciando OpenBB API Server..." -ForegroundColor Green
-        Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$openbbPath'; & '$openbbVenv'; uvicorn openbb_core.api.router:app --host 0.0.0.0 --port 6900" -WindowStyle Minimized
+        Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$openbbPath'; & '$openbbVenv'; uvicorn openbb_core.api.rest_api:app --host 0.0.0.0 --port 6900" -WindowStyle Minimized
         Write-Host " - OpenBB API se está calentando (puede tardar ~10s la primera vez)." -ForegroundColor DarkYellow
         Start-Sleep -Seconds 3
     }

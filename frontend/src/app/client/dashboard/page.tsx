@@ -1,15 +1,30 @@
 "use client"
 
 import AppLayout from "@/components/layout/AppLayout";
-import Watchlist from "@/components/watchlist/Watchlist";
 import React, { useEffect, useState, useRef, useMemo } from "react";
+import dynamic from "next/dynamic";
 import { TrendingUp, TrendingDown, DollarSign, BarChart3, ArrowUpRight, ArrowDownRight, X, PieChart as PieIcon, LayoutGrid, ChartPie, ChevronDown, ChevronUp, Star, Activity, FileText, ShieldCheck, Pin, PinOff } from "lucide-react";
-import AssetTreemap from "@/components/charts/AssetTreemap";
-import SectorPieChart from "@/components/charts/SectorPieChart";
-import AllocationDonut from "@/components/charts/AllocationDonut";
 import { usePortfolio } from "@/context/PortfolioContext";
 import { logger } from "@/lib/logger";
 import { LineChart, Line, ResponsiveContainer, YAxis } from "recharts";
+
+// Lazy-load heavy visualization components
+const AssetTreemap = dynamic(() => import("@/components/charts/AssetTreemap"), {
+    ssr: false,
+    loading: () => <div className="h-[300px] flex items-center justify-center"><div className="h-6 w-6 border-2 border-accent border-t-transparent rounded-full animate-spin" /></div>,
+});
+const SectorPieChart = dynamic(() => import("@/components/charts/SectorPieChart"), {
+    ssr: false,
+    loading: () => <div className="h-[300px] flex items-center justify-center"><div className="h-6 w-6 border-2 border-accent border-t-transparent rounded-full animate-spin" /></div>,
+});
+const AllocationDonut = dynamic(() => import("@/components/charts/AllocationDonut"), {
+    ssr: false,
+    loading: () => null,
+});
+const Watchlist = dynamic(() => import("@/components/watchlist/Watchlist"), {
+    ssr: false,
+    loading: () => <div className="p-4 text-muted text-xs">Loading watchlist...</div>,
+});
 
 const sparklineCache: Record<string, any[]> = {};
 

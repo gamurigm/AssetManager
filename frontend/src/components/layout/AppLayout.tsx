@@ -1,8 +1,17 @@
 "use client"
 
-import Sidebar from "@/components/layout/Sidebar";
-import OpenBBTerminal from "@/components/layout/OpenBBTerminal";
+import dynamic from "next/dynamic";
 import { useState, useEffect } from "react";
+
+// Lazy-load heavy layout components (deferred until after BackendGate)
+const Sidebar = dynamic(() => import("@/components/layout/Sidebar"), {
+    ssr: false,
+    loading: () => <div className="fixed top-0 left-0 h-screen w-[68px] border-r border-border bg-card z-40" />,
+});
+const OpenBBTerminal = dynamic(() => import("@/components/layout/OpenBBTerminal"), {
+    ssr: false,
+    loading: () => null,
+});
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
     const [mounted, setMounted] = useState(false);

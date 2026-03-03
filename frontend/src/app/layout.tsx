@@ -17,9 +17,7 @@ export const metadata: Metadata = {
   description: "Murillo Medina Asset Management: AI-powered terminal with NVIDIA NIM, real-time analytics, and automated trading.",
 };
 
-import ChatWidget from "@/components/ai/ChatWidget";
-import GlobalSearch from "@/components/layout/GlobalSearch";
-import { PortfolioProvider } from "@/context/PortfolioContext";
+import ClientProviders from "@/components/providers/ClientProviders";
 
 export default function RootLayout({
   children,
@@ -31,13 +29,12 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased bg-background text-foreground`}
       >
-        <PortfolioProvider>
-          <GlobalSearch />
+        <ClientProviders>
           {children}
-          <ChatWidget />
-        </PortfolioProvider>
+        </ClientProviders>
       </body>
     </html>
   );
 }
+
 

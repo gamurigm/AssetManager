@@ -90,7 +90,7 @@ class OpenBBRestService:
                 "error": "OpenBB API server is not running.\n"
                          "Start it with: run_app.ps1 or manually via:\n"
                          "  cd external_repos/OpenBB/OpenBB\n"
-                         "  .venv/Scripts/python -m uvicorn openbb_core.api.router:app --port 6900",
+                         "  .venv/Scripts/python -m uvicorn openbb_core.api.rest_api:app --port 6900",
                 "type": "error"
             }
         except httpx.HTTPStatusError as exc:
