@@ -40,21 +40,31 @@ class YahooProvider(IMarketDataProvider):
         if upper_sym in index_map:
             return index_map[upper_sym]
             
-        if symbol == "BTC/USD":
-            return "BTC-USD"
-        if symbol == "ETH/USD":
-            return "ETH-USD"
-            
-        fiat_currencies = ["EUR", "USD", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD"]
+        fiat = {
+            "EUR", "USD", "GBP", "JPY", "AUD", "CAD", "CHF", "NZD",
+            "CNY", "HKD", "SGD", "SEK", "KRW", "NOK", "MXN", "INR",
+            "RUB", "ZAR", "TRY", "BRL", "TWD", "DKK", "PLN", "THB",
+            "IDR", "HUF", "CZK", "ILS", "CLP", "PHP", "AED", "COP",
+            "SAR", "MYR", "RON"
+        }
         
-        if "/" in symbol:
-            if any(c in symbol for c in fiat_currencies):
-                return symbol.replace("/", "") + "=X"
-            return symbol.replace("/", "-")
+        if "/" in upper_sym:
+            base, quote = upper_sym.split("/", 1)
+            if base in fiat and quote in fiat:
+                return f"{base}{quote}=X"
+            return f"{base}-{quote}"
             
-        # Handle 6-letter fiat pairs sent without slashes (e.g. "EURGBP")
-        if len(symbol) == 6 and symbol[:3] in fiat_currencies and symbol[3:] in fiat_currencies:
-            return symbol + "=X"
+        if len(upper_sym) == 6:
+            base, quote = upper_sym[:3], upper_sym[3:]
+            if base in fiat and quote in fiat:
+                return f"{upper_sym}=X"
+            # If ends in fiat (e.g., USD) and base is likely crypto
+            if quote in fiat and base not in fiat:
+                return f"{base}-{quote}"
+                
+        # Handle cases where user types BTCUSD or BTC-USD
+        if "-" in upper_sym:
+            return upper_sym
             
         return symbol
 

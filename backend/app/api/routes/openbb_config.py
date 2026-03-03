@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, Query
 from fastapi.responses import JSONResponse
 import json
 import asyncio
@@ -6,12 +6,14 @@ import os
 import sys
 import requests
 import pandas as pd
+import numpy as np
+from datetime import datetime, timedelta
 from pathlib import Path
-from ...core.container import get_quote, get_historical, fmp_provider, yahoo_provider, duckdb_repo
+from ...core.container import get_quote, get_historical, fmp_provider, yahoo_provider, duckdb_repo, calculate_equity_curve_uc
 from ...services.risk_service import risk_service
 from ...services.standardizer import standardizer
 from ...services.openbb_rest_service import openbb_rest
-from ...services.openbb_native_service import openbb_native
+from ...services.openbb_native_service import openbb_native, get_chart_html
 
 router = APIRouter()
 
@@ -23,7 +25,12 @@ def _parse_args(parts: list[str]) -> dict:
         if parts[i].startswith("--"):
             key = parts[i][2:].replace("-", "_")
             if i + 1 < len(parts) and not parts[i+1].startswith("--"):
-                kwargs[key] = parts[i+1]
+                val = parts[i+1]
+                if val.lower() == "true":
+                    val = True
+                elif val.lower() == "false":
+                    val = False
+                kwargs[key] = val
                 i += 2
             else:
                 kwargs[key] = True
@@ -109,45 +116,106 @@ async def openbb_cli(body: dict = Body(...)):
             "║                        🌌 MMAM INTELLIGENCE · OPENBB PLATFORM                      ║\n"
             "║                            ADVANCED CLI TERMINAL v2.5.0                            ║\n"
             "╚════════════════════════════════════════════════════════════════════════════════════╝\n\n"
-            "  Welcome to the advanced command-line interface. This terminal integrates\n"
-            "  high-performance direct providers and the full OpenBB Native framework capabilities.\n\n"
-            "  [ SYNTAX ]\n"
-            "  > command --flag value --flag2 value2\n"
-            "  > :command  (Vim-style colon is optional but supported)\n\n"
+            "  SYNTAX:  command --flag value --flag2 value2\n"
+            "           Add  --chart true  to any ★ command to open an interactive Plotly chart.\n\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━ 📊 CORE MARKET DATA (Lightning Fast) ━━━━━━━━━━━━━━━━━━━━━━\n"
-            "  quote          Real-time price quote        | e.g. quote --symbol AAPL\n"
-            "  historical     Price history candles        | e.g. historical --symbol TSLA --limit 50\n"
-            "  profile        Company overview             | e.g. profile --symbol MSFT\n"
-            "  search         Find ticker by name          | e.g. search --query \"nvidia\"\n"
-            "  news           Latest market news           | e.g. news --limit 10\n\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━ 🏦 FUNDAMENTALS & ECONOMY (Aliases)  ━━━━━━━━━━━━━━━━━━━━━━\n"
-            "  income         Income statement             | e.g. income --symbol GOOG\n"
-            "  balance        Balance sheet                | e.g. balance --symbol AMZN\n"
-            "  calendar       Economic calendar            | e.g. calendar\n"
-            "  cpi            Consumer Price Index         | e.g. cpi\n"
-            "  gdp            Nominal GDP                  | e.g. gdp\n"
-            "  treasury       Government Treasury Rates    | e.g. treasury\n"
-            "  options        Derivatives options chains   | e.g. options --symbol SPY\n\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━ ⚙️  OPENBB NATIVE ENGINE (Full API)   ━━━━━━━━━━━━━━━━━━━━━━\n"
-            "  You can use ANY standard OpenBB command path.\n"
-            "  The terminal routes dynamically into the OpenBB native container wrapper.\n"
-            "  Paths:         equity/price/quote --symbol NVDA\n"
-            "                 crypto/price/historical --symbol BTC-USD\n"
-            "                 fixedincome/corporate/ice_bofa\n\n"
-            "  Global Flags:  --chart True                 (Return visual charts when supported)\n"
-            "                 --provider [name]            (Force specific data provider)\n\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━ 🤖 AI COPILOT (NVIDIA NIM)           ━━━━━━━━━━━━━━━━━━━━━━\n"
-            "  qwen, q        Ask the AI assistant for command help or financial context.\n"
-            "                 e.g. qwen How do I get insider trading data?\n"
-            "                 e.g. q What is the command for bond yields?\n\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━ 🕹️  SYSTEM COMMANDS                   ━━━━━━━━━━━━━━━━━━━━━━\n"
-            "  help, h, ?     Display this exhaustive help documentation.\n"
-            "  clear          Clear the terminal buffer screen.\n"
+            "  quote          Real-time price quote        | quote --symbol AAPL\n"
+            "  historical     Price history candles        | historical --symbol TSLA --limit 50\n"
+            "  profile        Company overview             | profile --symbol MSFT\n"
+            "  search         Find ticker by name          | search --query \"nvidia\"\n"
+            "  news           Latest market news           | news --limit 10\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━ 🏦 FUNDAMENTALS & ECONOMY            ━━━━━━━━━━━━━━━━━━━━━━\n"
+            "  income         Income statement             | income --symbol GOOG\n"
+            "  balance        Balance sheet                | balance --symbol AMZN\n"
+            "  calendar       Economic calendar            | calendar\n"
+            "  cpi            Consumer Price Index         | cpi\n"
+            "  gdp            Nominal GDP                  | gdp\n"
+            "  treasury       Government Treasury Rates    | treasury\n"
+            "  options        Options chains               | options --symbol SPY\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━ 📈 CHARTS  (abren en ventana nativa) ━━━━━━━━━━━━━━━━━━━━━━\n"
+            "  Añade --chart true a cualquier comando ★ para abrir gráfico interactivo Plotly.\n\n"
+            "  ★ EQUITY\n"
+            "    equity price historical --symbol AAPL --chart true\n"
+            "    equity price historical --symbol MSFT --start_date 2024-01-01 --chart true\n"
+            "    equity price performance --symbol NVDA --chart true\n"
+            "    equity historical_market_cap --symbol TSLA --chart true\n\n"
+            "  ★ CRYPTO\n"
+            "    crypto price historical --symbol BTC-USD --chart true\n"
+            "    crypto price historical --symbol ETH-USD --start_date 2024-01-01 --chart true\n\n"
+            "  ★ CURRENCY / FOREX\n"
+            "    currency price historical --symbol EURUSD=X --chart true\n"
+            "    currency price historical --symbol GBPUSD=X --chart true\n\n"
+            "  ★ ETF\n"
+            "    etf historical --symbol SPY --chart true\n"
+            "    etf holdings --symbol QQQ --chart true\n"
+            "    etf price_performance --symbol IWM --chart true\n\n"
+            "  ★ DERIVATIVES\n"
+            "    derivatives futures curve --symbol CL --chart true\n"
+            "    derivatives futures historical --symbol CL --chart true\n"
+            "    derivatives options surface --symbol SPY --chart true\n\n"
+            "  ★ FIXED INCOME\n"
+            "    fixedincome government yield_curve --chart true\n"
+            "    fixedincome government yield_curve --date 2024-01-01 --chart true\n\n"
+            "  ★ INDEX\n"
+            "    index price historical --symbol ^GSPC --chart true\n"
+            "    index price historical --symbol ^NDX --chart true\n\n"
+            "  ★ ECONOMY / MACRO\n"
+            "    economy fred_series --symbol GDP --chart true\n"
+            "    economy fred_series --symbol CPIAUCSL --chart true\n"
+            "    economy fred_series --symbol FEDFUNDS --chart true\n"
+            "    economy shipping chokepoint_info --chart true\n"
+            "    economy shipping port_info --chart true\n"
+            "    economy survey bls_series --symbol CES0000000001 --chart true\n\n"
+            "  ★ TECHNICAL INDICATORS  (requieren datos previos cargados)\n"
+            "    technical macd --symbol AAPL --chart true\n"
+            "    technical rsi --symbol AAPL --chart true\n"
+            "    technical ema --symbol AAPL --length 50 --chart true\n"
+            "    technical sma --symbol AAPL --length 200 --chart true\n"
+            "    technical wma --symbol AAPL --chart true\n"
+            "    technical hma --symbol AAPL --chart true\n"
+            "    technical zlma --symbol AAPL --chart true\n"
+            "    technical adx --symbol AAPL --chart true\n"
+            "    technical aroon --symbol AAPL --chart true\n"
+            "    technical cones --symbol AAPL --chart true\n"
+            "    technical relative_rotation --symbol AAPL --benchmark ^GSPC --chart true\n\n"
+            "  ★ ECONOMETRICS\n"
+            "    econometrics correlation_matrix --symbol AAPL,MSFT,NVDA --chart true\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━ 🤖 AI COPILOT                        ━━━━━━━━━━━━━━━━━━━━━━\n"
+            "  qwen, q        Pregunta al asistente IA sobre comandos o mercados.\n"
+            "                 q How do I get insider trading data?\n"
+            "                 q What command shows bond yields?\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━ 🕹️  TECLADO & SISTEMA                 ━━━━━━━━━━━━━━━━━━━━━━\n"
+            "  ↑ / ↓          Navegar historial de comandos\n"
+            "  Tab            Autocompletar comandos\n"
+            "  Ctrl+C         Cancelar ejecución  (o copiar selección)\n"
+            "  Ctrl+L         Limpiar pantalla\n"
+            "  Ctrl+U         Borrar línea actual\n"
+            "  Escape         Limpiar input\n"
+            "  help, h, ?     Mostrar esta ayuda.\n"
+            "  clear          Limpiar el buffer de pantalla.\n"
         )}
 
     # ─── Parse command + args ───────────────────────────────────────
     parts = cmd_str.split()
-    raw_cmd = parts[0].lower().lstrip("/").replace("/", ".")
+
+    # Consume all leading non-flag tokens as the command path
+    # e.g. "index price historical --symbol ^NDX" → path="index.price.historical", rest=[--symbol, ^NDX]
+    path_tokens = []
+    rest_tokens = []
+    for i, tok in enumerate(parts):
+        if tok.startswith("--") or tok.startswith("-"):
+            rest_tokens = parts[i:]
+            break
+        path_tokens.append(tok)
+    else:
+        # No flags found at all
+        rest_tokens = []
+
+    if not path_tokens:
+        return {"output": "Empty command.", "type": "error"}
+
+    raw_cmd = ".".join(t.lower().lstrip("/").replace("/", ".") for t in path_tokens)
+
     aliases = {
         "quote": "equity.price.quote",
         "price": "equity.price.quote",
@@ -163,11 +231,27 @@ async def openbb_cli(body: dict = Body(...)):
         "treasury": "fixedincome.government.treasury_rates",
         "options": "derivatives.options.chains",
     }
+    # Only apply alias if it's a single-token shortcut
     command = aliases.get(raw_cmd, raw_cmd)
-    kwargs = _parse_args(parts[1:])
+    kwargs = _parse_args(rest_tokens)
+
+    # ─── Smart Default Providers ────────────────────────────────────
+    if "provider" not in kwargs:
+        if command.startswith(("equity.", "derivatives.", "etf.", "index.", "crypto.")):
+            kwargs["provider"] = "yfinance"
+        elif command.startswith("economy.") or command.startswith("fixedincome."):
+            kwargs["provider"] = "bls" if "bls" in command else "fred"
 
     # ─── Command execution ───────────────────────────────────────────
     try:
+        # 0. Charts — run via native OpenBB, return full HTML to open in new browser window
+        if kwargs.get("chart"):
+            native_result = await openbb_native.execute(command, kwargs)
+            if native_result.get("type") == "chart_window" and "html" in native_result:
+                return {"type": "chart_window", "html": native_result["html"]}
+            err_msg = native_result.get("error") or "Chart generation failed"
+            return {"output": err_msg, "type": "error"}
+
         # 1. Direct short-circuit for high-performance providers
         if "chart" not in kwargs:
             if command in ("quote", "price", "equity.price.quote"):
@@ -226,7 +310,51 @@ async def openbb_cli(body: dict = Body(...)):
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
 
-@router.get("/widgets.json")
+@router.post("/openbb/chart")
+async def openbb_chart(body: dict = Body(...)):
+    """
+    Execute an OpenBB command and return the Plotly figure as JSON for inline rendering.
+    The frontend renders it with Plotly.js embedded in the terminal panel.
+
+    Body: { "command": "equity.price.historical --symbol AAPL --provider yfinance" }
+    Returns: Plotly JSON figure or { "error": "..." }
+    """
+    cmd_str = body.get("command", "").strip()
+    if not cmd_str:
+        return JSONResponse({"error": "No command provided."}, status_code=400)
+
+    parts   = cmd_str.split()
+    raw_cmd = parts[0].lower().lstrip("/").replace("/", ".")
+    aliases = {
+        "historical": "equity.price.historical",
+        "history":    "equity.price.historical",
+        "quote":      "equity.price.quote",
+        "price":      "equity.price.quote",
+        "options":    "derivatives.options.chains",
+        "cpi":        "economy.cpi",
+        "gdp":        "economy.gdp.nominal",
+        "treasury":   "fixedincome.government.treasury_rates",
+    }
+    command = aliases.get(raw_cmd, raw_cmd)
+    kwargs  = _parse_args(parts[1:])
+    kwargs.pop("chart", None)  # managed here
+
+    if "provider" not in kwargs:
+        if command.startswith("equity.") or command.startswith("derivatives."):
+            kwargs["provider"] = "yfinance"
+        elif command.startswith("economy.") or command.startswith("fixedincome."):
+            kwargs["provider"] = "bls" if "bls" in command else "fred"
+
+    result = await get_chart_html(command, kwargs)
+
+    if result.get("type") == "chart_window" and "html" in result:
+        from fastapi.responses import HTMLResponse
+        return HTMLResponse(content=result["html"])
+    err = result.get("error", "Chart generation failed")
+    return JSONResponse({"error": err}, status_code=422)
+
+
+
 async def get_widgets():
     path = BASE_DIR / "widgets.json"
     if not path.exists(): return JSONResponse(content={"error": "widgets.json not found"}, status_code=404)
@@ -262,3 +390,212 @@ async def widget_trades():
     recent = txs[-10:] if txs else []
     formatted = [{"Date": t.get("date"), "Symbol": t.get("symbol"), "Type": t.get("type"), "Quantity": t.get("shares"), "Price": f"${t.get('price', 0):,.2f}", "PnL": f"${t.get('realized_pnl', 0):,.2f}"} for t in recent]
     return standardizer.to_openbb_table(formatted)
+
+
+# ─── Manager Widgets ─────────────────────────────────────────────────────────
+
+@router.get("/widgets/aum")
+async def widget_aum():
+    """Manager: Total AUM metric with daily change."""
+    holdings = duckdb_repo.get_portfolio()
+    if not holdings:
+        return standardizer.to_openbb_metric("Total AUM", "$0.00", change="0.00%", is_positive=True)
+
+    total_cost  = sum(h["shares"] * h["entryPrice"] * h.get("factor", 1.0) for h in holdings)
+    total_mkt   = sum(h["shares"] * h.get("price", h["entryPrice"]) * h.get("factor", 1.0) for h in holdings)
+    total_pnl   = total_mkt - total_cost
+    pct_change  = (total_pnl / total_cost * 100) if total_cost else 0
+
+    snapshots  = calculate_equity_curve_uc.execute(days=2)
+    day_change = pct_change
+    if isinstance(snapshots, list) and len(snapshots) >= 2:
+        prev = snapshots[-2].get("total", total_cost)
+        curr = snapshots[-1].get("total", total_mkt)
+        day_change = ((curr - prev) / prev * 100) if prev else 0
+
+    return standardizer.to_openbb_metric(
+        label="Total AUM",
+        value=f"${total_mkt:,.2f}",
+        change=f"{day_change:+.2f}%",
+        is_positive=day_change >= 0,
+    )
+
+
+@router.get("/widgets/allocation")
+async def widget_allocation():
+    """Manager: Portfolio allocation table grouped by sector."""
+    holdings = duckdb_repo.get_portfolio()
+    if not holdings:
+        return standardizer.to_openbb_table([])
+
+    total_mkt = sum(
+        h["shares"] * h.get("price", h["entryPrice"]) * h.get("factor", 1.0)
+        for h in holdings
+    ) or 1.0
+
+    sector_map: dict[str, dict] = {}
+    for h in holdings:
+        sector  = h.get("sector", "Other")
+        mkt_val = h["shares"] * h.get("price", h["entryPrice"]) * h.get("factor", 1.0)
+        cost    = h["shares"] * h["entryPrice"] * h.get("factor", 1.0)
+        if sector not in sector_map:
+            sector_map[sector] = {"market_value": 0.0, "cost": 0.0, "count": 0}
+        sector_map[sector]["market_value"] += mkt_val
+        sector_map[sector]["cost"]         += cost
+        sector_map[sector]["count"]        += 1
+
+    rows = []
+    for sector, data in sorted(sector_map.items(), key=lambda x: -x[1]["market_value"]):
+        pnl  = data["market_value"] - data["cost"]
+        pct  = data["market_value"] / total_mkt * 100
+        rows.append({
+            "Sector":      sector,
+            "Positions":   data["count"],
+            "Market Value": f"${data['market_value']:,.2f}",
+            "Allocation":  f"{pct:.1f}%",
+            "P&L":         f"${pnl:+,.2f}",
+        })
+    return standardizer.to_openbb_table(rows)
+
+
+@router.get("/widgets/risk")
+async def widget_risk():
+    """Manager: Risk dashboard — VaR, CVaR, Sharpe, max drawdown."""
+    holdings = duckdb_repo.get_portfolio()
+    if not holdings:
+        return standardizer.to_openbb_text("Risk Dashboard", "_No holdings to analyze._")
+
+    report = risk_service.get_portfolio_risk_report(holdings)
+    if "error" in report:
+        return standardizer.to_openbb_text("Risk Dashboard", f"⚠️ {report['error']}")
+
+    var     = report.get("mvar_95_percent", report.get("var_95_percent", 0))
+    cvar    = report.get("cvar_95_percent", 0)
+    sharpe  = report.get("sharpe_ratio", 0)
+    cov     = report.get("coverage_percent", 0)
+
+    # Simple max drawdown from equity snapshots
+    snapshots = calculate_equity_curve_uc.execute(days=365)
+    max_dd    = 0.0
+    if isinstance(snapshots, list) and snapshots:
+        equities = [s.get("total", 0) for s in snapshots]
+        peak     = equities[0]
+        for e in equities:
+            peak   = max(peak, e)
+            dd     = (peak - e) / peak * 100 if peak else 0
+            max_dd = max(max_dd, dd)
+
+    stance = "🟢 BULLISH" if sharpe > 1 else ("🟡 NEUTRAL" if sharpe > 0 else "🔴 CAUTIOUS")
+
+    body = (
+        f"**Stance:** {stance}  |  **Data Coverage:** {cov:.0f}%\n\n"
+        f"| Metric | Value |\n"
+        f"|--------|-------|\n"
+        f"| Modified VaR (95%) | {var:.2f}% |\n"
+        f"| CVaR / Expected Shortfall | {cvar:.2f}% |\n"
+        f"| Sharpe Ratio | {sharpe:.3f} |\n"
+        f"| Max Drawdown (1Y) | -{max_dd:.2f}% |\n"
+    )
+    return standardizer.to_openbb_text("Portfolio Risk Report", body)
+
+
+@router.get("/widgets/equity-curve")
+async def widget_equity_curve():
+    """Manager: Equity curve history as a table (total vs realized)."""
+    snapshots = calculate_equity_curve_uc.execute(days=365)
+    if not isinstance(snapshots, list) or not snapshots:
+        return standardizer.to_openbb_table([])
+
+    from datetime import timezone
+    rows = [
+        {
+            "Date":         datetime.fromtimestamp(s["time"], tz=timezone.utc).strftime("%Y-%m-%d"),
+            "Total Equity": f"${s.get('total', 0):,.2f}",
+            "Realized":     f"${s.get('realized', 0):,.2f}",
+        }
+        for s in snapshots[-90:]  # last 90 data points
+    ]
+    return standardizer.to_openbb_table(rows)
+
+
+# ─── Client Widgets ───────────────────────────────────────────────────────────
+
+@router.get("/widgets/client/portfolio")
+async def widget_client_portfolio(client_id: str = Query(default="default")):
+    """Client: Open positions table with live P&L per holding."""
+    holdings = duckdb_repo.get_portfolio()
+    if not holdings:
+        return standardizer.to_openbb_table([])
+
+    rows = []
+    for h in holdings:
+        cost    = h["shares"] * h["entryPrice"] * h.get("factor", 1.0)
+        mkt_val = h["shares"] * h.get("price", h["entryPrice"]) * h.get("factor", 1.0)
+        pnl     = mkt_val - cost
+        pnl_pct = (pnl / cost * 100) if cost else 0
+        rows.append({
+            "Symbol":       h["symbol"],
+            "Name":         h.get("name", ""),
+            "Sector":       h.get("sector", ""),
+            "Shares":       f"{h['shares']:,.4f}",
+            "Entry Price":  f"${h['entryPrice']:,.4f}",
+            "Market Value": f"${mkt_val:,.2f}",
+            "P&L":          f"${pnl:+,.2f}",
+            "P&L %":        f"{pnl_pct:+.2f}%",
+            "Type":         h.get("type", ""),
+        })
+    return standardizer.to_openbb_table(rows)
+
+
+@router.get("/widgets/client/pnl")
+async def widget_client_pnl(client_id: str = Query(default="default")):
+    """Client: Realized P&L history from transactions."""
+    txs = duckdb_repo.get_transactions()
+    if not txs:
+        return standardizer.to_openbb_table([])
+
+    rows = [
+        {
+            "Date":      t.get("date", ""),
+            "Time":      t.get("time", ""),
+            "Symbol":    t.get("symbol", ""),
+            "Side":      t.get("type", "").upper(),
+            "Qty":       f"{t.get('shares', 0):,.4f}",
+            "Price":     f"${t.get('price', 0):,.2f}",
+            "Realized P&L": f"${t.get('realized_pnl', 0):+,.2f}",
+        }
+        for t in reversed(txs[-50:])
+    ]
+    return standardizer.to_openbb_table(rows)
+
+
+@router.get("/widgets/client/summary")
+async def widget_client_summary(client_id: str = Query(default="default")):
+    """Client: Portfolio summary metrics: total value, unrealized PnL, top holding."""
+    holdings = duckdb_repo.get_portfolio()
+    if not holdings:
+        return standardizer.to_openbb_text("Portfolio Summary", "_No holdings found._")
+
+    total_cost = sum(h["shares"] * h["entryPrice"] * h.get("factor", 1.0) for h in holdings)
+    total_mkt  = sum(h["shares"] * h.get("price", h["entryPrice"]) * h.get("factor", 1.0) for h in holdings)
+    unrealized = total_mkt - total_cost
+    pct        = (unrealized / total_cost * 100) if total_cost else 0
+
+    # Top holding by market value
+    top = max(holdings, key=lambda h: h["shares"] * h.get("price", h["entryPrice"]) * h.get("factor", 1.0))
+    top_val = top["shares"] * top.get("price", top["entryPrice"]) * top.get("factor", 1.0)
+    top_pct = (top_val / total_mkt * 100) if total_mkt else 0
+
+    # Realized P&L
+    txs       = duckdb_repo.get_transactions()
+    realized  = sum(t.get("realized_pnl", 0) for t in txs)
+
+    body = (
+        f"| | |\n|---|---|\n"
+        f"| **Portfolio Value** | ${total_mkt:,.2f} |\n"
+        f"| **Unrealized P&L** | ${unrealized:+,.2f} ({pct:+.2f}%) |\n"
+        f"| **Realized P&L** | ${realized:+,.2f} |\n"
+        f"| **Open Positions** | {len(holdings)} |\n"
+        f"| **Largest Position** | {top['symbol']} ({top_pct:.1f}%) |\n"
+    )
+    return standardizer.to_openbb_text("Portfolio Summary", body)
