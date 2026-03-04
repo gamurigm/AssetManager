@@ -283,8 +283,8 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
         finally:
             conn.close()
 
-    def add_transaction(self, type_str: str, symbol: str, shares: float, price: float, realized_pnl: float = 0):
-        """Record a single transaction."""
+    def add_transaction(self, type_str: str, symbol: str, shares: float, price: float, realized_pnl: float = 0, custom_date: str = None):
+        """Record a single transaction with optional custom date."""
         from datetime import datetime
         with self._write_lock:
             conn = self._connect(read_only=False)
@@ -295,7 +295,8 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
                 new_id = max_id + 1
                 
                 now = datetime.now()
-                date_str = now.strftime("%Y-%m-%d")
+                # Use custom_date if provided (YYYY-MM-DD), otherwise now
+                date_str = custom_date if custom_date else now.strftime("%Y-%m-%d")
                 time_str = now.strftime("%I:%M %p")
                 
                 conn.execute("""
@@ -314,14 +315,15 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
         conn = self._connect(read_only=True)
         try:
             rows = conn.execute("""
-                SELECT type, symbol, shares, price, realized_pnl, date, time
+                SELECT type, symbol, shares, price, realized_pnl, date, time, epoch(timestamp)
                 FROM transactions
                 ORDER BY timestamp ASC
             """).fetchall()
             return [
                 {
                     "type": r[0], "symbol": r[1], "shares": r[2], 
-                    "price": r[3], "realized_pnl": r[4], "date": str(r[5]), "time": r[6]
+                    "price": r[3], "realized_pnl": r[4], "date": str(r[5]), "time": r[6],
+                    "timestamp": r[7]
                 }
                 for r in rows
             ]

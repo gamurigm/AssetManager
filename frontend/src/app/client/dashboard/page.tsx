@@ -25,6 +25,15 @@ const Watchlist = dynamic(() => import("@/components/watchlist/Watchlist"), {
     ssr: false,
     loading: () => <div className="p-4 text-muted text-xs">Loading watchlist...</div>,
 });
+const PortfolioEquityChart = dynamic(() => import("@/components/charts/PortfolioEquityChart"), {
+    ssr: false,
+    loading: () => (
+        <div className="h-[300px] flex flex-col items-center justify-center gap-4 border border-border/50 rounded-2xl bg-card/20 border-dashed">
+            <div className="h-6 w-6 border-2 border-accent border-t-transparent rounded-full animate-spin" />
+            <span className="text-[10px] text-muted font-black uppercase tracking-widest animate-pulse">Syncing Equity Data...</span>
+        </div>
+    ),
+});
 
 const sparklineCache: Record<string, any[]> = {};
 
@@ -287,11 +296,11 @@ export default function ClientDashboard() {
 
                 <div className="flex-1 flex overflow-hidden relative">
                     {/* Main Content Area */}
-                    <div className={`flex-1 overflow-y-auto p-4 lg:px-8 lg:py-6 space-y-4 transition-[padding] ease-[cubic-bezier(0.16,1,0.3,1)] duration-500 ${watchlistPinned ? 'pr-[355px]' : 'pr-[60px]'}`}>
+                    <div className={`flex-1 overflow-hidden p-4 lg:px-6 lg:py-4 flex flex-col gap-4 transition-[padding] ease-[cubic-bezier(0.16,1,0.3,1)] duration-500 ${watchlistPinned ? 'pr-[350px]' : 'pr-[52px]'}`}>
                         {activeTab === "portfolio" ? (
-                            <>
+                            <div className="flex-1 flex flex-col min-h-0 gap-4">
                                 {/* ── Refined Header + Metrics Ribbon ── */}
-                                <div className="relative overflow-hidden rounded-2xl bg-card/40 border border-border/50 mb-4">
+                                <div className="shrink-0 relative overflow-hidden rounded-2xl bg-card/40 border border-border/50">
                                     <div className="absolute inset-0 bg-gradient-to-r from-accent/[0.03] via-transparent to-purple-500/[0.03]" />
                                     <div className="absolute bottom-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-accent/20 to-transparent" />
 
@@ -493,309 +502,385 @@ export default function ClientDashboard() {
                                     })()}
                                 </div>
 
-                                <div className="space-y-6">
+                                {/* BENTO GRID LAYOUT */}
+                                <div className="flex-1 min-h-0 min-w-0 grid grid-cols-1 xl:grid-cols-3 xl:grid-rows-2 gap-4">
 
-                                    {/* Advanced Visualizations Row - Professional Stacked Layout */}
-                                    <div className="grid grid-cols-1 gap-6 animate-slide-up" style={{ animationDelay: '0.2s' }}>
-                                        {/* Sector Allocation Chart - TOP */}
-                                        <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['sector'] ? 'min-h-[50px]' : 'min-h-[450px]'}`}>
-                                            <div
-                                                onClick={() => togglePanel('sector')}
-                                                className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/20 cursor-pointer hover:bg-card-hover/40 transition-colors"
-                                            >
-                                                <div className="flex items-center gap-2">
-                                                    <ChartPie size={14} className="text-accent" />
-                                                    <h2 className="text-xs font-black uppercase tracking-widest text-muted">Sector Exposure</h2>
+                                    {/* ── NEW: Portfolio Equity Evolution (NAV) Chart ── */}
+                                    <div className={`xl:col-span-2 xl:row-span-1 relative bg-card/30 border border-border/40 rounded-3xl overflow-hidden shadow-2xl flex flex-col transition-all duration-300 ${collapsed['equity-curve'] ? 'min-h-[60px]' : ''}`}>
+                                        <div
+                                            onClick={() => togglePanel('equity-curve')}
+                                            className="px-6 py-4 flex items-center justify-between bg-card-hover/20 cursor-pointer border-b border-white/5 active:bg-card-hover/40 transition-colors"
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className="h-8 w-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
+                                                    <TrendingUp size={16} className="text-cyan-400" />
                                                 </div>
-                                                {collapsed['sector'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
-                                            </div>
-                                            {!collapsed['sector'] && (
-                                                <div className="flex-1 animate-in fade-in slide-in-from-top-2 duration-300">
-                                                    <SectorPieChart data={sectorData} total={totalValue} />
-                                                </div>
-                                            )}
-                                        </div>
-
-                                        {/* Treemap Visualizer - BOTTOM */}
-                                        <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['treemap'] ? 'min-h-[50px]' : 'min-h-[400px]'}`}>
-                                            <div
-                                                onClick={() => togglePanel('treemap')}
-                                                className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/20 cursor-pointer hover:bg-card-hover/40 transition-colors"
-                                            >
-                                                <div className="flex items-center gap-2">
-                                                    <LayoutGrid size={14} className="text-accent" />
-                                                    <h2 className="text-xs font-black uppercase tracking-widest text-muted">Allocation Intensity</h2>
-                                                </div>
-                                                <div className="flex items-center gap-4">
-                                                    <span className="hidden sm:block text-[9px] text-muted font-black px-2 py-0.5 bg-background rounded border border-border tracking-tighter uppercase">Hi-Density</span>
-                                                    {collapsed['treemap'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
+                                                <div className="flex flex-col">
+                                                    <h2 className="text-xs font-black uppercase tracking-[0.2em] text-cyan-100 leading-none">Net Asset Value (NAV) Evolution</h2>
+                                                    <span className="text-[9px] font-bold text-muted/60 mt-1 uppercase tracking-widest">Realized vs. Total Equity (Historical)</span>
                                                 </div>
                                             </div>
-                                            {!collapsed['treemap'] && (
-                                                <div className="p-4 flex-1 animate-in fade-in slide-in-from-top-2 duration-300">
-                                                    <AssetTreemap data={treemapData} />
+                                            <div className="flex items-center gap-4">
+                                                <div className="hidden sm:flex items-center gap-4">
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="h-2 w-2 rounded-full bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
+                                                        <span className="text-[10px] font-black uppercase text-cyan-100/70 tracking-tighter">Total Equity</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <div className="h-2 w-2 rounded-full bg-zinc-600 border border-zinc-400/30" />
+                                                        <span className="text-[10px] font-black uppercase text-zinc-500 tracking-tighter">Realized Balance</span>
+                                                    </div>
                                                 </div>
-                                            )}
+                                                {collapsed['equity-curve'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
+                                            </div>
                                         </div>
+                                        {!collapsed['equity-curve'] && (
+                                            <div className="p-6 flex-1 min-h-0 flex flex-col animate-in fade-in slide-in-from-top-4 duration-700 delay-150">
+                                                <PortfolioEquityChart />
+                                            </div>
+                                        )}
                                     </div>
 
-                                    {/* Main Grid */}
-                                    <div className="space-y-6">
-                                        {/* Holdings Table */}
-                                        <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm transition-all duration-300 ${collapsed['holdings'] ? 'h-[60px]' : ''}`}>
-                                            <div
-                                                onClick={() => togglePanel('holdings')}
-                                                className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/30 cursor-pointer hover:bg-card-hover/50 transition-colors"
-                                            >
-                                                <h2 className="text-xs font-bold uppercase tracking-widest text-muted">Positions</h2>
-                                                <div className="flex items-center gap-4">
-                                                    <div className="flex items-center gap-2">
-                                                        {holdings.length > activeHoldings.length && (
-                                                            <div className="flex items-center gap-1.5 bg-yellow-400/5 px-2 py-0.5 rounded border border-yellow-400/20">
-                                                                <span className="h-1 w-1 rounded-full bg-yellow-400 animate-pulse" />
-                                                                <span className="text-[9px] text-yellow-400 font-black uppercase">{holdings.length - activeHoldings.length} Sync</span>
-                                                            </div>
-                                                        )}
-                                                        <span className="text-[10px] text-accent font-bold">{activeHoldings.length} Active</span>
-                                                    </div>
-                                                    <button
-                                                        onClick={async (e) => {
-                                                            e.stopPropagation();
-                                                            if (confirm("Are you sure you want to liquidate all positions?")) {
-                                                                // Record each one as a SELL
-                                                                for (const h of activeHoldings) {
-                                                                    try {
-                                                                        await fetch('http://127.0.0.1:8282/api/v1/trading/record', {
-                                                                            method: 'POST',
-                                                                            headers: { 'Content-Type': 'application/json' },
-                                                                            body: JSON.stringify({
-                                                                                type_str: 'SELL',
-                                                                                symbol: h.symbol,
-                                                                                shares: h.shares,
-                                                                                price: h.price
-                                                                            })
-                                                                        });
-                                                                    } catch (err) {
-                                                                        console.error("Failed to record liquidation:", err);
-                                                                    }
-                                                                }
-                                                                setHoldings([]);
-                                                            }
-                                                        }}
-                                                        className="px-2 py-0.5 rounded border border-red/40 bg-red/5 text-[9px] font-bold text-red uppercase tracking-tighter hover:bg-red hover:text-white transition-all ml-2"
-                                                    >
-                                                        Liquidate All
-                                                    </button>
-                                                    {collapsed['holdings'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
-                                                </div>
+                                    {/* ── Main Grid Holdings (Left Column, Row 2) ── */}
+                                    <div className={`xl:col-span-2 xl:row-span-1 bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['holdings'] ? 'min-h-[60px]' : ''}`}>
+                                        <div
+                                            onClick={() => togglePanel('sector')}
+                                            className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/20 cursor-pointer hover:bg-card-hover/40 transition-colors"
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <ChartPie size={14} className="text-accent" />
+                                                <h2 className="text-xs font-black uppercase tracking-widest text-muted">Sector Exposure</h2>
                                             </div>
-                                            {!collapsed['holdings'] && (
-                                                <div className="overflow-x-auto animate-in fade-in slide-in-from-top-2 duration-300">
-                                                    <table className="w-full text-sm">
-                                                        <thead>
-                                                            <tr className="text-left text-muted text-[10px] font-bold uppercase tracking-widest border-b border-border bg-background/50">
-                                                                <th className="px-6 py-3">Posicion</th>
-                                                                <th className="px-4 py-3 text-right">Tipo</th>
-                                                                <th className="px-4 py-3 text-right">Volumen</th>
-                                                                <th className="px-4 py-3 text-right">Beneficio Neto</th>
-                                                                <th className="px-4 py-3 text-right">Valor Mercado</th>
-                                                                <th className="px-4 py-3 text-right">Fecha Adq.</th>
-                                                                <th className="px-4 py-3 text-right">Evolución</th>
-                                                                <th className="px-6 py-3 text-right">Acción</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody className="stagger">
-                                                            {activeHoldings
-                                                                .sort((a, b) => (b.shares * b.price) - (a.shares * a.price))
-                                                                .map((h: any) => {
-                                                                    const changeValue = h.changePercent || 0;
-
-                                                                    // Synchronized Heatmap Color matching Treemap
-                                                                    const getHeatmapColor = (cv: number) => {
-                                                                        if (cv > 5) return '#065f46';
-                                                                        if (cv > 2.5) return '#10b981';
-                                                                        if (cv > 1) return '#4ade80';
-                                                                        if (cv >= 0.5) return '#fde047';
-                                                                        if (cv >= 0.1) return '#facc15';
-                                                                        if (cv > -0.1) return '#71717a';
-                                                                        if (cv >= -0.5) return '#fbbf24';
-                                                                        if (cv >= -1) return '#f97316';
-                                                                        if (cv >= -3) return '#f43f5e';
-                                                                        return '#ef4444';
-                                                                    };
-
-                                                                    const badgeColor = getHeatmapColor(changeValue);
-                                                                    const isBright = ['#fde047', '#facc15', '#fbbf24', '#4ade80'].includes(badgeColor);
-
-                                                                    return (
-                                                                        <tr
-                                                                            key={h.symbol}
-                                                                            onClick={() => openSymbolTab(h.symbol)}
-                                                                            className="border-b border-border/50 hover:bg-card-hover transition-colors group cursor-pointer"
-                                                                        >
-                                                                            <td className="px-6 py-4">
-                                                                                <div className="flex items-center gap-3">
-                                                                                    <div
-                                                                                        className="h-9 w-9 rounded-lg flex items-center justify-center text-white font-bold text-xs group-hover:scale-110 transition-all shadow-sm"
-                                                                                        style={{ backgroundColor: badgeColor }}
-                                                                                    >
-                                                                                        {h.symbol.slice(0, 2)}
-                                                                                    </div>
-                                                                                    <div>
-                                                                                        <p className="font-semibold group-hover:text-accent transition-colors">{h.symbol}</p>
-                                                                                        <p className="text-xs text-muted truncate max-w-[120px]">{h.name}</p>
-                                                                                    </div>
-                                                                                </div>
-                                                                            </td>
-                                                                            <td className="px-4 py-4 text-right font-bold text-xs uppercase tracking-tighter">
-                                                                                {h.shares >= 0 ? "Buy" : "Sell"}
-                                                                            </td>
-                                                                            <td className="px-4 py-4 text-right font-mono text-xs font-bold">{Math.abs(h.shares)}</td>
-                                                                            <td className={`px-4 py-4 text-right font-mono font-bold text-sm tracking-tight ${h.change >= 0 ? 'text-green' : 'text-red'}`}>
-                                                                                {h.change >= 0 ? "+" : ""}{h.change.toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
-                                                                            </td>
-                                                                            <td className={`px-4 py-4 text-right font-mono font-bold text-sm tracking-tight ${h.change >= 0 ? 'text-green' : 'text-red'}`}>
-                                                                                ${(Math.abs(h.shares) * h.price).toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
-                                                                            </td>
-                                                                            <td className="px-4 py-4 text-right font-mono text-[10px] text-muted tracking-tighter uppercase whitespace-nowrap">
-                                                                                {(h as any).purchaseDate || "N/A"}
-                                                                            </td>
-                                                                            <td className="px-4 py-4 pr-6 flex justify-end">
-                                                                                <AssetSparkline symbol={h.symbol} color={badgeColor} />
-                                                                            </td>
-                                                                            <td className="px-6 py-4 text-right">
-                                                                                <button
-                                                                                    onClick={(e) => {
-                                                                                        e.stopPropagation();
-                                                                                        closePosition(h.symbol);
-                                                                                    }}
-                                                                                    className="opacity-0 group-hover:opacity-100 transition-all px-3 py-1.5 rounded-lg border border-red/20 text-[10px] font-black uppercase tracking-tighter text-red hover:bg-red/10 hover:border-red/40 hover:shadow-[0_0_12px_rgba(239,68,68,0.2)]"
-                                                                                >
-                                                                                    Liquidate
-                                                                                </button>
-                                                                            </td>
-                                                                        </tr>
-                                                                    );
-                                                                })}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            )}
+                                            {collapsed['sector'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
                                         </div>
-
-                                        {/* Bottom Panels Row */}
-                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                            {/* Fee Analysis Panel */}
-                                            <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['economics'] ? 'h-[50px]' : ''}`}>
-                                                <div
-                                                    onClick={() => togglePanel('economics')}
-                                                    className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/30 cursor-pointer hover:bg-card-hover/50 transition-colors"
-                                                >
-                                                    <h2 className="text-xs font-bold uppercase tracking-widest text-muted">Economics</h2>
-                                                    <div className="flex items-center gap-4">
-                                                        {collapsed['economics'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
-                                                    </div>
-                                                </div>
-                                                {!collapsed['economics'] && (
-                                                    <div className="p-6 space-y-5 flex-1 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-300">
-                                                        <div className="space-y-3">
-                                                            <div className="flex justify-between text-xs">
-                                                                <span className="text-muted font-medium">Management Fee (2.75%)</span>
-                                                                <span className="font-mono dark:text-white text-zinc-900">${(totalValue * 0.0275 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                                            </div>
-                                                            <div className="flex justify-between text-xs">
-                                                                <span className="text-muted font-medium">Service Fee (0.75%)</span>
-                                                                <span className="font-mono dark:text-white text-zinc-900">${(totalValue * 0.0075 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                                            </div>
-                                                            <div className="flex justify-between text-xs">
-                                                                <span className="text-muted font-medium">Other Exp. & Interest (0.59%)</span>
-                                                                <span className="font-mono dark:text-white text-zinc-900">${(totalValue * 0.0059 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                                            </div>
-                                                            <div className="flex justify-between text-xs">
-                                                                <span className="text-muted font-medium">Reimbursements & Waivers</span>
-                                                                <span className="font-mono text-green-500">-${(totalValue * 0.0059 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                                            </div>
-                                                            <div className="pt-2 border-t border-border/50 flex justify-between text-xs font-bold">
-                                                                <span className="text-accent uppercase tracking-tighter">Total Net Expenses (3.50%)</span>
-                                                                <span className="font-mono text-accent">~${(totalValue * 0.0350 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })} / mo</span>
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="space-y-2 pt-4 border-t border-border/20">
-                                                            <div className="flex justify-between text-xs">
-                                                                <span className="text-muted">High-Water Mark (HWM)</span>
-                                                                <span className="font-mono dark:text-white text-zinc-900">${totalValue > 1250500 ? totalValue.toLocaleString() : "1,250,500.00"}</span>
-                                                            </div>
-                                                            <div className="p-3 rounded-lg bg-green/5 border border-green/10 flex items-center justify-between">
-                                                                <span className="text-[10px] text-green font-bold uppercase tracking-tight">Accrued Perf. Fee (20% above HWM)</span>
-                                                                <span className="text-sm font-bold text-green font-mono">
-                                                                    ${totalValue > 1250500 ? ((totalValue - 1250500) * 0.20).toFixed(2) : "0.00"}
-                                                                </span>
-                                                            </div>
-                                                        </div>
-
-                                                        <div className="mt-auto pt-4 border-t border-border/50">
-                                                            <p className="text-[10px] text-muted leading-relaxed">
-                                                                Fees are calculated based on the <span className="text-foreground">Net Asset Value (NAV)</span> at the end of each billing cycle. Performance fees are subject to HWM principles as per the investment mandate.
-                                                            </p>
-                                                        </div>
-                                                    </div>
-                                                )}
+                                        {!collapsed['sector'] && (
+                                            <div className="flex-1 animate-in fade-in slide-in-from-top-2 duration-300">
+                                                <SectorPieChart data={sectorData} total={totalValue} />
                                             </div>
+                                        )}
+                                    </div>
 
-                                            {/* Recent Activity Panel */}
-                                            <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['activity'] ? 'h-[50px]' : 'h-[400px]'}`}>
-                                                <div
-                                                    onClick={() => togglePanel('activity')}
-                                                    className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/30 cursor-pointer hover:bg-card-hover/50 transition-colors"
-                                                >
-                                                    <div className="flex items-center gap-2">
-                                                        <Activity size={12} className="text-accent" />
-                                                        <h2 className="text-xs font-bold uppercase tracking-widest text-muted">Recent Activity</h2>
-                                                    </div>
-                                                    <div className="flex items-center gap-4">
-                                                        <span className="text-[10px] text-accent font-bold">{transactions.length} Events</span>
-                                                        {collapsed['activity'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
-                                                    </div>
-                                                </div>
-                                                {!collapsed['activity'] && (
-                                                    <div className="flex-1 overflow-y-auto p-0 animate-in fade-in slide-in-from-top-2 duration-300">
-                                                        {transactions.length === 0 ? (
-                                                            <div className="h-full flex flex-col items-center justify-center p-8 text-center">
-                                                                <Activity size={32} className="text-muted/20 mb-3" />
-                                                                <p className="text-xs text-muted font-bold uppercase tracking-widest">No recent transactions</p>
-                                                                <p className="text-[10px] text-muted/60 mt-1 max-w-[180px]">Automated and manual liquidations will appear here.</p>
-                                                            </div>
-                                                        ) : (
-                                                            <div className="divide-y divide-border/50">
-                                                                {transactions.map((t, i) => (
-                                                                    <div key={i} className="px-5 py-3 hover:bg-card-hover/20 transition-colors flex items-center justify-between group">
-                                                                        <div className="flex items-center gap-3">
-                                                                            <div className={`h-8 w-8 rounded-lg flex items-center justify-center font-bold text-[10px] ${t.type === 'BUY' ? 'bg-green/10 text-green' : 'bg-red/10 text-red'}`}>
-                                                                                {t.type.slice(0, 1)}
-                                                                            </div>
-                                                                            <div className="flex flex-col">
-                                                                                <span className="text-xs font-bold group-hover:text-accent transition-colors">{t.symbol}</span>
-                                                                                <span className="text-[9px] text-muted font-bold uppercase tracking-tighter">{t.date} • {t.time}</span>
-                                                                            </div>
-                                                                        </div>
-                                                                        <div className="text-right flex flex-col">
-                                                                            <span className="text-xs font-mono font-bold">${(t.price * t.shares).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                                                            <span className="text-[9px] text-muted font-bold tracking-tighter">{t.shares} units @ ${t.price.toFixed(2)}</span>
-                                                                        </div>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
+                                    {/* Treemap Visualizer - BOTTOM */}
+                                    <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['treemap'] ? 'min-h-[50px]' : 'min-h-[400px]'}`}>
+                                        <div
+                                            onClick={() => togglePanel('treemap')}
+                                            className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/20 cursor-pointer hover:bg-card-hover/40 transition-colors"
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <LayoutGrid size={14} className="text-accent" />
+                                                <h2 className="text-xs font-black uppercase tracking-widest text-muted">Allocation Intensity</h2>
+                                            </div>
+                                            <div className="flex items-center gap-4">
+                                                <span className="hidden sm:block text-[9px] text-muted font-black px-2 py-0.5 bg-background rounded border border-border tracking-tighter uppercase">Hi-Density</span>
+                                                {collapsed['treemap'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
                                             </div>
                                         </div>
+                                        {!collapsed['treemap'] && (
+                                            <div className="p-4 flex-1 animate-in fade-in slide-in-from-top-2 duration-300">
+                                                <AssetTreemap data={treemapData} />
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
-                            </>
+
+                                {/* Main Grid */}
+                                <div className="space-y-6">
+                                    {/* Holdings Table */}
+                                    <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm transition-all duration-300 ${collapsed['holdings'] ? 'h-[60px]' : ''}`}>
+                                        <div
+                                            onClick={() => togglePanel('holdings')}
+                                            className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/30 cursor-pointer hover:bg-card-hover/50 transition-colors"
+                                        >
+                                            <h2 className="text-xs font-bold uppercase tracking-widest text-muted">Positions</h2>
+                                            <div className="flex items-center gap-4">
+                                                <div className="flex items-center gap-2">
+                                                    {holdings.length > activeHoldings.length && (
+                                                        <div className="flex items-center gap-1.5 bg-yellow-400/5 px-2 py-0.5 rounded border border-yellow-400/20">
+                                                            <span className="h-1 w-1 rounded-full bg-yellow-400 animate-pulse" />
+                                                            <span className="text-[9px] text-yellow-400 font-black uppercase">{holdings.length - activeHoldings.length} Sync</span>
+                                                        </div>
+                                                    )}
+                                                    <span className="text-[10px] text-accent font-bold">{activeHoldings.length} Active</span>
+                                                </div>
+                                                <button
+                                                    onClick={async (e) => {
+                                                        e.stopPropagation();
+                                                        if (confirm("Are you sure you want to liquidate all positions?")) {
+                                                            // Record each one as a SELL
+                                                            for (const h of activeHoldings) {
+                                                                try {
+                                                                    await fetch('http://127.0.0.1:8282/api/v1/trading/record', {
+                                                                        method: 'POST',
+                                                                        headers: { 'Content-Type': 'application/json' },
+                                                                        body: JSON.stringify({
+                                                                            type_str: 'SELL',
+                                                                            symbol: h.symbol,
+                                                                            shares: h.shares,
+                                                                            price: h.price
+                                                                        })
+                                                                    });
+                                                                } catch (err) {
+                                                                    console.error("Failed to record liquidation:", err);
+                                                                }
+                                                            }
+                                                            setHoldings([]);
+                                                        }
+                                                    }}
+                                                    className="px-2 py-0.5 rounded border border-red/40 bg-red/5 text-[9px] font-bold text-red uppercase tracking-tighter hover:bg-red hover:text-white transition-all ml-2"
+                                                >
+                                                    Liquidate All
+                                                </button>
+                                                {collapsed['holdings'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {!collapsed['holdings'] && (
+                                        <div className="overflow-y-auto flex-1 min-h-0 animate-in fade-in slide-in-from-top-2 duration-300">
+                                            <table className="w-full text-sm">
+                                                <thead>
+                                                    <tr className="text-left text-muted text-[10px] font-bold uppercase tracking-widest border-b border-border bg-background/50">
+                                                        <th className="px-6 py-3">Posicion</th>
+                                                        <th className="px-4 py-3 text-right">Tipo</th>
+                                                        <th className="px-4 py-3 text-right">Volumen</th>
+                                                        <th className="px-4 py-3 text-right">Beneficio Neto</th>
+                                                        <th className="px-4 py-3 text-right">Valor Mercado</th>
+                                                        <th className="px-4 py-3 text-right">Fecha Adq.</th>
+                                                        <th className="px-4 py-3 text-right">Evolución</th>
+                                                        <th className="px-6 py-3 text-right">Acción</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="stagger">
+                                                    {activeHoldings
+                                                        .sort((a, b) => (b.shares * b.price) - (a.shares * a.price))
+                                                        .map((h: any) => {
+                                                            const changeValue = h.changePercent || 0;
+
+                                                            // Synchronized Heatmap Color matching Treemap
+                                                            const getHeatmapColor = (cv: number) => {
+                                                                if (cv > 5) return '#065f46';
+                                                                if (cv > 2.5) return '#10b981';
+                                                                if (cv > 1) return '#4ade80';
+                                                                if (cv >= 0.5) return '#fde047';
+                                                                if (cv >= 0.1) return '#facc15';
+                                                                if (cv > -0.1) return '#71717a';
+                                                                if (cv >= -0.5) return '#fbbf24';
+                                                                if (cv >= -1) return '#f97316';
+                                                                if (cv >= -3) return '#f43f5e';
+                                                                return '#ef4444';
+                                                            };
+
+                                                            const badgeColor = getHeatmapColor(changeValue);
+                                                            const isBright = ['#fde047', '#facc15', '#fbbf24', '#4ade80'].includes(badgeColor);
+
+                                                            return (
+                                                                <tr
+                                                                    key={h.symbol}
+                                                                    onClick={() => openSymbolTab(h.symbol)}
+                                                                    className="border-b border-border/50 hover:bg-card-hover transition-colors group cursor-pointer"
+                                                                >
+                                                                    <td className="px-6 py-4">
+                                                                        <div className="flex items-center gap-3">
+                                                                            <div
+                                                                                className="h-9 w-9 rounded-lg flex items-center justify-center text-white font-bold text-xs group-hover:scale-110 transition-all shadow-sm"
+                                                                                style={{ backgroundColor: badgeColor }}
+                                                                            >
+                                                                                {h.symbol.slice(0, 2)}
+                                                                            </div>
+                                                                            <div>
+                                                                                <p className="font-semibold group-hover:text-accent transition-colors">{h.symbol}</p>
+                                                                                <p className="text-xs text-muted truncate max-w-[120px]">{h.name}</p>
+                                                                            </div>
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="px-4 py-4 text-right font-bold text-xs uppercase tracking-tighter">
+                                                                        {h.shares >= 0 ? "Buy" : "Sell"}
+                                                                    </td>
+                                                                    <td className="px-4 py-4 text-right font-mono text-xs font-bold">{Math.abs(h.shares)}</td>
+                                                                    <td className={`px-4 py-4 text-right font-mono font-bold text-sm tracking-tight ${h.change >= 0 ? 'text-green' : 'text-red'}`}>
+                                                                        {h.change >= 0 ? "+" : ""}{h.change.toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+                                                                    </td>
+                                                                    <td className={`px-4 py-4 text-right font-mono font-bold text-sm tracking-tight ${h.change >= 0 ? 'text-green' : 'text-red'}`}>
+                                                                        ${(Math.abs(h.shares) * h.price).toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+                                                                    </td>
+                                                                    <td className="px-4 py-4 text-right font-mono text-[10px] text-muted tracking-tighter uppercase whitespace-nowrap">
+                                                                        {(h as any).purchaseDate || "N/A"}
+                                                                    </td>
+                                                                    <td className="px-4 py-4 pr-6 flex justify-end">
+                                                                        <AssetSparkline symbol={h.symbol} color={badgeColor} />
+                                                                    </td>
+                                                                    <td className="px-6 py-4 text-right">
+                                                                        <button
+                                                                            onClick={(e) => {
+                                                                                e.stopPropagation();
+                                                                                closePosition(h.symbol);
+                                                                            }}
+                                                                            className="opacity-0 group-hover:opacity-100 transition-all px-3 py-1.5 rounded-lg border border-red/20 text-[10px] font-black uppercase tracking-tighter text-red hover:bg-red/10 hover:border-red/40 hover:shadow-[0_0_12px_rgba(239,68,68,0.2)]"
+                                                                        >
+                                                                            Liquidate
+                                                                        </button>
+                                                                    </td>
+                                                                </tr>
+                                                            );
+                                                        })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* ── WIDGETS COLUMN (Right Column) ── */}
+                                <div className="xl:col-span-1 xl:row-span-2 flex flex-col gap-4 overflow-y-auto scrollbar-none pr-2 pb-14 min-h-0">
+
+                                    {/* Sector Allocation Chart */}
+                                    <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col shrink-0 transition-all duration-300 ${collapsed['sector'] ? 'min-h-[50px]' : 'min-h-[350px]'}`}>
+                                        <div
+                                            onClick={() => togglePanel('sector')}
+                                            className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/20 cursor-pointer hover:bg-card-hover/40 transition-colors"
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <ChartPie size={14} className="text-accent" />
+                                                <h2 className="text-xs font-black uppercase tracking-widest text-muted">Sector Exposure</h2>
+                                            </div>
+                                            {collapsed['sector'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
+                                        </div>
+                                        {!collapsed['sector'] && (
+                                            <div className="flex-1 min-h-0 animate-in fade-in slide-in-from-top-2 duration-300">
+                                                <SectorPieChart data={sectorData} total={totalValue} />
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Treemap Visualizer */}
+                                    <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col shrink-0 transition-all duration-300 ${collapsed['treemap'] ? 'min-h-[50px]' : 'min-h-[350px]'}`}>
+                                        <div
+                                            onClick={() => togglePanel('treemap')}
+                                            className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/20 cursor-pointer hover:bg-card-hover/40 transition-colors"
+                                        >
+                                            <div className="flex items-center gap-2">
+                                                <LayoutGrid size={14} className="text-accent" />
+                                                <h2 className="text-xs font-black uppercase tracking-widest text-muted">Allocation Intensity</h2>
+                                            </div>
+                                            <div className="flex items-center gap-4">
+                                                <span className="hidden sm:block text-[9px] text-muted font-black px-2 py-0.5 bg-background rounded border border-border tracking-tighter uppercase">Hi-Density</span>
+                                                {collapsed['treemap'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
+                                            </div>
+                                        </div>
+                                        {!collapsed['treemap'] && (
+                                            <div className="p-4 flex-1 min-h-0 animate-in fade-in slide-in-from-top-2 duration-300">
+                                                <AssetTreemap data={treemapData} />
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Fee Analysis Panel */}
+                                    <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col shrink-0 transition-all duration-300 ${collapsed['economics'] ? 'min-h-[50px]' : 'min-h-[250px]'}`}>
+                                        <div
+                                            onClick={() => togglePanel('economics')}
+                                            className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/30 cursor-pointer hover:bg-card-hover/50 transition-colors"
+                                        >
+                                            <h2 className="text-xs font-bold uppercase tracking-widest text-muted">Economics</h2>
+                                            <div className="flex items-center gap-4">
+                                                {collapsed['economics'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
+                                            </div>
+                                        </div>
+                                        {!collapsed['economics'] && (
+                                            <div className="p-6 space-y-5 flex-1 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-300">
+                                                <div className="space-y-3">
+                                                    <div className="flex justify-between text-xs">
+                                                        <span className="text-muted font-medium">Management Fee (2.75%)</span>
+                                                        <span className="font-mono dark:text-white text-zinc-900">${(totalValue * 0.0275 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                    </div>
+                                                    <div className="flex justify-between text-xs">
+                                                        <span className="text-muted font-medium">Service Fee (0.75%)</span>
+                                                        <span className="font-mono dark:text-white text-zinc-900">${(totalValue * 0.0075 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                    </div>
+                                                    <div className="flex justify-between text-xs">
+                                                        <span className="text-muted font-medium">Other Exp. & Interest (0.59%)</span>
+                                                        <span className="font-mono dark:text-white text-zinc-900">${(totalValue * 0.0059 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                    </div>
+                                                    <div className="flex justify-between text-xs">
+                                                        <span className="text-muted font-medium">Reimbursements & Waivers</span>
+                                                        <span className="font-mono text-green-500">-${(totalValue * 0.0059 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                    </div>
+                                                    <div className="pt-2 border-t border-border/50 flex justify-between text-xs font-bold">
+                                                        <span className="text-accent uppercase tracking-tighter">Total Net Expenses (3.50%)</span>
+                                                        <span className="font-mono text-accent">~${(totalValue * 0.0350 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })} / mo</span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="space-y-2 pt-4 border-t border-border/20">
+                                                    <div className="flex justify-between text-xs">
+                                                        <span className="text-muted">High-Water Mark (HWM)</span>
+                                                        <span className="font-mono dark:text-white text-zinc-900">${totalValue > 1250500 ? totalValue.toLocaleString() : "1,250,500.00"}</span>
+                                                    </div>
+                                                    <div className="p-3 rounded-lg bg-green/5 border border-green/10 flex items-center justify-between">
+                                                        <span className="text-[10px] text-green font-bold uppercase tracking-tight">Accrued Perf. Fee (20% above HWM)</span>
+                                                        <span className="text-sm font-bold text-green font-mono">
+                                                            ${totalValue > 1250500 ? ((totalValue - 1250500) * 0.20).toFixed(2) : "0.00"}
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                <div className="mt-auto pt-4 border-t border-border/50">
+                                                    <p className="text-[10px] text-muted leading-relaxed">
+                                                        Fees are calculated based on the <span className="text-foreground">Net Asset Value (NAV)</span> at the end of each billing cycle. Performance fees are subject to HWM principles as per the investment mandate.
+                                                    </p>
+                                                </div>
+                                            </div>
+                                                    </div>
+                                                )}
+                                </div>
+
+                                {/* Recent Activity Panel */}
+                                <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col shrink-0 transition-all duration-300 ${collapsed['activity'] ? 'min-h-[50px]' : 'min-h-[350px]'}`}>
+                                    <div
+                                        onClick={() => togglePanel('activity')}
+                                        className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/30 cursor-pointer hover:bg-card-hover/50 transition-colors"
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            <Activity size={12} className="text-accent" />
+                                            <h2 className="text-xs font-bold uppercase tracking-widest text-muted">Recent Activity</h2>
+                                        </div>
+                                        <div className="flex items-center gap-4">
+                                            <span className="text-[10px] text-accent font-bold">{transactions.length} Events</span>
+                                            {collapsed['activity'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
+                                        </div>
+                                    </div>
+                                    {!collapsed['activity'] && (
+                                        <div className="flex-1 overflow-y-auto p-0 animate-in fade-in slide-in-from-top-2 duration-300">
+                                            {transactions.length === 0 ? (
+                                                <div className="h-full flex flex-col items-center justify-center p-8 text-center">
+                                                    <Activity size={32} className="text-muted/20 mb-3" />
+                                                    <p className="text-xs text-muted font-bold uppercase tracking-widest">No recent transactions</p>
+                                                    <p className="text-[10px] text-muted/60 mt-1 max-w-[180px]">Automated and manual liquidations will appear here.</p>
+                                                </div>
+                                            ) : (
+                                                <div className="divide-y divide-border/50">
+                                                    {transactions.map((t, i) => (
+                                                        <div key={i} className="px-5 py-3 hover:bg-card-hover/20 transition-colors flex items-center justify-between group">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className={`h-8 w-8 rounded-lg flex items-center justify-center font-bold text-[10px] ${t.type === 'BUY' ? 'bg-green/10 text-green' : 'bg-red/10 text-red'}`}>
+                                                                    {t.type.slice(0, 1)}
+                                                                </div>
+                                                                <div className="flex flex-col">
+                                                                    <span className="text-xs font-bold group-hover:text-accent transition-colors">{t.symbol}</span>
+                                                                    <span className="text-[9px] text-muted font-bold uppercase tracking-tighter">{t.date} • {t.time}</span>
+                                                                </div>
+                                                            </div>
+                                                            <div className="text-right flex flex-col">
+                                                                <span className="text-xs font-mono font-bold">${(t.price * t.shares).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                                <span className="text-[9px] text-muted font-bold tracking-tighter">{t.shares} units @ ${t.price.toFixed(2)}</span>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
                         ) : (
-                            <div className="h-full min-h-[900px] rounded-2xl overflow-hidden border border-border bg-card">
+                            <div className="flex-1 min-h-0 rounded-2xl overflow-hidden border border-border bg-card">
                                 <InternalChart symbol={activeTab} />
                             </div>
                         )}
@@ -803,44 +888,55 @@ export default function ClientDashboard() {
 
                     {/* Sliding Watchlist Area */}
                     <div
-                        className={`absolute right-0 top-0 h-full transition-transform ease-[cubic-bezier(0.16,1,0.3,1)] duration-500 z-50 flex ${watchlistExpanded ? 'translate-x-0' : 'translate-x-[calc(100%-45px)]'}`}
+                        className={`absolute right-0 top-0 h-full transition-transform ease-[cubic-bezier(0.16,1,0.3,1)] duration-500 z-50 flex ${watchlistExpanded ? 'translate-x-0' : 'translate-x-[calc(100%-40px)]'}`}
                     >
-                        {/* Minimalist Vertical Toggle Bar (always visible edge) */}
-                        <div className="w-[45px] border-l border-border bg-background/50 backdrop-blur-3xl flex flex-col items-center py-4 gap-6 h-full shadow-[-10px_0_30px_rgba(0,0,0,0.05)]">
+                        {/* Vertical Toggle Rail */}
+                        <div className="w-[40px] bg-card/60 backdrop-blur-2xl flex flex-col items-center py-3 gap-3 h-full border-l border-border/20 shadow-[-8px_0_20px_rgba(0,0,0,0.08)]">
                             <button
                                 onClick={() => setWatchlistPinned(!watchlistPinned)}
-                                className={`p-2 rounded-lg transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${watchlistPinned ? 'bg-accent/10 text-accent opacity-100' : 'text-muted hover:text-foreground hover:bg-card/80 opacity-40 hover:opacity-100'}`}
+                                className={`p-1.5 rounded-xl transition-all duration-500 ${watchlistPinned
+                                    ? 'bg-accent/15 text-accent shadow-[0_0_12px_rgba(59,130,246,0.15)]'
+                                    : 'text-muted/50 hover:text-foreground hover:bg-card-hover/50'}`}
                                 title={watchlistPinned ? "Unpin Watchlist" : "Pin Watchlist"}
                             >
-                                {watchlistPinned ? <PinOff size={16} /> : <Pin size={16} />}
+                                {watchlistPinned ? <PinOff size={15} /> : <Pin size={15} />}
                             </button>
-                            <div className="h-px w-6 bg-border/50" />
 
-                            {/* Extra Tools */}
-                            <button className="text-muted hover:text-foreground transition-all duration-300 p-2 rounded-lg hover:bg-card/80 opacity-60 hover:opacity-100" title="Chart View">
-                                <ChartPie size={16} />
+                            <div className="w-5 h-px bg-border/20" />
+
+                            <button
+                                className="text-muted/40 hover:text-cyan-400 transition-all duration-300 p-1.5 rounded-lg hover:bg-cyan-400/10"
+                                title="Add Indicators"
+                                onClick={() => {
+                                    alert('Indicator management will open here. Available: Fibonacci, Bollinger, ATR.');
+                                }}
+                            >
+                                <Activity size={15} />
                             </button>
-                            <button className="text-muted hover:text-foreground transition-all duration-300 p-2 rounded-lg hover:bg-card/80 opacity-60 hover:opacity-100" title="Advanced Layout">
-                                <LayoutGrid size={16} />
-                            </button>
-                            <button className="text-muted hover:text-foreground transition-all duration-300 p-2 rounded-lg hover:bg-card/80 opacity-60 hover:opacity-100" title="Activity Logs">
-                                <Activity size={16} />
-                            </button>
-                            <button className="text-muted hover:text-foreground transition-all duration-300 p-2 rounded-lg hover:bg-card/80 opacity-60 hover:opacity-100" title="Statements">
-                                <FileText size={16} />
-                            </button>
-                            <button className="text-muted hover:text-foreground transition-all duration-300 p-2 rounded-lg hover:bg-card/80 opacity-60 hover:opacity-100" title="Security Settings">
-                                <ShieldCheck size={16} />
-                            </button>
+
+                            {[
+                                { Icon: LayoutGrid, tip: "Layout", action: () => alert('Layout settings') },
+                                { Icon: Activity, tip: "Alerts", action: () => alert('Alert settings') },
+                                { Icon: FileText, tip: "Reports", action: () => alert('Generate reports') },
+                            ].map(({ Icon, tip, action }) => (
+                                <button
+                                    key={tip}
+                                    onClick={action}
+                                    className="text-muted/40 hover:text-foreground transition-all duration-300 p-1.5 rounded-lg hover:bg-card-hover/40"
+                                    title={tip}
+                                >
+                                    <Icon size={14} />
+                                </button>
+                            ))}
                         </div>
 
                         {/* TradingView-style Watchlist Sidebar */}
-                        <div className="w-[300px] border-l border-border/50 bg-background/70 backdrop-blur-3xl flex flex-col shadow-[-20px_0_50px_rgba(0,0,0,0.03)] h-full">
+                        <div className="w-[300px] border-l border-border/15 bg-card/50 backdrop-blur-2xl flex flex-col h-full shadow-[-15px_0_40px_rgba(0,0,0,0.06)]">
                             <Watchlist onSelectSymbol={openSymbolTab} />
                         </div>
                     </div>
-                </div>
-            </div>
+                </div >
+            </div >
         </AppLayout >
     );
 }
@@ -886,7 +982,7 @@ function calcStochDash(highs: number[], lows: number[], closes: number[], kP: nu
 }
 
 function InternalChart({ symbol }: { symbol: string }) {
-    const { closePosition } = usePortfolio();
+    const { holdings, closePosition, openTrade } = usePortfolio();
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const macdRef = useRef<HTMLDivElement>(null);
     const stochRef = useRef<HTMLDivElement>(null);
@@ -984,11 +1080,28 @@ function InternalChart({ symbol }: { symbol: string }) {
             e3Series.setData(e3Data.map((v, i) => ({ time: times[i], value: v })));
         }
 
+        // ── Drawing Markers ───────────────────────────────────────
+        // Find existing holdings or past transactions to mark the chart
+        const myHolding = holdings.find(h => h.symbol === symbol);
+        const markers: any[] = [];
+
+        if (myHolding && myHolding.purchaseDate) {
+            markers.push({
+                time: myHolding.purchaseDate,
+                position: 'belowBar',
+                color: '#22c55e',
+                shape: 'arrowUp',
+                text: `BOUGHT @ ${myHolding.entryPrice.toFixed(2)}`,
+            });
+        }
+
+        (series as any).setMarkers(markers);
+
         chart.timeScale().fitContent();
         const handleResize = () => chart.applyOptions({ width: el.clientWidth });
         window.addEventListener('resize', handleResize);
         return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
-    }, [candles, theme, showEmas, ema1, ema2, ema3]);
+    }, [candles, theme, showEmas, ema1, ema2, ema3, holdings]);
 
     // MACD chart
     useEffect(() => {
@@ -1055,16 +1168,29 @@ function InternalChart({ symbol }: { symbol: string }) {
                 </div>
 
                 <div className="flex items-center gap-3">
-                    <button
-                        onClick={() => {
-                            if (confirm(`Liquidate total ${symbol} position?`)) {
-                                closePosition(symbol);
-                            }
-                        }}
-                        className="px-4 py-2 bg-red/10 hover:bg-red/20 border border-red/20 hover:border-red/40 text-red text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-sm hover:shadow-red/10"
-                    >
-                        Liquidate Position
-                    </button>
+                    {!holdings.find(h => h.symbol === symbol) ? (
+                        <button
+                            onClick={async () => {
+                                if (quote) {
+                                    await openTrade(symbol, symbol, 10, quote.price, 1.0, "Technology", "stock");
+                                }
+                            }}
+                            className="px-4 py-2 bg-green/10 hover:bg-green/20 border border-green/20 hover:border-green/40 text-green text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-sm hover:shadow-green/10"
+                        >
+                            Open Position (10 Units)
+                        </button>
+                    ) : (
+                        <button
+                            onClick={() => {
+                                if (confirm(`Liquidate total ${symbol} position?`)) {
+                                    closePosition(symbol);
+                                }
+                            }}
+                            className="px-4 py-2 bg-red/10 hover:bg-red/20 border border-red/20 hover:border-red/40 text-red text-xs font-black uppercase tracking-widest rounded-xl transition-all shadow-sm hover:shadow-red/10"
+                        >
+                            Liquidate Position
+                        </button>
+                    )}
                     {loading && <span className="text-xs animate-pulse text-accent font-mono uppercase tracking-tighter">Syncing...</span>}
                 </div>
             </div>

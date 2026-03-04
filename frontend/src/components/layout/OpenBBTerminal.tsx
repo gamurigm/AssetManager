@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Maximize2, Minimize2, Plus, X, ChevronDown, Terminal as TerminalIcon, Loader2 } from "lucide-react";
+import { usePortfolio } from "../../context/PortfolioContext";
 
 type Message = { type: 'input' | 'output' | 'error'; text: string };
 
@@ -34,6 +35,8 @@ export default function OpenBBTerminal() {
     const inputRef = useRef<HTMLInputElement>(null);
     const endRef = useRef<HTMLDivElement>(null);
     const inactivityTimer = useRef<NodeJS.Timeout | null>(null);
+
+    const { refreshPortfolio } = usePortfolio();
 
     // Draggable icon state
     const [termIconPos, setTermIconPos] = useState({ x: 24, y: 24 });
@@ -202,6 +205,10 @@ export default function OpenBBTerminal() {
                     history: [...newHistory, { type: data.type === 'error' ? 'error' : 'output', text: data.output ?? data.error ?? 'OK' }],
                     isExecuting: false,
                 });
+                // If liquidation completed successfully, refresh the frontend portfolio state
+                if (data.output && data.output.includes('LIQUIDATION COMPLETE')) {
+                    refreshPortfolio();
+                }
             }
         } catch (error: any) {
             updateSession(sessionId, {

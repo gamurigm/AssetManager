@@ -24,10 +24,15 @@ router = APIRouter()
 
 @router.get("/")
 async def get_portfolios():
-    """Load persisted portfolio from DuckDB. Fallback to INITIAL_HOLDINGS if empty."""
+    """Load persisted portfolio from DuckDB. Fallback to INITIAL_HOLDINGS if empty and no history."""
     data = duckdb_repo.get_portfolio()
     if not data:
-        # Save initials to DB so it persists from now on
+        # Check if the user has trading history. If they do, they legitimately liquidated all positions.
+        history = duckdb_repo.get_transactions()
+        if history and len(history) > 0:
+            return [] # Legitimate empty portfolio
+            
+        # Save initials to DB so it persists from now on (only runs first time)
         duckdb_repo.save_portfolio(INITIAL_HOLDINGS)
         return INITIAL_HOLDINGS
     return data

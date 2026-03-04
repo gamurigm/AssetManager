@@ -15,8 +15,16 @@ async def record_transaction(
     symbol: str = Body(...),
     shares: float = Body(...),
     price: float = Body(...),
-    realized_pnl: float = Body(0.0)
+    realized_pnl: float = Body(0.0),
+    date: str = Body(None)
 ):
     """Record a manually executed trade or liquidation."""
-    success = duckdb_repo.add_transaction(type_str, symbol, shares, price, realized_pnl)
+    success = duckdb_repo.add_transaction(
+        type_str=type_str, 
+        symbol=symbol, 
+        shares=shares, 
+        price=price, 
+        realized_pnl=realized_pnl,
+        custom_date=date
+    )
     return {"status": "success" if success else "failed"}

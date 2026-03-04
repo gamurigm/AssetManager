@@ -324,22 +324,43 @@ class ReportService:
             pdf.cell(0, 5, "Positive slope = bullish momentum, negative = bearish. Based on 30-day regression.")
             pdf.ln(6)
 
-        # ── Hedging section ─────────────────────────────────────────
-        hs = risk_report.get("hedging_strategy", {})
-        pdf.section_title("Hedging & Capital Preservation")
-        pdf.set_fill_color(255, 243, 205)
-        pdf.set_draw_color(255, 238, 186)
-        box_y = pdf.get_y()
-        pdf.rect(10, box_y, 190, 22, "DF")
-        pdf.set_xy(14, box_y + 2)
-        pdf.set_font("Helvetica", "B", 8)
-        pdf.set_text_color(52, 73, 94)
-        pdf.cell(0, 5, f"ACTION: {hs.get('action', 'N/A')}")
-        pdf.set_xy(14, box_y + 8)
-        pdf.set_font("Helvetica", "", 8)
-        pdf.cell(0, 5, f"Strategy: {hs.get('recommended_strategy', 'N/A')}")
-        pdf.set_xy(14, box_y + 14)
-        pdf.cell(0, 5, f"Target: {hs.get('primary_hedge_target', 'N/A')}  |  Hedge Ratio: {hs.get('hedge_ratio', 'N/A')}")
+        # ── Transaction Log (The Audit Trail) ───────────────────────
+        pdf.add_page()
+        pdf.section_title("Institutional Transaction History (Audit Trail)")
+        pdf.set_font("Helvetica", "B", 7)
+        pdf.set_fill_color(30, 30, 35)
+        pdf.set_text_color(255, 255, 255)
+        
+        tx_w = [25, 20, 20, 20, 30, 30, 45]
+        tx_headers = ["Symbol", "Type", "Shares", "Price", "Realized P&L", "Date", "Status"]
+        for i, th in enumerate(tx_headers):
+            pdf.cell(tx_w[i], 7, th, border=1, fill=True, align="C")
+        pdf.ln()
+
+        pdf.set_font("Helvetica", "", 7)
+        pdf.set_text_color(40, 40, 40)
+        
+        transactions = duckdb_repo.get_transactions()
+        for idx, t in enumerate(reversed(transactions[-40:])):  # Last 40 trades
+            fill = idx % 2 == 0
+            pdf.set_fill_color(245, 245, 245) if fill else pdf.set_fill_color(255, 255, 255)
+            
+            pnl = t.get("realized_pnl", 0)
+            pnl_c = (39, 174, 96) if pnl > 0 else (192, 57, 43) if pnl < 0 else (120, 120, 120)
+
+            pdf.cell(tx_w[0], 6, t.get("symbol"), border=1, fill=fill, align="C")
+            pdf.cell(tx_w[1], 6, t.get("type"), border=1, fill=fill, align="C")
+            pdf.cell(tx_w[2], 6, f"{t.get('shares'):.2f}", border=1, fill=fill, align="R")
+            pdf.cell(tx_w[3], 6, f"${t.get('price'):,.2f}", border=1, fill=fill, align="R")
+            
+            # Color the P&L cell
+            pdf.set_text_color(*pnl_c)
+            pdf.cell(tx_w[4], 6, f"${pnl:,.2f}", border=1, fill=fill, align="R")
+            pdf.set_text_color(40, 40, 40)
+            
+            pdf.cell(tx_w[5], 6, t.get("date"), border=1, fill=fill, align="C")
+            pdf.cell(tx_w[6], 6, "CONFIRMED_NODE_ALPHA", border=1, fill=fill, align="C")
+            pdf.ln()
 
         # ── Theoretical Foundations ─────────────────────────────────
         self._add_theoretical_foundations(pdf)

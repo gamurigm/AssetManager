@@ -64,6 +64,80 @@ function calcStochastic(highs: number[], lows: number[], closes: number[], kP: n
     return { kLine, dLine };
 }
 
+/* ─── Fibonacci Retracement ──────────────────────────────────────────── */
+
+const FIB_LEVELS = [
+    { ratio: 0, label: '0%', color: '#787B86' },
+    { ratio: 0.236, label: '23.6%', color: '#F44336' },
+    { ratio: 0.382, label: '38.2%', color: '#FF9800' },
+    { ratio: 0.5, label: '50%', color: '#FFEB3B' },
+    { ratio: 0.618, label: '61.8%', color: '#4CAF50' },
+    { ratio: 0.786, label: '78.6%', color: '#2196F3' },
+    { ratio: 1, label: '100%', color: '#787B86' },
+];
+
+function calcFibLevels(highs: number[], lows: number[], lookback: number) {
+    const recentHighs = highs.slice(-lookback);
+    const recentLows = lows.slice(-lookback);
+    const high = Math.max(...recentHighs);
+    const low = Math.min(...recentLows);
+    const diff = high - low;
+    return FIB_LEVELS.map(f => ({
+        ...f,
+        price: high - diff * f.ratio,
+    }));
+}
+
+/* ─── Bollinger Bands ────────────────────────────────────────────────── */
+
+function calcBollingerBands(closes: number[], period: number, multiplier: number) {
+    const middle: number[] = [];
+    const upper: number[] = [];
+    const lower: number[] = [];
+
+    for (let i = 0; i < closes.length; i++) {
+        if (i < period - 1) {
+            middle.push(NaN);
+            upper.push(NaN);
+            lower.push(NaN);
+            continue;
+        }
+        const slice = closes.slice(i - period + 1, i + 1);
+        const mean = slice.reduce((s, v) => s + v, 0) / period;
+        const variance = slice.reduce((s, v) => s + (v - mean) ** 2, 0) / period;
+        const std = Math.sqrt(variance);
+        middle.push(mean);
+        upper.push(mean + multiplier * std);
+        lower.push(mean - multiplier * std);
+    }
+    return { middle, upper, lower };
+}
+
+/* ─── ATR (Average True Range) ───────────────────────────────────────── */
+
+function calcATR(highs: number[], lows: number[], closes: number[], period: number): number[] {
+    const tr: number[] = [highs[0] - lows[0]];
+    for (let i = 1; i < closes.length; i++) {
+        tr.push(Math.max(
+            highs[i] - lows[i],
+            Math.abs(highs[i] - closes[i - 1]),
+            Math.abs(lows[i] - closes[i - 1])
+        ));
+    }
+    const atr: number[] = [];
+    let sum = 0;
+    for (let i = 0; i < tr.length; i++) {
+        if (i < period) {
+            sum += tr[i];
+            atr.push(i === period - 1 ? sum / period : NaN);
+        } else {
+            const prev = atr[i - 1];
+            atr.push((prev * (period - 1) + tr[i]) / period);
+        }
+    }
+    return atr;
+}
+
 /* ─── MA Types ────────────────────────────────────────────────────────── */
 
 type MAType = "EMA" | "SMA" | "LWMA";
@@ -229,6 +303,21 @@ export default function ChartWindow() {
     const [stochD, setStochD] = useState(3);
     const [stochSmooth, setStochSmooth] = useState(3);
 
+    // Fibonacci params
+    const [showFib, setShowFib] = useState(false);
+    const [fibLookback, setFibLookback] = useState(120);
+
+    // Bollinger Bands params
+    const [showBB, setShowBB] = useState(false);
+    const [bbPeriod, setBbPeriod] = useState(20);
+    const [bbMult, setBbMult] = useState(2.0);
+
+    // ATR params
+    const [showATR, setShowATR] = useState(false);
+    const [atrPeriod, setAtrPeriod] = useState(14);
+    const atrChartRef = useRef<HTMLDivElement>(null);
+    const atrChartApi = useRef<IChartApi | null>(null);
+
     const chartOpts = useCallback((height?: number) => ({
         layout: {
             background: { type: ColorType.Solid as const, color: '#0a0a0a' },
@@ -264,7 +353,9 @@ export default function ChartWindow() {
                     setRawData([]);
                 }
                 const q = await qRes.json();
-                if (q && !q.error) setQuote({ price: q.price, changePercentage: q.changePercentage });
+                if (q && !q.error && typeof q.price === 'number') {
+                    setQuote({ price: q.price, changePercentage: q.changePercentage ?? 0 });
+                }
             } catch (err) {
                 console.error("Fetch error:", err);
                 setRawData([]);
@@ -372,6 +463,34 @@ export default function ChartWindow() {
             series.setData(validData as any);
         }
 
+        // Render Fibonacci Retracement
+        if (showFib && rawData.length > 0) {
+            const highs = rawData.map(d => d.high);
+            const lows = rawData.map(d => d.low);
+            const fibs = calcFibLevels(highs, lows, fibLookback);
+            for (const fib of fibs) {
+                candleSeries.createPriceLine({
+                    price: fib.price,
+                    color: fib.color,
+                    lineWidth: 1,
+                    lineStyle: 2,
+                    axisLabelVisible: true,
+                    title: `Fib ${fib.label}`,
+                });
+            }
+        }
+
+        // Render Bollinger Bands
+        if (showBB) {
+            const { middle, upper, lower } = calcBollingerBands(closes, bbPeriod, bbMult);
+            const bbUpper = chart.addSeries(LineSeries, { color: 'rgba(33,150,243,0.5)', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false });
+            bbUpper.setData(upper.map((v, i) => ({ time: times[i], value: v })).filter(d => !isNaN(d.value)) as any);
+            const bbMiddle = chart.addSeries(LineSeries, { color: 'rgba(33,150,243,0.3)', lineWidth: 1, lineStyle: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false });
+            bbMiddle.setData(middle.map((v, i) => ({ time: times[i], value: v })).filter(d => !isNaN(d.value)) as any);
+            const bbLower = chart.addSeries(LineSeries, { color: 'rgba(33,150,243,0.5)', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false });
+            bbLower.setData(lower.map((v, i) => ({ time: times[i], value: v })).filter(d => !isNaN(d.value)) as any);
+        }
+
         chart.timeScale().fitContent();
 
         const handleResize = () => {
@@ -379,7 +498,7 @@ export default function ChartWindow() {
         };
         window.addEventListener('resize', handleResize);
         return () => { window.removeEventListener('resize', handleResize); chart.remove(); mainChartApi.current = null; };
-    }, [rawData, chartOpts, mas, showVP, vpData]);
+    }, [rawData, chartOpts, mas, showVP, vpData, showFib, fibLookback, showBB, bbPeriod, bbMult]);
 
     // MACD
     useEffect(() => {
@@ -446,6 +565,35 @@ export default function ChartWindow() {
         return () => { window.removeEventListener('resize', hr); chart.remove(); stochChartApi.current = null; };
     }, [rawData, showStoch, stochK, stochD, stochSmooth, chartOpts]);
 
+    // ATR
+    useEffect(() => {
+        if (!atrChartRef.current || rawData.length === 0 || !showATR) return;
+        if (atrChartApi.current) { atrChartApi.current.remove(); atrChartApi.current = null; }
+
+        const chart = createChart(atrChartRef.current, { ...chartOpts(146), width: atrChartRef.current.clientWidth });
+        atrChartApi.current = chart;
+
+        const highs = rawData.map(d => d.high);
+        const lows = rawData.map(d => d.low);
+        const closes = rawData.map(d => d.close);
+        const times = rawData.map(d => d.date);
+        const atrValues = calcATR(highs, lows, closes, atrPeriod);
+
+        const atrSeries = chart.addSeries(LineSeries, { color: '#e040fb', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: 'ATR' });
+        atrSeries.setData(atrValues.map((v, i) => ({ time: times[i], value: v })).filter(d => !isNaN(d.value)));
+
+        chart.timeScale().fitContent();
+
+        if (mainChartApi.current) {
+            mainChartApi.current.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && atrChartApi.current) atrChartApi.current.timeScale().setVisibleLogicalRange(r); });
+            chart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && mainChartApi.current) mainChartApi.current.timeScale().setVisibleLogicalRange(r); });
+        }
+
+        const hr = () => { if (atrChartRef.current) chart.applyOptions({ width: atrChartRef.current.clientWidth }); };
+        window.addEventListener('resize', hr);
+        return () => { window.removeEventListener('resize', hr); chart.remove(); atrChartApi.current = null; };
+    }, [rawData, showATR, atrPeriod, chartOpts]);
+
     const updateMA = (id: string, updated: MAConfig) => setMas(prev => prev.map(m => m.id === id ? updated : m));
     const removeMA = (id: string) => setMas(prev => prev.filter(m => m.id !== id));
     const addMA = () => {
@@ -456,7 +604,7 @@ export default function ChartWindow() {
         }]);
     };
 
-    const oscillatorPanelH = (showMACD ? 170 : 24) + (showStoch ? 170 : 24);
+    const oscillatorPanelH = (showMACD ? 170 : 24) + (showStoch ? 170 : 24) + (showATR ? 170 : 24);
     const mainH = `calc(100vh - 48px - 38px - ${oscillatorPanelH}px)`;
 
     return (
@@ -476,12 +624,12 @@ export default function ChartWindow() {
                         <p className="text-[9px] uppercase font-bold tracking-widest text-white/30 mt-0.5">Daily Chart</p>
                     </div>
 
-                    {quote && (
+                    {quote && typeof quote.price === 'number' && (
                         <div className="flex items-center gap-3 ml-4 pl-4 border-l border-white/10">
                             <span className="text-xl font-mono font-black text-white">${quote.price.toFixed(2)}</span>
-                            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-tighter ${quote.changePercentage >= 0 ? "bg-green/10 text-green" : "bg-red/10 text-red"}`}>
-                                {quote.changePercentage >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-                                {quote.changePercentage.toFixed(2)}%
+                            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-tighter ${(quote.changePercentage ?? 0) >= 0 ? "bg-green/10 text-green" : "bg-red/10 text-red"}`}>
+                                {(quote.changePercentage ?? 0) >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
+                                {(quote.changePercentage ?? 0).toFixed(2)}%
                             </div>
                         </div>
                     )}
@@ -548,7 +696,7 @@ export default function ChartWindow() {
                         ))}
 
                         <div className="pt-2 border-t border-white/5 flex flex-col gap-2">
-                            <span className="text-[11px] font-black uppercase tracking-widest text-white/60">Oscillators</span>
+                            <span className="text-[11px] font-black uppercase tracking-widest text-white/60">Oscillators &amp; Overlays</span>
                             <div className="flex items-center justify-between">
                                 <span className="text-[11px] text-white/50 font-mono">VP (POC, VAH/VAL)</span>
                                 <button onClick={() => setShowVP(!showVP)} className={`text-[10px] font-bold px-2 py-0.5 rounded ${showVP ? "bg-accent/20 text-accent" : "bg-white/5 text-white/30"}`}>{showVP ? "ON" : "OFF"}</button>
@@ -561,6 +709,57 @@ export default function ChartWindow() {
                                 <span className="text-[11px] text-white/50 font-mono">STOCH ({stochK},{stochD},{stochSmooth})</span>
                                 <button onClick={() => setShowStoch(!showStoch)} className={`text-[10px] font-bold px-2 py-0.5 rounded ${showStoch ? "bg-accent/20 text-accent" : "bg-white/5 text-white/30"}`}>{showStoch ? "ON" : "OFF"}</button>
                             </div>
+                        </div>
+
+                        <div className="pt-2 border-t border-white/5 flex flex-col gap-2">
+                            <span className="text-[11px] font-black uppercase tracking-widest text-amber-400/80">Advanced Indicators</span>
+                            {/* Fibonacci */}
+                            <div className="flex items-center justify-between">
+                                <span className="text-[11px] text-white/50 font-mono">Fibonacci Retracement</span>
+                                <button onClick={() => setShowFib(!showFib)} className={`text-[10px] font-bold px-2 py-0.5 rounded ${showFib ? "bg-amber-500/20 text-amber-400" : "bg-white/5 text-white/30"}`}>{showFib ? "ON" : "OFF"}</button>
+                            </div>
+                            {showFib && (
+                                <div className="flex items-center gap-2 pl-2">
+                                    <span className="text-[9px] text-white/30 uppercase font-bold">Lookback</span>
+                                    <input type="number" value={fibLookback} min={10} max={1000}
+                                        onChange={e => setFibLookback(Math.max(10, Number(e.target.value) || 120))}
+                                        className="w-16 px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[11px] text-white font-mono text-center focus:outline-none" />
+                                </div>
+                            )}
+                            {/* Bollinger Bands */}
+                            <div className="flex items-center justify-between">
+                                <span className="text-[11px] text-white/50 font-mono">Bollinger Bands ({bbPeriod},{bbMult}x)</span>
+                                <button onClick={() => setShowBB(!showBB)} className={`text-[10px] font-bold px-2 py-0.5 rounded ${showBB ? "bg-blue-500/20 text-blue-400" : "bg-white/5 text-white/30"}`}>{showBB ? "ON" : "OFF"}</button>
+                            </div>
+                            {showBB && (
+                                <div className="flex items-center gap-3 pl-2">
+                                    <div className="flex items-center gap-1">
+                                        <span className="text-[9px] text-white/30 uppercase font-bold">Period</span>
+                                        <input type="number" value={bbPeriod} min={5} max={200}
+                                            onChange={e => setBbPeriod(Math.max(5, Number(e.target.value) || 20))}
+                                            className="w-12 px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[11px] text-white font-mono text-center focus:outline-none" />
+                                    </div>
+                                    <div className="flex items-center gap-1">
+                                        <span className="text-[9px] text-white/30 uppercase font-bold">Mult</span>
+                                        <input type="number" value={bbMult} min={0.5} max={5} step={0.1}
+                                            onChange={e => setBbMult(Math.max(0.5, Number(e.target.value) || 2))}
+                                            className="w-12 px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[11px] text-white font-mono text-center focus:outline-none" />
+                                    </div>
+                                </div>
+                            )}
+                            {/* ATR */}
+                            <div className="flex items-center justify-between">
+                                <span className="text-[11px] text-white/50 font-mono">ATR ({atrPeriod})</span>
+                                <button onClick={() => setShowATR(!showATR)} className={`text-[10px] font-bold px-2 py-0.5 rounded ${showATR ? "bg-purple-500/20 text-purple-400" : "bg-white/5 text-white/30"}`}>{showATR ? "ON" : "OFF"}</button>
+                            </div>
+                            {showATR && (
+                                <div className="flex items-center gap-2 pl-2">
+                                    <span className="text-[9px] text-white/30 uppercase font-bold">Period</span>
+                                    <input type="number" value={atrPeriod} min={1} max={100}
+                                        onChange={e => setAtrPeriod(Math.max(1, Number(e.target.value) || 14))}
+                                        className="w-14 px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[11px] text-white font-mono text-center focus:outline-none" />
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
@@ -613,6 +812,23 @@ export default function ChartWindow() {
                     )}
                 </div>
                 {showStoch && <div ref={stochChartRef} style={{ width: '100%', height: 146 }} />}
+            </div>
+
+            {/* ─── ATR Panel ─────────────────────────────────────────────── */}
+            <div className="flex-shrink-0 border-t border-white/5" style={{ height: showATR ? 170 : 24 }}>
+                <div className="flex items-center justify-between px-3 bg-[#0c0c0c] cursor-pointer select-none" style={{ height: 24 }} onClick={() => setShowATR(!showATR)}>
+                    <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-black uppercase tracking-[0.15em] text-purple-400/70">ATR</span>
+                        <span className="text-[9px] font-mono text-white/30">({atrPeriod})</span>
+                        {showATR ? <ChevronUp size={10} className="text-white/30" /> : <ChevronDown size={10} className="text-white/30" />}
+                    </div>
+                    {showATR && (
+                        <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>
+                            <ParamInput label="Period" value={atrPeriod} onChange={setAtrPeriod} max={100} />
+                        </div>
+                    )}
+                </div>
+                {showATR && <div ref={atrChartRef} style={{ width: '100%', height: 146 }} />}
             </div>
         </div>
     );

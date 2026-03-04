@@ -68,10 +68,17 @@ async def openbb_cli(body: dict = Body(...)):
     low = cmd_str.lower()
     
     # ─── Qwen AI Assistant ──────────────────────────────────────────
-    if low.startswith("qwen ") or low.startswith("q "):
-        prompt = cmd_str[4:].strip() if low.startswith("q ") else cmd_str[5:].strip()
+    if low.startswith("qwen ") or low.startswith("q ") or low.startswith("/qwen "):
+        prompt = cmd_str
+        if low.startswith("/qwen "):
+            prompt = cmd_str[6:].strip()
+        elif low.startswith("qwen "):
+            prompt = cmd_str[5:].strip()
+        else:
+            prompt = cmd_str[2:].strip()
+            
         if not prompt:
-            return {"output": "Usage: qwen <your question about openbb>"}
+            return {"output": "Usage: /qwen <your instruction>"}
         
         nvidia_key = os.getenv("NVIDIA_NIM_API_KEY") or os.getenv("NVIDIA_API_KEY")
         if not nvidia_key:
@@ -84,10 +91,18 @@ async def openbb_cli(body: dict = Body(...)):
         }
         
         system_msg = (
-            "You are an expert OpenBB Platform CLI assistant. "
-            "Help the user find the right command. "
-            "OpenBB commands follow a path structure like 'equity/price/quote'. "
-            "Provide the command first, then a very brief explanation."
+            "You are Qwen, the expert Terminal Executor for the MMAM investment app. "
+            "Your ONLY job is to translate the user's natural language into STRICT terminal commands. "
+            "These are the exact commands you can output:\n"
+            "1. 'portfolio liquidate --all' (Sells EVERYTHING, no exceptions)\n"
+            "2. 'portfolio liquidate --symbol AAPL' (Sells ONLY AAPL)\n"
+            "3. 'portfolio liquidate --losers' (Sells ONLY losing positions in RED)\n"
+            "4. Basic OpenBB commands like 'equity price quote --symbol TSLA'\n\n"
+            "CRITICAL: If the user says 'liquidar todo', 'vende todo', 'limpiar portafolio', or 'salir de todo', "
+            "YOU MUST output '<execute>portfolio liquidate --all</execute>'.\n"
+            "If they specify 'en rojo' or 'perdedoras', use '--losers'.\n"
+            "Example: 'vende tesla', output '<execute>portfolio liquidate --symbol TSLA</execute>'. "
+            "If it's a general question, answer briefly, but prioritize the <execute> tag for actions."
         )
         
         payload = {
@@ -97,7 +112,7 @@ async def openbb_cli(body: dict = Body(...)):
                 {"role": "user", "content": prompt}
             ],
             "max_tokens": 512,
-            "temperature": 0.3,
+            "temperature": 0.1,
             "stream": False,
         }
         
@@ -105,6 +120,14 @@ async def openbb_cli(body: dict = Body(...)):
             res = requests.post(invoke_url, headers=headers, json=payload, timeout=20)
             res.raise_for_status()
             ai_text = res.json()["choices"][0]["message"]["content"].strip()
+            
+            if "<execute>" in ai_text and "</execute>" in ai_text:
+                cmd_to_run = ai_text.split("<execute>")[1].split("</execute>")[0].strip()
+                # Run the command recursively
+                inner_res = await openbb_cli({"command": cmd_to_run})
+                inner_output = inner_res.get("output", "Done")
+                return {"output": f"🤖 [QWEN EXECUTOR]: Entendido. Preparando ejecución...\n⚡ Ejecutando: {cmd_to_run}\n\n{inner_output}"}
+            
             return {"output": f"🤖 Qwen: {ai_text}"}
         except Exception as e:
             return {"output": f"Qwen API Error: {str(e)}", "type": "error"}
@@ -118,6 +141,10 @@ async def openbb_cli(body: dict = Body(...)):
             "╚════════════════════════════════════════════════════════════════════════════════════╝\n\n"
             "  SYNTAX:  command --flag value --flag2 value2\n"
             "           Add  --chart true  to any ★ command to open an interactive Plotly chart.\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━ 💼 PORTFOLIO EXECUTION (DANGER)  ━━━━━━━━━━━━━━━━━━━━━━\n"
+            "  portfolio liquidate --all              | Sells entirety of the portfolio at market price.\n"
+            "  portfolio liquidate --symbol AAPL      | Liquidates a specific holding.\n"
+            "  portfolio liquidate --losers           | Sells only positions with negative PnL.\n\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━ 📊 CORE MARKET DATA (Lightning Fast) ━━━━━━━━━━━━━━━━━━━━━━\n"
             "  quote          Real-time price quote        | quote --symbol AAPL\n"
             "  historical     Price history candles        | historical --symbol TSLA --limit 50\n"
@@ -180,10 +207,11 @@ async def openbb_cli(body: dict = Body(...)):
             "    technical relative_rotation --symbol AAPL --benchmark ^GSPC --chart true\n\n"
             "  ★ ECONOMETRICS\n"
             "    econometrics correlation_matrix --symbol AAPL,MSFT,NVDA --chart true\n\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━ 🤖 AI COPILOT                        ━━━━━━━━━━━━━━━━━━━━━━\n"
-            "  qwen, q        Pregunta al asistente IA sobre comandos o mercados.\n"
-            "                 q How do I get insider trading data?\n"
-            "                 q What command shows bond yields?\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━ 🤖 AI AUTOPILOT                      ━━━━━━━━━━━━━━━━━━━━━━\n"
+            "  /qwen, q       Delega ejecución natural a la IA Qwen 3.5.\n"
+            "                 q liquida tesla\n"
+            "                 q vende todas mis posiciones en rojo\n"
+            "                 /qwen What command shows bond yields?\n\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━ 🕹️  TECLADO & SISTEMA                 ━━━━━━━━━━━━━━━━━━━━━━\n"
             "  ↑ / ↓          Navegar historial de comandos\n"
             "  Tab            Autocompletar comandos\n"
@@ -241,6 +269,77 @@ async def openbb_cli(body: dict = Body(...)):
             kwargs["provider"] = "yfinance"
         elif command.startswith("economy.") or command.startswith("fixedincome."):
             kwargs["provider"] = "bls" if "bls" in command else "fred"
+
+    # ─── Portfolio Liquidator ───────────────────────────────────────
+    if command == "portfolio.liquidate":
+        holdings = duckdb_repo.get_portfolio()
+        if not holdings:
+            return {"output": "No active holdings found in portfolio to liquidate."}
+            
+        liquidated_symbols = []
+        keep_holdings = []
+        is_all = kwargs.get("all") or kwargs.get("all") is True
+        is_losers = kwargs.get("losers") or kwargs.get("losers") is True
+        target_symbol = str(kwargs.get("symbol")).upper() if kwargs.get("symbol") else None
+        
+        for h in holdings:
+            sym = h.get("symbol", "")
+            # --- FETCH CURRENT PRICE FOR ACCURATE PNL ---
+            current_price = h.get("price", 0)
+            if not current_price or current_price == 0:
+                try:
+                    # FIX: get_quote is an instance of GetQuoteUseCase, must call .execute() and await it
+                    quote_data = await get_quote.execute(sym)
+                    current_price = float(quote_data.get("price", quote_data.get("last_price", h.get("entryPrice", 0))))
+                except Exception as e:
+                    print(f"[Liquidation] Price fetch error for {sym}: {e}")
+                    current_price = h.get("entryPrice", 0)
+            
+            entry_price = h.get("entryPrice", 0)
+            factor = h.get("factor", 1)
+            shares = h.get("shares", 0)
+            
+            # Recalculate PnL based on fresh (or best available) price
+            pnl = (current_price - entry_price) * shares * factor
+            pnl_pct = ((current_price - entry_price) / entry_price * 100) if entry_price != 0 else 0
+            
+            should_sell = False
+            if is_all:
+                should_sell = True
+            elif is_losers and (pnl < 0 or pnl_pct < 0):
+                should_sell = True
+            elif target_symbol and sym == target_symbol:
+                should_sell = True
+                
+            if should_sell:
+                # Add to liquidated list with detailed PnL
+                liquidated_symbols.append(f"{sym} ({'+' if pnl >= 0 else ''}${pnl:,.2f})")
+                duckdb_repo.add_transaction(
+                    type_str="SELL",
+                    symbol=sym,
+                    shares=shares,
+                    price=current_price,
+                    realized_pnl=pnl
+                )
+            else:
+                keep_holdings.append(h)
+                
+        if not liquidated_symbols:
+            criteria = "TODO" if is_all else ("EN ROJO" if is_losers else (f"SYMBOL {target_symbol}" if target_symbol else "N/A"))
+            return {"output": f"⚠️ No se encontraron activos que cumplan el criterio: [{criteria}].\n\nSi quieres vender TODO independientemente del PnL, usa: 'portfolio liquidate --all' o dile a Qwen 'vende absolutamente todo'."}
+            
+        success = duckdb_repo.save_portfolio(keep_holdings)
+        if success:
+            total_realized = sum(float(s.split('($')[1].split(')')[0].replace(',','')) for s in liquidated_symbols if '($' in s)
+            return {"output": (
+                f"🚨 LIQUIDATION COMPLETE 🚨\n"
+                f"Total Positions Sold: {len(liquidated_symbols)}\n"
+                f"Details: {', '.join(liquidated_symbols)}\n"
+                f"PROFIT/LOSS REALIZED THIS RUN: {'+' if total_realized >= 0 else ''}${total_realized:,.2f}\n\n"
+                f"✅ Cash updated in balance sheets."
+            )}
+        else:
+            return {"output": "Error: Database failed to persist the liquidation.", "type": "error"}
 
     # ─── Command execution ───────────────────────────────────────────
     try:
