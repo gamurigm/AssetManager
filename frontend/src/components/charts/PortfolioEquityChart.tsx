@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import {
     AreaChart,
     Area,
@@ -9,6 +9,8 @@ import {
     CartesianGrid,
     Tooltip,
     ResponsiveContainer,
+    Brush,
+    ReferenceLine,
 } from "recharts";
 
 interface EquityPoint {
@@ -21,6 +23,7 @@ interface EquityPoint {
 export default function PortfolioEquityChart() {
     const [data, setData] = useState<EquityPoint[]>([]);
     const [loading, setLoading] = useState(true);
+    const [brushRange, setBrushRange] = useState<{ startIndex: number; endIndex: number } | null>(null);
 
     useEffect(() => {
         const fetchHistory = async () => {
@@ -28,7 +31,6 @@ export default function PortfolioEquityChart() {
                 const res = await fetch("http://127.0.0.1:8282/api/v1/portfolios/history");
                 const json = await res.json();
                 if (Array.isArray(json)) {
-                    // Derive cumulative Realized PnL assuming first point is base capital
                     const baseRealized = json[0]?.realized || 0;
                     const enriched = json.map(pt => ({
                         ...pt,
@@ -44,6 +46,18 @@ export default function PortfolioEquityChart() {
         };
         fetchHistory();
     }, []);
+
+    const handleBrushChange = useCallback((range: any) => {
+        if (range && typeof range.startIndex === 'number') {
+            setBrushRange({ startIndex: range.startIndex, endIndex: range.endIndex });
+        }
+    }, []);
+
+    // Derive the visible slice of data for the sub-chart
+    const visibleData = useMemo(() => {
+        if (!brushRange || data.length === 0) return data;
+        return data.slice(brushRange.startIndex, brushRange.endIndex + 1);
+    }, [data, brushRange]);
 
     const formatXAxis = (tick: number) => {
         const date = new Date(tick * 1000);
@@ -66,19 +80,19 @@ export default function PortfolioEquityChart() {
                         <div className="flex items-center justify-between gap-8">
                             <span className="text-xs font-bold text-cyan-400">Total Equity</span>
                             <span className="text-xs font-black text-white">
-                                ${payload[0].value.toLocaleString()}
+                                ${payload[0]?.value?.toLocaleString() ?? '—'}
                             </span>
                         </div>
                         <div className="flex items-center justify-between gap-8">
                             <span className="text-xs font-bold text-zinc-400">Realized Balance</span>
                             <span className="text-xs font-black text-zinc-100">
-                                ${payload[1].value.toLocaleString()}
+                                ${payload[1]?.value?.toLocaleString() ?? '—'}
                             </span>
                         </div>
                         <div className="mt-2 pt-2 border-t border-white/5">
                             <span className="text-[9px] font-black uppercase text-zinc-500">Unrealized P&L: </span>
-                            <span className={`text-[9px] font-black ${(payload[0].value - payload[1].value) >= 0 ? "text-green" : "text-red"}`}>
-                                ${(payload[0].value - payload[1].value).toLocaleString()}
+                            <span className={`text-[9px] font-black ${(payload[0]?.value - payload[1]?.value) >= 0 ? "text-green" : "text-red"}`}>
+                                ${((payload[0]?.value ?? 0) - (payload[1]?.value ?? 0)).toLocaleString()}
                             </span>
                         </div>
                     </div>
@@ -99,11 +113,16 @@ export default function PortfolioEquityChart() {
         );
     }
 
+    // Compute pnl domain for zero-line
+    const pnlValues = visibleData.map(d => d.pnl);
+    const hasPnlData = pnlValues.length > 0 && pnlValues.some(v => v !== 0);
+
     return (
         <div className="h-full w-full p-2 flex flex-col">
+            {/* ── MAIN NAV CHART ── */}
             <div className="flex-1 min-h-0 relative">
                 <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={data} margin={{ top: 10, right: 10, left: 10, bottom: 0 }}>
+                    <AreaChart data={data} margin={{ top: 10, right: 10, left: 10, bottom: 0 }} syncId="portfolio-nav">
                         <defs>
                             <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.3} />
@@ -148,25 +167,44 @@ export default function PortfolioEquityChart() {
                             fill="url(#colorRealized)"
                             isAnimationActive={true}
                         />
+                        {/* Brush for zoom — syncs both charts */}
+                        <Brush
+                            dataKey="time"
+                            height={20}
+                            stroke="#22d3ee40"
+                            fill="#0a0a0a"
+                            tickFormatter={formatXAxis}
+                            onChange={handleBrushChange}
+                        />
                     </AreaChart>
                 </ResponsiveContainer>
             </div>
 
-            {/* ── LOGARITHMIC REALIZED PNL (Lower Ribbon) ── */}
-            <div className="flex-shrink-0 mt-4 pt-4 border-t border-border/40 h-[100px] flex flex-col">
-                <div className="mb-2 flex items-center justify-between">
+            {/* ── LOGARITHMIC REALIZED PNL (Lower Ribbon) ── aligned with the same syncId */}
+            <div className="flex-shrink-0 mt-2 pt-2 border-t border-border/40 h-[110px] flex flex-col">
+                <div className="mb-1 flex items-center justify-between">
                     <span className="text-[10px] font-black uppercase tracking-widest text-[#a855f7]">Logarithmic Realized P&L</span>
                 </div>
                 <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={data} margin={{ top: 0, right: 10, left: 10, bottom: 0 }}>
+                    <AreaChart data={data} margin={{ top: 0, right: 10, left: 10, bottom: 0 }} syncId="portfolio-nav">
                         <defs>
                             <linearGradient id="colorPnl" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="5%" stopColor="#a855f7" stopOpacity={0.4} />
                                 <stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
                             </linearGradient>
                         </defs>
-                        <XAxis dataKey="time" hide />
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="rgba(255,255,255,0.03)" />
+                        <XAxis
+                            dataKey="time"
+                            tickFormatter={formatXAxis}
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fontSize: 9, fill: "#52525b", fontWeight: "bold" }}
+                            minTickGap={50}
+                        />
                         <YAxis scale="symlog" hide domain={["auto", "auto"]} />
+                        {/* Zero reference line */}
+                        {hasPnlData && <ReferenceLine y={0} stroke="#71717a40" strokeDasharray="3 3" />}
                         <Tooltip content={({ active, payload, label }: any) => {
                             if (active && payload && payload.length) {
                                 const date = new Date(label * 1000).toLocaleDateString("en-US", { month: "short", day: "numeric" });
