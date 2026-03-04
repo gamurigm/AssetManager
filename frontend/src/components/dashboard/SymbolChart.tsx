@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useRef, useState, useEffect } from "react";
-import { TrendingUp, TrendingDown, ChevronDown, ChevronUp, Activity } from "lucide-react";
-import { createChart, ColorType, CandlestickSeries, LineSeries, HistogramSeries, createSeriesMarkers } from "lightweight-charts";
+import React, { useRef, useState, useEffect, useCallback } from "react";
+import { TrendingUp, TrendingDown, ChevronDown, ChevronUp, Activity, ZoomIn, ZoomOut } from "lucide-react";
+import { createChart, ColorType, CandlestickSeries, LineSeries, HistogramSeries, createSeriesMarkers, IChartApi } from "lightweight-charts";
 import { usePortfolio } from "@/context/PortfolioContext";
 import { useChartData } from "@/hooks/useChartData";
 import { calcEMA, calcMACD, calcStochastic, FIBONACCI_LEVELS, calcBollingerBands, calcIchimoku, calcRSI, calcVWAP, calcATR, calcKeltner, calcCCI, calcADX, calcParabolicSAR, calcSupertrend, calcWilliamsR, calcMFI, calcCMF } from "@/lib/indicators";
@@ -26,6 +26,31 @@ interface SymbolChartProps {
     showCmf?: boolean;
 }
 
+// Helper: sync a sub-chart's time scale with the main chart
+function syncToMain(mainChart: IChartApi, subChart: IChartApi) {
+    const mainTS = mainChart.timeScale();
+    const subTS = subChart.timeScale();
+    const r = mainTS.getVisibleLogicalRange();
+    if (r) subTS.setVisibleLogicalRange(r);
+
+    const onMain = (range: any) => { if (range) subTS.setVisibleLogicalRange(range); };
+    const onSub = (range: any) => { if (range && mainChart) mainTS.setVisibleLogicalRange(range); };
+    mainTS.subscribeVisibleLogicalRangeChange(onMain);
+    subTS.subscribeVisibleLogicalRangeChange(onSub);
+    return () => {
+        mainTS.unsubscribeVisibleLogicalRangeChange(onMain);
+        subTS.unsubscribeVisibleLogicalRangeChange(onSub);
+    };
+}
+
+// Helper: safe line data (skip NaN)
+function safeLine(times: string[], values: (number | null)[]): any[] {
+    return times.map((t, i) => {
+        const v = values[i];
+        return (v === null || v === undefined || isNaN(v)) ? { time: t } : { time: t, value: v };
+    });
+}
+
 // ─── Component ──────────────────────────────────────────────────────
 export default function SymbolChart({ symbol, showFib: propShowFib, showBollinger = false, showIchimoku = false, showVwap = false, showRsi = false, showAtr = false, showKeltner = false, showCci = false, showAdx = false, showPsar = false, showSupertrend = false, showWilliams = false, showMfi = false, showCmf = false }: SymbolChartProps) {
     const { holdings, closePosition, openTrade } = usePortfolio();
@@ -42,6 +67,7 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
 
     // Chart refs
     const chartContainerRef = useRef<HTMLDivElement>(null);
+    const mainChartApi = useRef<IChartApi | null>(null);
     const macdRef = useRef<HTMLDivElement>(null);
     const stochRef = useRef<HTMLDivElement>(null);
     const rsiRef = useRef<HTMLDivElement>(null);
@@ -78,17 +104,11 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
             });
             userFibLinesRef.current = [];
         }
-
         const diff = p2 - p1;
         FIBONACCI_LEVELS.forEach(level => {
             const price = p1 + (diff * level.level);
             const line = mainSeriesRef.current.createPriceLine({
-                price,
-                color: level.color,
-                lineWidth: 1,
-                lineStyle: 1,
-                axisLabelVisible: true,
-                title: level.text,
+                price, color: level.color, lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: level.text,
             });
             userFibLinesRef.current.push(line);
         });
@@ -141,21 +161,45 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
     const [ema2, setEma2] = useState(21);
     const [ema3, setEma3] = useState(50);
 
+    // Zoom helpers
+    const zoomIn = useCallback(() => {
+        if (!mainChartApi.current) return;
+        const ts = mainChartApi.current.timeScale();
+        const range = ts.getVisibleLogicalRange();
+        if (!range) return;
+        const center = (range.from + range.to) / 2;
+        const halfSpan = (range.to - range.from) / 2 * 0.7;
+        ts.setVisibleLogicalRange({ from: center - halfSpan, to: center + halfSpan });
+    }, []);
+
+    const zoomOut = useCallback(() => {
+        if (!mainChartApi.current) return;
+        const ts = mainChartApi.current.timeScale();
+        const range = ts.getVisibleLogicalRange();
+        if (!range) return;
+        const center = (range.from + range.to) / 2;
+        const halfSpan = (range.to - range.from) / 2 * 1.4;
+        ts.setVisibleLogicalRange({ from: center - halfSpan, to: center + halfSpan });
+    }, []);
+
     // ─── Chart Options Builder ──────────────────────────────────
-    const chartOpts = (h: number) => ({
+    const chartOpts = useCallback((h: number) => ({
         layout: { background: { type: ColorType.Solid as const, color: 'transparent' }, textColor: isLight ? '#3f3f46' : '#71717a' },
         grid: { vertLines: { color: isLight ? '#f4f4f5' : '#1a1a1a' }, horzLines: { color: isLight ? '#f4f4f5' : '#1a1a1a' } },
         height: h,
         rightPriceScale: { borderVisible: false },
         timeScale: { borderVisible: false },
         crosshair: { horzLine: { visible: true, labelVisible: true }, vertLine: { visible: true, labelVisible: true } },
-    });
+    }), [isLight]);
 
     // ─── Main Candlestick Effect ────────────────────────────────
     useEffect(() => {
         if (!chartContainerRef.current || candles.length === 0) return;
         const el = chartContainerRef.current;
+        if (mainChartApi.current) { mainChartApi.current.remove(); mainChartApi.current = null; }
+
         const chart = createChart(el, { ...chartOpts(el.clientHeight), width: el.clientWidth });
+        mainChartApi.current = chart;
         const series = chart.addSeries(CandlestickSeries, {
             upColor: '#22c55e', downColor: '#ef4444', borderVisible: false,
             wickUpColor: '#22c55e', wickDownColor: '#ef4444',
@@ -165,23 +209,19 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
 
         // Re-draw any existing custom fib if chart recreated
         const st = drawStateRef.current;
-        if (st.p1 !== null && st.p2 !== null) {
-            drawFibLines(st.p1, st.p2);
-        }
+        if (st.p1 !== null && st.p2 !== null) drawFibLines(st.p1, st.p2);
+
+        const closes = candles.map(d => d.close);
+        const times = candles.map(d => d.date);
+        const highs = candles.map(d => d.high);
+        const lows = candles.map(d => d.low);
 
         // EMA overlays
         if (showEmas) {
-            const closes = candles.map(d => d.close);
-            const times = candles.map(d => d.date);
-            const emaConfigs = [
-                { period: ema1, color: '#fbbf24' },
-                { period: ema2, color: '#f472b6' },
-                { period: ema3, color: '#38bdf8' },
-            ];
-            emaConfigs.forEach(({ period, color }) => {
+            [{ period: ema1, color: '#fbbf24' }, { period: ema2, color: '#f472b6' }, { period: ema3, color: '#38bdf8' }].forEach(({ period, color }) => {
                 const emaData = calcEMA(closes, period);
                 chart.addSeries(LineSeries, { color, lineWidth: 2, priceLineVisible: false, crosshairMarkerVisible: false })
-                    .setData(emaData.map((v, i) => ({ time: times[i], value: v })));
+                    .setData(safeLine(times, emaData) as any);
             });
         }
 
@@ -193,108 +233,70 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
             const diff = high - low;
             FIBONACCI_LEVELS.forEach(l => {
                 const price = high - (diff * l.level);
-                chart.addSeries(LineSeries, {
-                    color: l.color, lineWidth: 1, lineStyle: 2,
-                    priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false,
-                }).setData(candles.map(c => ({ time: c.date, value: price })));
+                chart.addSeries(LineSeries, { color: l.color, lineWidth: 1, lineStyle: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+                    .setData(candles.map(c => ({ time: c.date, value: price })));
             });
         }
 
-        // Bollinger Bands overlay
+        // Bollinger Bands
         if (showBollinger && candles.length > 20) {
-            const closes = candles.map(d => d.close);
-            const times = candles.map(d => d.date);
             const { upper, middle, lower } = calcBollingerBands(closes, 20, 2.0);
-            // Upper band
             chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 1, lineStyle: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
-                .setData(times.map((t, i) => upper[i] !== null ? { time: t, value: upper[i]! } : null).filter(Boolean) as any);
-            // Middle SMA
+                .setData(safeLine(times, upper) as any);
             chart.addSeries(LineSeries, { color: '#a855f780', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
-                .setData(times.map((t, i) => middle[i] !== null ? { time: t, value: middle[i]! } : null).filter(Boolean) as any);
-            // Lower band
+                .setData(safeLine(times, middle) as any);
             chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 1, lineStyle: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
-                .setData(times.map((t, i) => lower[i] !== null ? { time: t, value: lower[i]! } : null).filter(Boolean) as any);
+                .setData(safeLine(times, lower) as any);
         }
 
-        // Ichimoku Cloud overlay
+        // Ichimoku Cloud
         if (showIchimoku && candles.length > 52) {
-            const highs = candles.map(d => d.high);
-            const lows = candles.map(d => d.low);
-            const closes = candles.map(d => d.close);
-            const times = candles.map(d => d.date);
             const { tenkan, kijun, senkouA, senkouB } = calcIchimoku(highs, lows, closes);
-            // Tenkan-sen (conversion line)
             chart.addSeries(LineSeries, { color: '#22d3ee', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
-                .setData(times.map((t, i) => tenkan[i] !== null ? { time: t, value: tenkan[i]! } : null).filter(Boolean) as any);
-            // Kijun-sen (base line)
+                .setData(safeLine(times, tenkan) as any);
             chart.addSeries(LineSeries, { color: '#f97316', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
-                .setData(times.map((t, i) => kijun[i] !== null ? { time: t, value: kijun[i]! } : null).filter(Boolean) as any);
-            // Senkou A (leading span A) — trimmed to match candle times
+                .setData(safeLine(times, kijun) as any);
             chart.addSeries(LineSeries, { color: '#22c55e80', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
-                .setData(times.map((t, i) => senkouA[i] !== null ? { time: t, value: senkouA[i]! } : null).filter(Boolean) as any);
-            // Senkou B (leading span B)
+                .setData(safeLine(times, senkouA) as any);
             chart.addSeries(LineSeries, { color: '#ef444480', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
-                .setData(times.map((t, i) => senkouB[i] !== null ? { time: t, value: senkouB[i]! } : null).filter(Boolean) as any);
+                .setData(safeLine(times, senkouB) as any);
         }
 
-        // VWAP overlay
+        // VWAP
         if (showVwap && candles.length > 10) {
-            const highs = candles.map(d => d.high);
-            const lows = candles.map(d => d.low);
-            const closes = candles.map(d => d.close);
             const volumes = candles.map(d => (d as any).volume ?? 0) as number[];
-            const times = candles.map(d => d.date);
             const vwap = calcVWAP(highs, lows, closes, volumes);
-            chart.addSeries(LineSeries, { color: '#eab308', lineWidth: 2, lineStyle: 0, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: true })
-                .setData(times.map((t, i) => vwap[i] !== null ? { time: t, value: vwap[i]! } : null).filter(Boolean) as any);
+            chart.addSeries(LineSeries, { color: '#eab308', lineWidth: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: true })
+                .setData(safeLine(times, vwap) as any);
         }
 
-        // Keltner Channels overlay
+        // Keltner Channels
         if (showKeltner && candles.length > 20) {
-            const highs = candles.map(d => d.high);
-            const lows = candles.map(d => d.low);
-            const closes = candles.map(d => d.close);
-            const times = candles.map(d => d.date);
             const { upper, middle, lower } = calcKeltner(highs, lows, closes, 20, 10, 2.0);
-            // Upper band
-            chart.addSeries(LineSeries, { color: '#3b82f6', lineWidth: 1, lineStyle: 0, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
-                .setData(times.map((t, i) => upper[i] !== null ? { time: t, value: upper[i]! } : null).filter(Boolean) as any);
-            // Middle EMA
+            chart.addSeries(LineSeries, { color: '#3b82f6', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+                .setData(safeLine(times, upper) as any);
             chart.addSeries(LineSeries, { color: '#3b82f680', lineWidth: 1, lineStyle: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
-                .setData(times.map((t, i) => middle[i] !== null ? { time: t, value: middle[i]! } : null).filter(Boolean) as any);
-            // Lower band
-            chart.addSeries(LineSeries, { color: '#3b82f6', lineWidth: 1, lineStyle: 0, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
-                .setData(times.map((t, i) => lower[i] !== null ? { time: t, value: lower[i]! } : null).filter(Boolean) as any);
+                .setData(safeLine(times, middle) as any);
+            chart.addSeries(LineSeries, { color: '#3b82f6', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+                .setData(safeLine(times, lower) as any);
         }
 
-        // Parabolic SAR overlay
+        // Parabolic SAR
         if (showPsar && candles.length > 5) {
-            const highs = candles.map(d => d.high);
-            const lows = candles.map(d => d.low);
-            const times = candles.map(d => d.date);
             const sar = calcParabolicSAR(highs, lows);
-
-            // Render as scattered dots/line with small markers
             chart.addSeries(LineSeries, { color: '#ec4899', lineWidth: 2, lineStyle: 3, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: true })
-                .setData(times.map((t, i) => sar[i] !== null ? { time: t, value: sar[i]! } : null).filter(Boolean) as any);
+                .setData(safeLine(times, sar) as any);
         }
 
-        // Supertrend overlay
+        // Supertrend
         if (showSupertrend && candles.length > 20) {
-            const highs = candles.map(d => d.high);
-            const lows = candles.map(d => d.low);
-            const closes = candles.map(d => d.close);
-            const times = candles.map(d => d.date);
             const { supertrend, dir } = calcSupertrend(highs, lows, closes);
-
-            // To simulate changing colors based on trend, we draw two lines and mask out nulls
-            const upLine = times.map((t, i) => dir[i] === 1 && supertrend[i] !== null ? { time: t, value: supertrend[i]! } : null).filter(Boolean);
-            const downLine = times.map((t, i) => dir[i] === -1 && supertrend[i] !== null ? { time: t, value: supertrend[i]! } : null).filter(Boolean);
-
-            chart.addSeries(LineSeries, { color: '#2dd4bf', lineWidth: 2, lineStyle: 0, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
-                .setData(upLine as any);
-            chart.addSeries(LineSeries, { color: '#ef4444', lineWidth: 2, lineStyle: 0, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
-                .setData(downLine as any);
+            const upData = times.map((t, i) => (dir[i] === 1 && supertrend[i] !== null && !isNaN(supertrend[i]!)) ? { time: t, value: supertrend[i]! } : { time: t });
+            const downData = times.map((t, i) => (dir[i] === -1 && supertrend[i] !== null && !isNaN(supertrend[i]!)) ? { time: t, value: supertrend[i]! } : { time: t });
+            chart.addSeries(LineSeries, { color: '#2dd4bf', lineWidth: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+                .setData(upData as any);
+            chart.addSeries(LineSeries, { color: '#ef4444', lineWidth: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+                .setData(downData as any);
         }
 
         // Trade markers
@@ -313,206 +315,150 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
         }));
 
         chart.timeScale().fitContent();
-        const handleResize = () => chart.applyOptions({ width: el.clientWidth });
-        window.addEventListener('resize', handleResize);
-        return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
-    }, [candles, theme, showEmas, showFib, showBollinger, showIchimoku, showVwap, showKeltner, showPsar, showSupertrend, ema1, ema2, ema3, holdings, transactions]);
+
+        // ResizeObserver for smooth resize
+        const ro = new ResizeObserver(() => {
+            if (el) chart.applyOptions({ width: el.clientWidth, height: el.clientHeight || 400 });
+        });
+        ro.observe(el);
+        return () => { ro.disconnect(); chart.remove(); mainChartApi.current = null; };
+    }, [candles, chartOpts, showEmas, showFib, showBollinger, showIchimoku, showVwap, showKeltner, showPsar, showSupertrend, ema1, ema2, ema3, holdings, transactions]);
+
+    // ─── Sub-chart builder helper ─────────────────────────────────
+    const buildSubChart = (ref: React.RefObject<HTMLDivElement | null>, height: number, builder: (chart: IChartApi, times: string[]) => void, deps: any[]) => {
+        useEffect(() => {
+            if (!ref.current || candles.length === 0) return;
+            const el = ref.current;
+            const chart = createChart(el, { ...chartOpts(height), width: el.clientWidth });
+            const times = candles.map(d => d.date);
+            builder(chart, times);
+            chart.timeScale().fitContent();
+
+            let unsync: (() => void) | undefined;
+            if (mainChartApi.current) unsync = syncToMain(mainChartApi.current, chart);
+
+            const ro = new ResizeObserver(() => { if (el) chart.applyOptions({ width: el.clientWidth }); });
+            ro.observe(el);
+            return () => { unsync?.(); ro.disconnect(); chart.remove(); };
+        }, [candles, chartOpts, ...deps]);
+    };
 
     // ─── MACD Effect ────────────────────────────────────────────
-    useEffect(() => {
-        if (!macdRef.current || candles.length === 0 || !showMacd) return;
-        const el = macdRef.current;
-        const chart = createChart(el, { ...chartOpts(130), width: el.clientWidth });
+    buildSubChart(macdRef, 130, (chart, times) => {
+        if (!showMacd) return;
         const closes = candles.map(d => d.close);
-        const times = candles.map(d => d.date);
         const { macdLine, signalLine, histogram } = calcMACD(closes, macdFast, macdSlow, macdSignal);
-        chart.addSeries(HistogramSeries, { color: '#3b82f6', priceLineVisible: false })
-            .setData(times.map((t, i) => ({ time: t, value: histogram[i], color: histogram[i] >= 0 ? '#22c55e80' : '#ef444480' })));
+        chart.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false })
+            .setData(times.map((t, i) => (histogram[i] === null || isNaN(histogram[i])) ? { time: t } : { time: t, value: histogram[i], color: histogram[i] >= 0 ? '#22c55e80' : '#ef444480' }) as any);
         chart.addSeries(LineSeries, { color: '#3b82f6', lineWidth: 1, priceLineVisible: false })
-            .setData(times.map((t, i) => ({ time: t, value: macdLine[i] })));
+            .setData(safeLine(times, macdLine) as any);
         chart.addSeries(LineSeries, { color: '#f97316', lineWidth: 1, priceLineVisible: false })
-            .setData(times.map((t, i) => ({ time: t, value: signalLine[i] })));
-        chart.timeScale().fitContent();
-        const handleResize = () => chart.applyOptions({ width: el.clientWidth });
-        window.addEventListener('resize', handleResize);
-        return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
-    }, [candles, theme, macdFast, macdSlow, macdSignal, showMacd]);
+            .setData(safeLine(times, signalLine) as any);
+    }, [showMacd, macdFast, macdSlow, macdSignal]);
 
     // ─── Stochastic Effect ──────────────────────────────────────
-    useEffect(() => {
-        if (!stochRef.current || candles.length === 0 || !showStoch) return;
-        const el = stochRef.current;
-        const chart = createChart(el, { ...chartOpts(130), width: el.clientWidth });
+    buildSubChart(stochRef, 130, (chart, times) => {
+        if (!showStoch) return;
         const closes = candles.map(d => d.close);
         const highs = candles.map(d => d.high);
         const lows = candles.map(d => d.low);
-        const times = candles.map(d => d.date);
         const { kLine, dLine } = calcStochastic(highs, lows, closes, stochK, stochD, stochSmooth);
         chart.addSeries(LineSeries, { color: '#8b5cf6', lineWidth: 1, priceLineVisible: false })
-            .setData(times.map((t, i) => ({ time: t, value: isNaN(kLine[i]) ? undefined : kLine[i] })).filter(d => d.value !== undefined) as any);
+            .setData(safeLine(times, kLine) as any);
         chart.addSeries(LineSeries, { color: '#ec4899', lineWidth: 1, priceLineVisible: false })
-            .setData(times.map((t, i) => ({ time: t, value: isNaN(dLine[i]) ? undefined : dLine[i] })).filter(d => d.value !== undefined) as any);
-        chart.timeScale().fitContent();
-        const handleResize = () => chart.applyOptions({ width: el.clientWidth });
-        window.addEventListener('resize', handleResize);
-        return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
-    }, [candles, theme, stochK, stochD, stochSmooth, showStoch]);
+            .setData(safeLine(times, dLine) as any);
+    }, [showStoch, stochK, stochD, stochSmooth]);
 
     // ─── RSI Effect ─────────────────────────────────────────────
-    useEffect(() => {
-        if (!rsiRef.current || candles.length === 0 || !showRsi) return;
-        const el = rsiRef.current;
-        const chart = createChart(el, { ...chartOpts(120), width: el.clientWidth });
+    buildSubChart(rsiRef, 120, (chart, times) => {
+        if (!showRsi) return;
         const closes = candles.map(d => d.close);
-        const times = candles.map(d => d.date);
         const rsi = calcRSI(closes, 14);
-        // RSI line
         chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 2, priceLineVisible: false })
-            .setData(times.map((t, i) => rsi[i] !== null ? { time: t, value: rsi[i]! } : null).filter(Boolean) as any);
-        // Overbought line (70)
+            .setData(safeLine(times, rsi) as any);
         chart.addSeries(LineSeries, { color: '#ef444460', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
             .setData(times.map(t => ({ time: t, value: 70 })));
-        // Oversold line (30)
         chart.addSeries(LineSeries, { color: '#22c55e60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
             .setData(times.map(t => ({ time: t, value: 30 })));
-        // Midline (50)
         chart.addSeries(LineSeries, { color: '#71717a30', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
             .setData(times.map(t => ({ time: t, value: 50 })));
-        chart.timeScale().fitContent();
-        const handleResize = () => chart.applyOptions({ width: el.clientWidth });
-        window.addEventListener('resize', handleResize);
-        return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
-    }, [candles, theme, showRsi]);
+    }, [showRsi]);
 
     // ─── ATR Effect ──────────────────────────────────────────────
-    useEffect(() => {
-        if (!atrRef.current || candles.length === 0 || !showAtr) return;
-        const el = atrRef.current;
-        const chart = createChart(el, { ...chartOpts(100), width: el.clientWidth });
-        const highs = candles.map(d => d.high);
-        const lows = candles.map(d => d.low);
-        const closes = candles.map(d => d.close);
-        const times = candles.map(d => d.date);
+    buildSubChart(atrRef, 100, (chart, times) => {
+        if (!showAtr) return;
+        const highs = candles.map(d => d.high); const lows = candles.map(d => d.low); const closes = candles.map(d => d.close);
         const atr = calcATR(highs, lows, closes, 14);
         chart.addSeries(LineSeries, { color: '#06b6d4', lineWidth: 2, priceLineVisible: false })
-            .setData(times.map((t, i) => atr[i] !== null ? { time: t, value: atr[i]! } : null).filter(Boolean) as any);
-        chart.timeScale().fitContent();
-        const handleResize = () => chart.applyOptions({ width: el.clientWidth });
-        window.addEventListener('resize', handleResize);
-        return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
-    }, [candles, theme, showAtr]);
+            .setData(safeLine(times, atr) as any);
+    }, [showAtr]);
 
     // ─── CCI Effect ──────────────────────────────────────────────
-    useEffect(() => {
-        if (!cciRef.current || candles.length === 0 || !showCci) return;
-        const el = cciRef.current;
-        const chart = createChart(el, { ...chartOpts(100), width: el.clientWidth });
-        const highs = candles.map(d => d.high);
-        const lows = candles.map(d => d.low);
-        const closes = candles.map(d => d.close);
-        const times = candles.map(d => d.date);
+    buildSubChart(cciRef, 100, (chart, times) => {
+        if (!showCci) return;
+        const highs = candles.map(d => d.high); const lows = candles.map(d => d.low); const closes = candles.map(d => d.close);
         const cci = calcCCI(highs, lows, closes, 20);
         chart.addSeries(LineSeries, { color: '#8b5cf6', lineWidth: 2, priceLineVisible: false })
-            .setData(times.map((t, i) => cci[i] !== null ? { time: t, value: cci[i]! } : null).filter(Boolean) as any);
-        // Overbought/Oversold lines for CCI (+100, -100)
+            .setData(safeLine(times, cci) as any);
         chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
             .setData(times.map(t => ({ time: t, value: 100 })));
         chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
             .setData(times.map(t => ({ time: t, value: -100 })));
-        chart.timeScale().fitContent();
-        const handleResize = () => chart.applyOptions({ width: el.clientWidth });
-        window.addEventListener('resize', handleResize);
-        return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
-    }, [candles, theme, showCci]);
+    }, [showCci]);
 
     // ─── ADX Effect ──────────────────────────────────────────────
-    useEffect(() => {
-        if (!adxRef.current || candles.length === 0 || !showAdx) return;
-        const el = adxRef.current;
-        const chart = createChart(el, { ...chartOpts(120), width: el.clientWidth });
-        const highs = candles.map(d => d.high);
-        const lows = candles.map(d => d.low);
-        const closes = candles.map(d => d.close);
-        const times = candles.map(d => d.date);
+    buildSubChart(adxRef, 120, (chart, times) => {
+        if (!showAdx) return;
+        const highs = candles.map(d => d.high); const lows = candles.map(d => d.low); const closes = candles.map(d => d.close);
         const { adx, pdi, ndi } = calcADX(highs, lows, closes, 14);
         chart.addSeries(LineSeries, { color: '#ec4899', lineWidth: 2, priceLineVisible: false })
-            .setData(times.map((t, i) => adx[i] !== null ? { time: t, value: adx[i]! } : null).filter(Boolean) as any);
+            .setData(safeLine(times, adx) as any);
         chart.addSeries(LineSeries, { color: '#22c55e', lineWidth: 1, priceLineVisible: false })
-            .setData(times.map((t, i) => pdi[i] !== null ? { time: t, value: pdi[i]! } : null).filter(Boolean) as any);
+            .setData(safeLine(times, pdi) as any);
         chart.addSeries(LineSeries, { color: '#ef4444', lineWidth: 1, priceLineVisible: false })
-            .setData(times.map((t, i) => ndi[i] !== null ? { time: t, value: ndi[i]! } : null).filter(Boolean) as any);
-        // Trend threshold line (25)
+            .setData(safeLine(times, ndi) as any);
         chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
             .setData(times.map(t => ({ time: t, value: 25 })));
-        chart.timeScale().fitContent();
-        const handleResize = () => chart.applyOptions({ width: el.clientWidth });
-        window.addEventListener('resize', handleResize);
-        return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
-    }, [candles, theme, showAdx]);
+    }, [showAdx]);
 
-    // ─── Williams %R Effect ──────────────────────────────────────────────
-    useEffect(() => {
-        if (!williamsRef.current || candles.length === 0 || !showWilliams) return;
-        const el = williamsRef.current;
-        const chart = createChart(el, { ...chartOpts(100), width: el.clientWidth });
-        const highs = candles.map(d => d.high);
-        const lows = candles.map(d => d.low);
-        const closes = candles.map(d => d.close);
-        const times = candles.map(d => d.date);
+    // ─── Williams %R Effect ──────────────────────────────────────
+    buildSubChart(williamsRef, 100, (chart, times) => {
+        if (!showWilliams) return;
+        const highs = candles.map(d => d.high); const lows = candles.map(d => d.low); const closes = candles.map(d => d.close);
         const williams = calcWilliamsR(highs, lows, closes, 14);
         chart.addSeries(LineSeries, { color: '#22d3ee', lineWidth: 2, priceLineVisible: false })
-            .setData(times.map((t, i) => williams[i] !== null ? { time: t, value: williams[i]! } : null).filter(Boolean) as any);
+            .setData(safeLine(times, williams) as any);
         chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
             .setData(times.map(t => ({ time: t, value: -20 })));
         chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
             .setData(times.map(t => ({ time: t, value: -80 })));
-        chart.timeScale().fitContent();
-        const handleResize = () => chart.applyOptions({ width: el.clientWidth });
-        window.addEventListener('resize', handleResize);
-        return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
-    }, [candles, theme, showWilliams]);
+    }, [showWilliams]);
 
     // ─── MFI Effect ──────────────────────────────────────────────
-    useEffect(() => {
-        if (!mfiRef.current || candles.length === 0 || !showMfi) return;
-        const el = mfiRef.current;
-        const chart = createChart(el, { ...chartOpts(100), width: el.clientWidth });
-        const highs = candles.map(d => d.high);
-        const lows = candles.map(d => d.low);
-        const closes = candles.map(d => d.close);
+    buildSubChart(mfiRef, 100, (chart, times) => {
+        if (!showMfi) return;
+        const highs = candles.map(d => d.high); const lows = candles.map(d => d.low); const closes = candles.map(d => d.close);
         const volumes = candles.map(d => (d as any).volume ?? 0) as number[];
-        const times = candles.map(d => d.date);
         const mfi = calcMFI(highs, lows, closes, volumes, 14);
         chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 2, priceLineVisible: false })
-            .setData(times.map((t, i) => mfi[i] !== null ? { time: t, value: mfi[i]! } : null).filter(Boolean) as any);
+            .setData(safeLine(times, mfi) as any);
         chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
             .setData(times.map(t => ({ time: t, value: 80 })));
         chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
             .setData(times.map(t => ({ time: t, value: 20 })));
-        chart.timeScale().fitContent();
-        const handleResize = () => chart.applyOptions({ width: el.clientWidth });
-        window.addEventListener('resize', handleResize);
-        return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
-    }, [candles, theme, showMfi]);
+    }, [showMfi]);
 
     // ─── CMF Effect ──────────────────────────────────────────────
-    useEffect(() => {
-        if (!cmfRef.current || candles.length === 0 || !showCmf) return;
-        const el = cmfRef.current;
-        const chart = createChart(el, { ...chartOpts(100), width: el.clientWidth });
-        const highs = candles.map(d => d.high);
-        const lows = candles.map(d => d.low);
-        const closes = candles.map(d => d.close);
+    buildSubChart(cmfRef, 100, (chart, times) => {
+        if (!showCmf) return;
+        const highs = candles.map(d => d.high); const lows = candles.map(d => d.low); const closes = candles.map(d => d.close);
         const volumes = candles.map(d => (d as any).volume ?? 0) as number[];
-        const times = candles.map(d => d.date);
         const cmf = calcCMF(highs, lows, closes, volumes, 20);
-        chart.addSeries(HistogramSeries, { color: '#3b82f6', priceLineVisible: false })
-            .setData(times.map((t, i) => cmf[i] !== null ? { time: t, value: cmf[i]!, color: cmf[i]! > 0 ? '#22c55e80' : '#ef444480' } : null).filter(Boolean) as any);
-        chart.timeScale().fitContent();
-        const handleResize = () => chart.applyOptions({ width: el.clientWidth });
-        window.addEventListener('resize', handleResize);
-        return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
-    }, [candles, theme, showCmf]);
+        chart.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: true })
+            .setData(times.map((t, i) => (cmf[i] === null || isNaN(cmf[i]!)) ? { time: t } : { time: t, value: cmf[i]!, color: cmf[i]! > 0 ? '#22c55e80' : '#ef444480' }) as any);
+        chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
+            .setData(times.map(t => ({ time: t, value: 0 })));
+    }, [showCmf]);
 
     // ─── Input class helper ─────────────────────────────────────
     const inputClass = `w-10 px-1 py-0.5 border rounded text-[10px] font-mono text-center focus:outline-none ${isLight ? "bg-zinc-100 border-zinc-200 text-zinc-900" : "bg-white/5 border-white/10 text-white"}`;
@@ -557,6 +503,15 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
                         </button>
                     )}
                     {loading && <span className="text-xs animate-pulse text-accent font-mono uppercase tracking-tighter">Syncing...</span>}
+                    {/* Zoom buttons */}
+                    <div className="flex items-center gap-0.5 bg-white/5 rounded-lg border border-white/10 p-0.5">
+                        <button onClick={zoomIn} className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-white/10 text-white/50 hover:text-white transition-all" title="Zoom In">
+                            <ZoomIn size={14} />
+                        </button>
+                        <button onClick={zoomOut} className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-white/10 text-white/50 hover:text-white transition-all" title="Zoom Out">
+                            <ZoomOut size={14} />
+                        </button>
+                    </div>
                     <button
                         onClick={() => setInternalShowFib(!showFib)}
                         className={`p-2 rounded-lg border transition-all ${showFib ? 'bg-cyan-400/20 border-cyan-400/40 text-cyan-400' : 'bg-white/5 border-white/10 text-muted'}`}
@@ -568,7 +523,7 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
             </div>
 
             {/* Main Candlestick */}
-            <div className="relative w-full" style={{ height: 'calc(100% - 320px)', minHeight: 400 }}>
+            <div className="relative w-full flex-1" style={{ minHeight: 300 }}>
                 {fibMode && (
                     <div
                         className="absolute inset-0 z-40 cursor-crosshair bg-white/5"
@@ -590,7 +545,6 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
                     >
                         <span className={`text-[10px] font-black uppercase tracking-[0.15em] ${fibMode ? 'text-amber-400' : 'text-muted'}`}>DRAW FIB</span>
                     </div>
-
                     <div
                         className="flex items-center gap-2 px-2 py-1 bg-card-hover/90 backdrop-blur-sm rounded border border-border/50 cursor-pointer hover:bg-card-hover transition-colors select-none"
                         onClick={() => setShowEmas(!showEmas)}
