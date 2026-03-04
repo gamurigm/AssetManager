@@ -5,7 +5,7 @@ import { TrendingUp, TrendingDown, ChevronDown, ChevronUp, Activity } from "luci
 import { createChart, ColorType, CandlestickSeries, LineSeries, HistogramSeries, createSeriesMarkers } from "lightweight-charts";
 import { usePortfolio } from "@/context/PortfolioContext";
 import { useChartData } from "@/hooks/useChartData";
-import { calcEMA, calcMACD, calcStochastic, FIBONACCI_LEVELS, calcBollingerBands, calcIchimoku } from "@/lib/indicators";
+import { calcEMA, calcMACD, calcStochastic, FIBONACCI_LEVELS, calcBollingerBands, calcIchimoku, calcRSI, calcVWAP, calcATR, calcKeltner, calcOBV, calcADX } from "@/lib/indicators";
 
 // ─── Props ──────────────────────────────────────────────────────────
 interface SymbolChartProps {
@@ -13,10 +13,16 @@ interface SymbolChartProps {
     showFib?: boolean;
     showBollinger?: boolean;
     showIchimoku?: boolean;
+    showVwap?: boolean;
+    showRsi?: boolean;
+    showAtr?: boolean;
+    showKeltner?: boolean;
+    showObv?: boolean;
+    showAdx?: boolean;
 }
 
 // ─── Component ──────────────────────────────────────────────────────
-export default function SymbolChart({ symbol, showFib: propShowFib, showBollinger = false, showIchimoku = false }: SymbolChartProps) {
+export default function SymbolChart({ symbol, showFib: propShowFib, showBollinger = false, showIchimoku = false, showVwap = false, showRsi = false, showAtr = false, showKeltner = false, showObv = false, showAdx = false }: SymbolChartProps) {
     const { holdings, closePosition, openTrade } = usePortfolio();
     const { candles, quote, loading, theme, isLight } = useChartData(symbol);
 
@@ -33,6 +39,10 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const macdRef = useRef<HTMLDivElement>(null);
     const stochRef = useRef<HTMLDivElement>(null);
+    const rsiRef = useRef<HTMLDivElement>(null);
+    const atrRef = useRef<HTMLDivElement>(null);
+    const obvRef = useRef<HTMLDivElement>(null);
+    const adxRef = useRef<HTMLDivElement>(null);
 
     // Indicator params
     const [macdFast, setMacdFast] = useState(12);
@@ -139,6 +149,36 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
                 .setData(times.map((t, i) => senkouB[i] !== null ? { time: t, value: senkouB[i]! } : null).filter(Boolean) as any);
         }
 
+        // VWAP overlay
+        if (showVwap && candles.length > 10) {
+            const highs = candles.map(d => d.high);
+            const lows = candles.map(d => d.low);
+            const closes = candles.map(d => d.close);
+            const volumes = candles.map(d => (d as any).volume ?? 0) as number[];
+            const times = candles.map(d => d.date);
+            const vwap = calcVWAP(highs, lows, closes, volumes);
+            chart.addSeries(LineSeries, { color: '#eab308', lineWidth: 2, lineStyle: 0, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: true })
+                .setData(times.map((t, i) => vwap[i] !== null ? { time: t, value: vwap[i]! } : null).filter(Boolean) as any);
+        }
+
+        // Keltner Channels overlay
+        if (showKeltner && candles.length > 20) {
+            const highs = candles.map(d => d.high);
+            const lows = candles.map(d => d.low);
+            const closes = candles.map(d => d.close);
+            const times = candles.map(d => d.date);
+            const { upper, middle, lower } = calcKeltner(highs, lows, closes, 20, 10, 2.0);
+            // Upper band
+            chart.addSeries(LineSeries, { color: '#3b82f6', lineWidth: 1, lineStyle: 0, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+                .setData(times.map((t, i) => upper[i] !== null ? { time: t, value: upper[i]! } : null).filter(Boolean) as any);
+            // Middle EMA
+            chart.addSeries(LineSeries, { color: '#3b82f680', lineWidth: 1, lineStyle: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+                .setData(times.map((t, i) => middle[i] !== null ? { time: t, value: middle[i]! } : null).filter(Boolean) as any);
+            // Lower band
+            chart.addSeries(LineSeries, { color: '#3b82f6', lineWidth: 1, lineStyle: 0, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+                .setData(times.map((t, i) => lower[i] !== null ? { time: t, value: lower[i]! } : null).filter(Boolean) as any);
+        }
+
         // Trade markers
         const myHolding = holdings.find(h => h.symbol === symbol);
         const markers: any[] = [];
@@ -158,7 +198,7 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
         const handleResize = () => chart.applyOptions({ width: el.clientWidth });
         window.addEventListener('resize', handleResize);
         return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
-    }, [candles, theme, showEmas, showFib, showBollinger, showIchimoku, ema1, ema2, ema3, holdings, transactions]);
+    }, [candles, theme, showEmas, showFib, showBollinger, showIchimoku, showVwap, showKeltner, ema1, ema2, ema3, holdings, transactions]);
 
     // ─── MACD Effect ────────────────────────────────────────────
     useEffect(() => {
@@ -199,6 +239,92 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
         window.addEventListener('resize', handleResize);
         return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
     }, [candles, theme, stochK, stochD, stochSmooth, showStoch]);
+
+    // ─── RSI Effect ─────────────────────────────────────────────
+    useEffect(() => {
+        if (!rsiRef.current || candles.length === 0 || !showRsi) return;
+        const el = rsiRef.current;
+        const chart = createChart(el, { ...chartOpts(120), width: el.clientWidth });
+        const closes = candles.map(d => d.close);
+        const times = candles.map(d => d.date);
+        const rsi = calcRSI(closes, 14);
+        // RSI line
+        chart.addSeries(LineSeries, { color: '#f59e0b', lineWidth: 2, priceLineVisible: false })
+            .setData(times.map((t, i) => rsi[i] !== null ? { time: t, value: rsi[i]! } : null).filter(Boolean) as any);
+        // Overbought line (70)
+        chart.addSeries(LineSeries, { color: '#ef444460', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
+            .setData(times.map(t => ({ time: t, value: 70 })));
+        // Oversold line (30)
+        chart.addSeries(LineSeries, { color: '#22c55e60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
+            .setData(times.map(t => ({ time: t, value: 30 })));
+        // Midline (50)
+        chart.addSeries(LineSeries, { color: '#71717a30', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
+            .setData(times.map(t => ({ time: t, value: 50 })));
+        chart.timeScale().fitContent();
+        const handleResize = () => chart.applyOptions({ width: el.clientWidth });
+        window.addEventListener('resize', handleResize);
+        return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
+    }, [candles, theme, showRsi]);
+
+    // ─── ATR Effect ──────────────────────────────────────────────
+    useEffect(() => {
+        if (!atrRef.current || candles.length === 0 || !showAtr) return;
+        const el = atrRef.current;
+        const chart = createChart(el, { ...chartOpts(100), width: el.clientWidth });
+        const highs = candles.map(d => d.high);
+        const lows = candles.map(d => d.low);
+        const closes = candles.map(d => d.close);
+        const times = candles.map(d => d.date);
+        const atr = calcATR(highs, lows, closes, 14);
+        chart.addSeries(LineSeries, { color: '#06b6d4', lineWidth: 2, priceLineVisible: false })
+            .setData(times.map((t, i) => atr[i] !== null ? { time: t, value: atr[i]! } : null).filter(Boolean) as any);
+        chart.timeScale().fitContent();
+        const handleResize = () => chart.applyOptions({ width: el.clientWidth });
+        window.addEventListener('resize', handleResize);
+        return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
+    }, [candles, theme, showAtr]);
+
+    // ─── OBV Effect ──────────────────────────────────────────────
+    useEffect(() => {
+        if (!obvRef.current || candles.length === 0 || !showObv) return;
+        const el = obvRef.current;
+        const chart = createChart(el, { ...chartOpts(100), width: el.clientWidth });
+        const closes = candles.map(d => d.close);
+        const volumes = candles.map(d => (d as any).volume ?? 0) as number[];
+        const times = candles.map(d => d.date);
+        const obv = calcOBV(closes, volumes);
+        chart.addSeries(LineSeries, { color: '#8b5cf6', lineWidth: 2, priceLineVisible: false })
+            .setData(times.map((t, i) => obv[i] !== null ? { time: t, value: obv[i]! } : null).filter(Boolean) as any);
+        chart.timeScale().fitContent();
+        const handleResize = () => chart.applyOptions({ width: el.clientWidth });
+        window.addEventListener('resize', handleResize);
+        return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
+    }, [candles, theme, showObv]);
+
+    // ─── ADX Effect ──────────────────────────────────────────────
+    useEffect(() => {
+        if (!adxRef.current || candles.length === 0 || !showAdx) return;
+        const el = adxRef.current;
+        const chart = createChart(el, { ...chartOpts(120), width: el.clientWidth });
+        const highs = candles.map(d => d.high);
+        const lows = candles.map(d => d.low);
+        const closes = candles.map(d => d.close);
+        const times = candles.map(d => d.date);
+        const { adx, pdi, ndi } = calcADX(highs, lows, closes, 14);
+        chart.addSeries(LineSeries, { color: '#ec4899', lineWidth: 2, priceLineVisible: false })
+            .setData(times.map((t, i) => adx[i] !== null ? { time: t, value: adx[i]! } : null).filter(Boolean) as any);
+        chart.addSeries(LineSeries, { color: '#22c55e', lineWidth: 1, priceLineVisible: false })
+            .setData(times.map((t, i) => pdi[i] !== null ? { time: t, value: pdi[i]! } : null).filter(Boolean) as any);
+        chart.addSeries(LineSeries, { color: '#ef4444', lineWidth: 1, priceLineVisible: false })
+            .setData(times.map((t, i) => ndi[i] !== null ? { time: t, value: ndi[i]! } : null).filter(Boolean) as any);
+        // Trend threshold line (25)
+        chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
+            .setData(times.map(t => ({ time: t, value: 25 })));
+        chart.timeScale().fitContent();
+        const handleResize = () => chart.applyOptions({ width: el.clientWidth });
+        window.addEventListener('resize', handleResize);
+        return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
+    }, [candles, theme, showAdx]);
 
     // ─── Input class helper ─────────────────────────────────────
     const inputClass = `w-10 px-1 py-0.5 border rounded text-[10px] font-mono text-center focus:outline-none ${isLight ? "bg-zinc-100 border-zinc-200 text-zinc-900" : "bg-white/5 border-white/10 text-white"}`;
@@ -318,6 +444,58 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
                 </div>
                 {showStoch && <div ref={stochRef} className="w-full" style={{ height: 130 }} />}
             </div>
+
+            {/* RSI Panel */}
+            {showRsi && (
+                <div className="border-t border-border/30 flex-shrink-0">
+                    <div className="flex items-center justify-between px-3 py-1.5 bg-card-hover/30">
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black uppercase tracking-[0.15em] text-amber-400/80">RSI (14)</span>
+                            <span className="text-[8px] text-muted font-bold">70 / 30</span>
+                        </div>
+                    </div>
+                    <div ref={rsiRef} className="w-full" style={{ height: 120 }} />
+                </div>
+            )}
+
+            {/* ATR Panel */}
+            {showAtr && (
+                <div className="border-t border-border/30 flex-shrink-0">
+                    <div className="flex items-center justify-between px-3 py-1.5 bg-card-hover/30">
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black uppercase tracking-[0.15em] text-cyan-400/80">ATR (14)</span>
+                            <span className="text-[8px] text-muted font-bold">Volatility</span>
+                        </div>
+                    </div>
+                    <div ref={atrRef} className="w-full" style={{ height: 100 }} />
+                </div>
+            )}
+
+            {/* OBV Panel */}
+            {showObv && (
+                <div className="border-t border-border/30 flex-shrink-0">
+                    <div className="flex items-center justify-between px-3 py-1.5 bg-card-hover/30">
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black uppercase tracking-[0.15em] text-violet-400/80">OBV</span>
+                            <span className="text-[8px] text-muted font-bold">Volume Flow</span>
+                        </div>
+                    </div>
+                    <div ref={obvRef} className="w-full" style={{ height: 100 }} />
+                </div>
+            )}
+
+            {/* ADX Panel */}
+            {showAdx && (
+                <div className="border-t border-border/30 flex-shrink-0">
+                    <div className="flex items-center justify-between px-3 py-1.5 bg-card-hover/30">
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black uppercase tracking-[0.15em] text-pink-400/80">ADX (14)</span>
+                            <span className="text-[8px] text-muted font-bold">Trend Strength</span>
+                        </div>
+                    </div>
+                    <div ref={adxRef} className="w-full" style={{ height: 120 }} />
+                </div>
+            )}
         </div>
     );
 }

@@ -167,3 +167,229 @@ export function calcIchimoku(
 
     return { tenkan, kijun, senkouA, senkouB, chikou };
 }
+
+/**
+ * RSI (Relative Strength Index) — Wilder's smoothing
+ * Returns values 0-100. Overbought > 70, Oversold < 30.
+ */
+export function calcRSI(closes: number[], period = 14): (number | null)[] {
+    const rsi: (number | null)[] = [];
+    if (closes.length < period + 1) return closes.map(() => null);
+
+    // Calculate price changes
+    const changes: number[] = [];
+    for (let i = 1; i < closes.length; i++) {
+        changes.push(closes[i] - closes[i - 1]);
+    }
+
+    // First average gain/loss (simple average)
+    let avgGain = 0;
+    let avgLoss = 0;
+    for (let i = 0; i < period; i++) {
+        if (changes[i] >= 0) avgGain += changes[i];
+        else avgLoss += Math.abs(changes[i]);
+    }
+    avgGain /= period;
+    avgLoss /= period;
+
+    // Fill nulls for the warm-up period
+    rsi.push(null); // index 0 has no change
+    for (let i = 0; i < period - 1; i++) rsi.push(null);
+
+    // First RSI value
+    const rs0 = avgLoss === 0 ? 100 : avgGain / avgLoss;
+    rsi.push(avgLoss === 0 ? 100 : 100 - 100 / (1 + rs0));
+
+    // Subsequent RSI values using Wilder's smoothing
+    for (let i = period; i < changes.length; i++) {
+        const gain = changes[i] >= 0 ? changes[i] : 0;
+        const loss = changes[i] < 0 ? Math.abs(changes[i]) : 0;
+        avgGain = (avgGain * (period - 1) + gain) / period;
+        avgLoss = (avgLoss * (period - 1) + loss) / period;
+        const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+        rsi.push(avgLoss === 0 ? 100 : 100 - 100 / (1 + rs));
+    }
+
+    return rsi;
+}
+
+/**
+ * VWAP (Volume Weighted Average Price)
+ * Cumulative (Typical Price × Volume) / Cumulative Volume
+ * Resets each session (we treat the entire dataset as one session for daily data).
+ */
+export function calcVWAP(
+    highs: number[],
+    lows: number[],
+    closes: number[],
+    volumes: number[]
+): (number | null)[] {
+    const vwap: (number | null)[] = [];
+    let cumTPV = 0;
+    let cumVol = 0;
+
+    for (let i = 0; i < closes.length; i++) {
+        const tp = (highs[i] + lows[i] + closes[i]) / 3;
+        const vol = volumes[i] || 0;
+        cumTPV += tp * vol;
+        cumVol += vol;
+        vwap.push(cumVol > 0 ? cumTPV / cumVol : null);
+    }
+
+    return vwap;
+}
+
+/**
+ * ATR (Average True Range) — Wilder's smoothing
+ * Measures volatility as the smoothed average of True Range.
+ */
+export function calcATR(
+    highs: number[],
+    lows: number[],
+    closes: number[],
+    period = 14
+): (number | null)[] {
+    const atr: (number | null)[] = [];
+    if (closes.length < 2) return closes.map(() => null);
+
+    // True Range
+    const tr: number[] = [highs[0] - lows[0]];
+    for (let i = 1; i < closes.length; i++) {
+        tr.push(Math.max(
+            highs[i] - lows[i],
+            Math.abs(highs[i] - closes[i - 1]),
+            Math.abs(lows[i] - closes[i - 1])
+        ));
+    }
+
+    // Warm-up
+    for (let i = 0; i < period - 1; i++) atr.push(null);
+
+    // First ATR = simple average of first `period` TRs
+    let avg = tr.slice(0, period).reduce((s, v) => s + v, 0) / period;
+    atr.push(avg);
+
+    // Wilder's smoothing
+    for (let i = period; i < tr.length; i++) {
+        avg = (avg * (period - 1) + tr[i]) / period;
+        atr.push(avg);
+    }
+
+    return atr;
+}
+
+/**
+ * Keltner Channels
+ * Middle = EMA. Upper/Lower = Middle ± Multiplier × ATR
+ */
+export function calcKeltner(
+    highs: number[],
+    lows: number[],
+    closes: number[],
+    emaPeriod = 20,
+    atrPeriod = 10,
+    multiplier = 2.0
+) {
+    const middle = calcEMA(closes, emaPeriod);
+    const atr = calcATR(highs, lows, closes, atrPeriod);
+    const upper: (number | null)[] = [];
+    const lower: (number | null)[] = [];
+
+    for (let i = 0; i < closes.length; i++) {
+        if (i < Math.max(emaPeriod, atrPeriod) - 1 || atr[i] === null) {
+            upper.push(null);
+            lower.push(null);
+        } else {
+            upper.push(middle[i] + multiplier * atr[i]!);
+            lower.push(middle[i] - multiplier * atr[i]!);
+        }
+    }
+
+    return { middle, upper, lower };
+}
+
+/**
+ * OBV (On-Balance Volume)
+ * Cumulative measure of buying/selling pressure.
+ */
+export function calcOBV(closes: number[], volumes: number[]): (number | null)[] {
+    const obv: (number | null)[] = [];
+    if (closes.length === 0) return obv;
+
+    let currentV = 0;
+    obv.push(currentV);
+
+    for (let i = 1; i < closes.length; i++) {
+        const vol = volumes[i] || 0;
+        if (closes[i] > closes[i - 1]) currentV += vol;
+        else if (closes[i] < closes[i - 1]) currentV -= vol;
+        obv.push(currentV);
+    }
+
+    return obv;
+}
+
+/**
+ * ADX (Average Directional Index)
+ * Measures trend strength (values typically 0-100). Includes +DI and -DI.
+ */
+export function calcADX(highs: number[], lows: number[], closes: number[], period = 14) {
+    const len = closes.length;
+    const adx: (number | null)[] = Array(len).fill(null);
+    const pdi: (number | null)[] = Array(len).fill(null);
+    const ndi: (number | null)[] = Array(len).fill(null);
+
+    if (len < period + 1) return { adx, pdi, ndi };
+
+    const tr = [0];
+    const pdm = [0];
+    const ndm = [0];
+
+    for (let i = 1; i < len; i++) {
+        tr.push(Math.max(
+            highs[i] - lows[i],
+            Math.abs(highs[i] - closes[i - 1]),
+            Math.abs(lows[i] - closes[i - 1])
+        ));
+        const upMove = highs[i] - highs[i - 1];
+        const downMove = lows[i - 1] - lows[i];
+
+        pdm.push(upMove > downMove && upMove > 0 ? upMove : 0);
+        ndm.push(downMove > upMove && downMove > 0 ? downMove : 0);
+    }
+
+    let smoothTR = 0, smoothPDM = 0, smoothNDM = 0;
+    for (let i = 1; i <= period; i++) {
+        smoothTR += tr[i];
+        smoothPDM += pdm[i];
+        smoothNDM += ndm[i];
+    }
+
+    let dxSum = 0;
+
+    for (let i = period; i < len; i++) {
+        if (i > period) {
+            smoothTR = smoothTR - (smoothTR / period) + tr[i];
+            smoothPDM = smoothPDM - (smoothPDM / period) + pdm[i];
+            smoothNDM = smoothNDM - (smoothNDM / period) + ndm[i];
+        }
+
+        const diPlus = smoothTR === 0 ? 0 : 100 * (smoothPDM / smoothTR);
+        const diMinus = smoothTR === 0 ? 0 : 100 * (smoothNDM / smoothTR);
+        pdi[i] = diPlus;
+        ndi[i] = diMinus;
+
+        const dx = (diPlus + diMinus === 0) ? 0 : 100 * (Math.abs(diPlus - diMinus) / (diPlus + diMinus));
+
+        if (i < 2 * period - 1) {
+            dxSum += dx;
+        } else if (i === 2 * period - 1) {
+            dxSum += dx;
+            adx[i] = dxSum / period;
+        } else {
+            adx[i] = ((adx[i - 1]! * (period - 1)) + dx) / period;
+        }
+    }
+
+    return { adx, pdi, ndi };
+}

@@ -25,6 +25,18 @@ interface DashboardSidebarProps {
     setShowBollinger: (v: boolean) => void;
     showIchimoku: boolean;
     setShowIchimoku: (v: boolean) => void;
+    showVwap: boolean;
+    setShowVwap: (v: boolean) => void;
+    showRsi: boolean;
+    setShowRsi: (v: boolean) => void;
+    showAtr: boolean;
+    setShowAtr: (v: boolean) => void;
+    showKeltner: boolean;
+    setShowKeltner: (v: boolean) => void;
+    showObv: boolean;
+    setShowObv: (v: boolean) => void;
+    showAdx: boolean;
+    setShowAdx: (v: boolean) => void;
     transactions: TransactionRecord[];
     onSelectSymbol: (symbol: string) => void;
 }
@@ -33,6 +45,8 @@ interface DashboardSidebarProps {
 export default function DashboardSidebar({
     pinned, setPinned, activeTab, setActiveTab,
     showFib, setShowFib, showBollinger, setShowBollinger, showIchimoku, setShowIchimoku,
+    showVwap, setShowVwap, showRsi, setShowRsi, showAtr, setShowAtr,
+    showKeltner, setShowKeltner, showObv, setShowObv, showAdx, setShowAdx,
     transactions, onSelectSymbol,
 }: DashboardSidebarProps) {
     const expanded = pinned;
@@ -84,7 +98,7 @@ export default function DashboardSidebar({
                 <div className="flex-1 bg-card/50 backdrop-blur-3xl border-l border-border/15 flex flex-col h-full shadow-[-25px_0_50px_rgba(0,0,0,0.1)] overflow-hidden animate-in slide-in-from-right duration-500">
                     {activeTab === 'watchlist' && <Watchlist onSelectSymbol={onSelectSymbol} />}
 
-                    {activeTab === 'indicators' && <IndicatorsPanel showFib={showFib} setShowFib={setShowFib} showBollinger={showBollinger} setShowBollinger={setShowBollinger} showIchimoku={showIchimoku} setShowIchimoku={setShowIchimoku} />}
+                    {activeTab === 'indicators' && <IndicatorsPanel showFib={showFib} setShowFib={setShowFib} showBollinger={showBollinger} setShowBollinger={setShowBollinger} showIchimoku={showIchimoku} setShowIchimoku={setShowIchimoku} showVwap={showVwap} setShowVwap={setShowVwap} showRsi={showRsi} setShowRsi={setShowRsi} showAtr={showAtr} setShowAtr={setShowAtr} showKeltner={showKeltner} setShowKeltner={setShowKeltner} showObv={showObv} setShowObv={setShowObv} showAdx={showAdx} setShowAdx={setShowAdx} />}
 
                     {activeTab === 'alerts' && <AlertsPanel />}
 
@@ -109,10 +123,16 @@ function RailButton({ active, onClick, title, children, activeClass, hoverClass 
     );
 }
 
-function IndicatorsPanel({ showFib, setShowFib, showBollinger, setShowBollinger, showIchimoku, setShowIchimoku }: {
+function IndicatorsPanel({ showFib, setShowFib, showBollinger, setShowBollinger, showIchimoku, setShowIchimoku, showVwap, setShowVwap, showRsi, setShowRsi, showAtr, setShowAtr, showKeltner, setShowKeltner, showObv, setShowObv, showAdx, setShowAdx }: {
     showFib: boolean; setShowFib: (v: boolean) => void;
     showBollinger: boolean; setShowBollinger: (v: boolean) => void;
     showIchimoku: boolean; setShowIchimoku: (v: boolean) => void;
+    showVwap: boolean; setShowVwap: (v: boolean) => void;
+    showRsi: boolean; setShowRsi: (v: boolean) => void;
+    showAtr: boolean; setShowAtr: (v: boolean) => void;
+    showKeltner: boolean; setShowKeltner: (v: boolean) => void;
+    showObv: boolean; setShowObv: (v: boolean) => void;
+    showAdx: boolean; setShowAdx: (v: boolean) => void;
 }) {
     return (
         <div className="flex-1 p-6 overflow-y-auto">
@@ -126,31 +146,24 @@ function IndicatorsPanel({ showFib, setShowFib, showBollinger, setShowBollinger,
                 </div>
             </div>
 
+            <p className="text-[9px] text-muted/60 font-bold uppercase tracking-widest mb-2">Overlays</p>
             <div className="space-y-3">
-                <IndicatorToggle
-                    active={showFib}
-                    onClick={() => setShowFib(!showFib)}
-                    name="Fibonacci Auto-Levels"
-                    desc="Golden ratio retracements (23.6 - 78.6%)"
-                    activeColor="cyan"
-                />
-                <IndicatorToggle
-                    active={showBollinger}
-                    onClick={() => setShowBollinger(!showBollinger)}
-                    name="Bollinger Bands"
-                    desc="20 Period SMA ± 2.0 Standard Deviations"
-                    activeColor="purple"
-                />
-                <IndicatorToggle
-                    active={showIchimoku}
-                    onClick={() => setShowIchimoku(!showIchimoku)}
-                    name="Ichimoku Cloud"
-                    desc="Tenkan (9) / Kijun (26) / Senkou / Chikou"
-                    activeColor="orange"
-                />
+                <IndicatorToggle active={showFib} onClick={() => setShowFib(!showFib)} name="Fibonacci Auto-Levels" desc="Golden ratio retracements (23.6 - 78.6%)" activeColor="cyan" />
+                <IndicatorToggle active={showBollinger} onClick={() => setShowBollinger(!showBollinger)} name="Bollinger Bands" desc="20 Period SMA ± 2.0 Standard Deviations" activeColor="purple" />
+                <IndicatorToggle active={showKeltner} onClick={() => setShowKeltner(!showKeltner)} name="Keltner Channels" desc="EMA ± Multiplier × ATR" activeColor="blue" />
+                <IndicatorToggle active={showIchimoku} onClick={() => setShowIchimoku(!showIchimoku)} name="Ichimoku Cloud" desc="Tenkan (9) / Kijun (26) / Senkou / Chikou" activeColor="orange" />
+                <IndicatorToggle active={showVwap} onClick={() => setShowVwap(!showVwap)} name="VWAP" desc="Volume Weighted Average Price (institutional)" activeColor="yellow" />
             </div>
 
-            <div className="mt-12 pt-6 border-t border-white/5">
+            <p className="text-[9px] text-muted/60 font-bold uppercase tracking-widest mt-6 mb-2">Oscillators & Volatility</p>
+            <div className="space-y-3">
+                <IndicatorToggle active={showRsi} onClick={() => setShowRsi(!showRsi)} name="RSI (14)" desc="Relative Strength Index — Overbought 70 / Oversold 30" activeColor="amber" />
+                <IndicatorToggle active={showAtr} onClick={() => setShowAtr(!showAtr)} name="ATR (14)" desc="Average True Range — Wilder's Volatility Metric" activeColor="teal" />
+                <IndicatorToggle active={showObv} onClick={() => setShowObv(!showObv)} name="OBV" desc="On-Balance Volume — Buying vs Selling Pressure" activeColor="violet" />
+                <IndicatorToggle active={showAdx} onClick={() => setShowAdx(!showAdx)} name="ADX (14)" desc="Average Directional Index — Trend Strength" activeColor="pink" />
+            </div>
+
+            <div className="mt-8 pt-6 border-t border-white/5">
                 <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-cyan-400/50 mb-3">AI Command</h4>
                 <div className="p-3 rounded-xl bg-background/50 border border-white/5 text-[10px] text-muted font-mono leading-relaxed">
                     Ask the agent in Chat to apply custom indicators like <strong>RSI</strong> or <strong>MACD</strong> with specific parameters.
@@ -167,6 +180,12 @@ function IndicatorToggle({ active, onClick, name, desc, activeColor }: {
         cyan: { bg: 'bg-cyan-400/10', border: 'border-cyan-400/30', text: 'text-cyan-400', glow: 'shadow-[0_0_12px_rgba(34,211,238,0.8)]', hoverBg: 'hover:bg-cyan-400/5', hoverBorder: 'hover:border-cyan-400/30' },
         purple: { bg: 'bg-purple-400/10', border: 'border-purple-400/30', text: 'text-purple-400', glow: 'shadow-[0_0_12px_rgba(168,85,247,0.8)]', hoverBg: 'hover:bg-purple-400/5', hoverBorder: 'hover:border-purple-400/30' },
         orange: { bg: 'bg-orange-400/10', border: 'border-orange-400/30', text: 'text-orange-400', glow: 'shadow-[0_0_12px_rgba(251,146,60,0.8)]', hoverBg: 'hover:bg-orange-400/5', hoverBorder: 'hover:border-orange-400/30' },
+        yellow: { bg: 'bg-yellow-400/10', border: 'border-yellow-400/30', text: 'text-yellow-400', glow: 'shadow-[0_0_12px_rgba(250,204,21,0.8)]', hoverBg: 'hover:bg-yellow-400/5', hoverBorder: 'hover:border-yellow-400/30' },
+        amber: { bg: 'bg-amber-400/10', border: 'border-amber-400/30', text: 'text-amber-400', glow: 'shadow-[0_0_12px_rgba(251,191,36,0.8)]', hoverBg: 'hover:bg-amber-400/5', hoverBorder: 'hover:border-amber-400/30' },
+        teal: { bg: 'bg-teal-400/10', border: 'border-teal-400/30', text: 'text-teal-400', glow: 'shadow-[0_0_12px_rgba(45,212,191,0.8)]', hoverBg: 'hover:bg-teal-400/5', hoverBorder: 'hover:border-teal-400/30' },
+        blue: { bg: 'bg-blue-400/10', border: 'border-blue-400/30', text: 'text-blue-400', glow: 'shadow-[0_0_12px_rgba(59,130,246,0.8)]', hoverBg: 'hover:bg-blue-400/5', hoverBorder: 'hover:border-blue-400/30' },
+        violet: { bg: 'bg-violet-400/10', border: 'border-violet-400/30', text: 'text-violet-400', glow: 'shadow-[0_0_12px_rgba(139,92,246,0.8)]', hoverBg: 'hover:bg-violet-400/5', hoverBorder: 'hover:border-violet-400/30' },
+        pink: { bg: 'bg-pink-400/10', border: 'border-pink-400/30', text: 'text-pink-400', glow: 'shadow-[0_0_12px_rgba(236,72,153,0.8)]', hoverBg: 'hover:bg-pink-400/5', hoverBorder: 'hover:border-pink-400/30' },
     };
     const c = colorMap[activeColor] || colorMap.cyan;
     return (

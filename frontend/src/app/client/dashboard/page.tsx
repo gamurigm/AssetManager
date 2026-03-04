@@ -33,6 +33,12 @@ export default function ClientDashboard() {
     const [globalShowFib, setGlobalShowFib] = useState(false);
     const [globalShowBollinger, setGlobalShowBollinger] = useState(false);
     const [globalShowIchimoku, setGlobalShowIchimoku] = useState(false);
+    const [globalShowVwap, setGlobalShowVwap] = useState(false);
+    const [globalShowRsi, setGlobalShowRsi] = useState(false);
+    const [globalShowAtr, setGlobalShowAtr] = useState(false);
+    const [globalShowKeltner, setGlobalShowKeltner] = useState(false);
+    const [globalShowObv, setGlobalShowObv] = useState(false);
+    const [globalShowAdx, setGlobalShowAdx] = useState(false);
 
     // Tab actions
     const openSymbolTab = (symbol: string) => {
@@ -92,7 +98,7 @@ export default function ClientDashboard() {
                             />
                         ) : (
                             <div className="flex-1 min-h-0 rounded-2xl overflow-hidden border border-border bg-card">
-                                <SymbolChart symbol={activeTab} showFib={globalShowFib} showBollinger={globalShowBollinger} showIchimoku={globalShowIchimoku} />
+                                <SymbolChart symbol={activeTab} showFib={globalShowFib} showBollinger={globalShowBollinger} showIchimoku={globalShowIchimoku} showVwap={globalShowVwap} showRsi={globalShowRsi} showAtr={globalShowAtr} showKeltner={globalShowKeltner} showObv={globalShowObv} showAdx={globalShowAdx} />
                             </div>
                         )}
                     </div>
@@ -109,6 +115,18 @@ export default function ClientDashboard() {
                         setShowBollinger={setGlobalShowBollinger}
                         showIchimoku={globalShowIchimoku}
                         setShowIchimoku={setGlobalShowIchimoku}
+                        showVwap={globalShowVwap}
+                        setShowVwap={setGlobalShowVwap}
+                        showRsi={globalShowRsi}
+                        setShowRsi={setGlobalShowRsi}
+                        showAtr={globalShowAtr}
+                        setShowAtr={setGlobalShowAtr}
+                        showKeltner={globalShowKeltner}
+                        setShowKeltner={setGlobalShowKeltner}
+                        showObv={globalShowObv}
+                        setShowObv={setGlobalShowObv}
+                        showAdx={globalShowAdx}
+                        setShowAdx={setGlobalShowAdx}
                         transactions={transactions}
                         onSelectSymbol={openSymbolTab}
                     />
