@@ -78,3 +78,92 @@ export const FIBONACCI_LEVELS = [
     { level: 0.786, text: '78.6%', color: '#f87171' },
     { level: 1.000, text: '100% (Low)', color: '#ef4444' },
 ] as const;
+
+/**
+ * Simple Moving Average
+ */
+export function calcSMA(data: number[], period: number): (number | null)[] {
+    const result: (number | null)[] = [];
+    for (let i = 0; i < data.length; i++) {
+        if (i < period - 1) { result.push(null); continue; }
+        const slice = data.slice(i - period + 1, i + 1);
+        result.push(slice.reduce((s, v) => s + v, 0) / period);
+    }
+    return result;
+}
+
+/**
+ * Bollinger Bands (SMA ± k * σ)
+ */
+export function calcBollingerBands(closes: number[], period = 20, multiplier = 2.0) {
+    const middle = calcSMA(closes, period);
+    const upper: (number | null)[] = [];
+    const lower: (number | null)[] = [];
+    for (let i = 0; i < closes.length; i++) {
+        if (middle[i] === null) { upper.push(null); lower.push(null); continue; }
+        const slice = closes.slice(i - period + 1, i + 1);
+        const mean = middle[i]!;
+        const variance = slice.reduce((s, v) => s + (v - mean) ** 2, 0) / period;
+        const std = Math.sqrt(variance);
+        upper.push(mean + multiplier * std);
+        lower.push(mean - multiplier * std);
+    }
+    return { upper, middle, lower };
+}
+
+/**
+ * Ichimoku Cloud
+ * Tenkan-sen (9), Kijun-sen (26), Senkou A, Senkou B (52), Chikou (26 behind)
+ */
+function highLowMid(highs: number[], lows: number[], start: number, end: number): number | null {
+    if (start < 0) return null;
+    const hSlice = highs.slice(start, end + 1);
+    const lSlice = lows.slice(start, end + 1);
+    if (hSlice.length === 0) return null;
+    return (Math.max(...hSlice) + Math.min(...lSlice)) / 2;
+}
+
+export function calcIchimoku(
+    highs: number[],
+    lows: number[],
+    closes: number[],
+    tenkanPeriod = 9,
+    kijunPeriod = 26,
+    senkouBPeriod = 52,
+    displacement = 26
+) {
+    const len = closes.length;
+    const tenkan: (number | null)[] = [];
+    const kijun: (number | null)[] = [];
+    const senkouA: (number | null)[] = [];
+    const senkouB: (number | null)[] = [];
+    const chikou: (number | null)[] = [];
+
+    for (let i = 0; i < len; i++) {
+        tenkan.push(i >= tenkanPeriod - 1 ? highLowMid(highs, lows, i - tenkanPeriod + 1, i) : null);
+        kijun.push(i >= kijunPeriod - 1 ? highLowMid(highs, lows, i - kijunPeriod + 1, i) : null);
+    }
+
+    // Senkou A & B are displaced forward by `displacement` periods
+    // We store them in arrays of length len + displacement, but for chart overlay we match by index
+    for (let i = 0; i < len + displacement; i++) {
+        const srcIdx = i - displacement;
+        if (srcIdx >= 0 && srcIdx < len && tenkan[srcIdx] !== null && kijun[srcIdx] !== null) {
+            senkouA.push((tenkan[srcIdx]! + kijun[srcIdx]!) / 2);
+        } else {
+            senkouA.push(null);
+        }
+        if (srcIdx >= 0 && srcIdx < len && srcIdx >= senkouBPeriod - 1) {
+            senkouB.push(highLowMid(highs, lows, srcIdx - senkouBPeriod + 1, srcIdx));
+        } else {
+            senkouB.push(null);
+        }
+    }
+
+    // Chikou = close displaced backwards
+    for (let i = 0; i < len; i++) {
+        chikou.push(i + displacement < len ? closes[i + displacement] : null);
+    }
+
+    return { tenkan, kijun, senkouA, senkouB, chikou };
+}

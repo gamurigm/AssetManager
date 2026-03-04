@@ -4,7 +4,7 @@ import React from "react";
 import dynamic from "next/dynamic";
 import {
     TrendingUp, Activity, Bell, Settings, Pin, PinOff,
-    Lock as LockIcon, History as HistoryIcon
+    History as HistoryIcon
 } from "lucide-react";
 import type { SidebarTab, TransactionRecord } from "@/types/dashboard";
 
@@ -21,6 +21,10 @@ interface DashboardSidebarProps {
     setActiveTab: (tab: SidebarTab) => void;
     showFib: boolean;
     setShowFib: (v: boolean) => void;
+    showBollinger: boolean;
+    setShowBollinger: (v: boolean) => void;
+    showIchimoku: boolean;
+    setShowIchimoku: (v: boolean) => void;
     transactions: TransactionRecord[];
     onSelectSymbol: (symbol: string) => void;
 }
@@ -28,7 +32,8 @@ interface DashboardSidebarProps {
 // ─── Component ──────────────────────────────────────────────────────
 export default function DashboardSidebar({
     pinned, setPinned, activeTab, setActiveTab,
-    showFib, setShowFib, transactions, onSelectSymbol,
+    showFib, setShowFib, showBollinger, setShowBollinger, showIchimoku, setShowIchimoku,
+    transactions, onSelectSymbol,
 }: DashboardSidebarProps) {
     const expanded = pinned;
 
@@ -79,7 +84,7 @@ export default function DashboardSidebar({
                 <div className="flex-1 bg-card/50 backdrop-blur-3xl border-l border-border/15 flex flex-col h-full shadow-[-25px_0_50px_rgba(0,0,0,0.1)] overflow-hidden animate-in slide-in-from-right duration-500">
                     {activeTab === 'watchlist' && <Watchlist onSelectSymbol={onSelectSymbol} />}
 
-                    {activeTab === 'indicators' && <IndicatorsPanel showFib={showFib} setShowFib={setShowFib} />}
+                    {activeTab === 'indicators' && <IndicatorsPanel showFib={showFib} setShowFib={setShowFib} showBollinger={showBollinger} setShowBollinger={setShowBollinger} showIchimoku={showIchimoku} setShowIchimoku={setShowIchimoku} />}
 
                     {activeTab === 'alerts' && <AlertsPanel />}
 
@@ -104,7 +109,11 @@ function RailButton({ active, onClick, title, children, activeClass, hoverClass 
     );
 }
 
-function IndicatorsPanel({ showFib, setShowFib }: { showFib: boolean; setShowFib: (v: boolean) => void }) {
+function IndicatorsPanel({ showFib, setShowFib, showBollinger, setShowBollinger, showIchimoku, setShowIchimoku }: {
+    showFib: boolean; setShowFib: (v: boolean) => void;
+    showBollinger: boolean; setShowBollinger: (v: boolean) => void;
+    showIchimoku: boolean; setShowIchimoku: (v: boolean) => void;
+}) {
     return (
         <div className="flex-1 p-6 overflow-y-auto">
             <div className="flex items-center gap-3 mb-8">
@@ -118,21 +127,27 @@ function IndicatorsPanel({ showFib, setShowFib }: { showFib: boolean; setShowFib
             </div>
 
             <div className="space-y-3">
-                <div
+                <IndicatorToggle
+                    active={showFib}
                     onClick={() => setShowFib(!showFib)}
-                    className={`p-4 rounded-2xl border transition-all cursor-pointer group ${showFib ? 'bg-cyan-400/10 border-cyan-400/30' : 'bg-white/5 border-white/10 hover:bg-cyan-400/5 hover:border-cyan-400/30'}`}
-                >
-                    <div className="flex items-center justify-between">
-                        <div>
-                            <div className={`text-xs font-black transition-colors ${showFib ? 'text-cyan-400' : 'text-white group-hover:text-cyan-400'}`}>Fibonacci Auto-Levels</div>
-                            <div className="text-[9px] text-muted font-bold mt-1 line-clamp-1">Golden ratio retracements (23.6 - 78.6%)</div>
-                        </div>
-                        <div className={`h-2.5 w-2.5 rounded-full transition-all ${showFib ? 'bg-cyan-400 shadow-[0_0_12px_rgba(34,211,238,0.8)]' : 'bg-zinc-700'}`} />
-                    </div>
-                </div>
-
-                <LockedIndicator name="Bollinger Bands" desc="2.0 Standard Deviations / 20 Period" hoverColor="purple" />
-                <LockedIndicator name="Ichimoku Cloud" desc="Equilibrium Chart / Trend Cloud" hoverColor="orange" />
+                    name="Fibonacci Auto-Levels"
+                    desc="Golden ratio retracements (23.6 - 78.6%)"
+                    activeColor="cyan"
+                />
+                <IndicatorToggle
+                    active={showBollinger}
+                    onClick={() => setShowBollinger(!showBollinger)}
+                    name="Bollinger Bands"
+                    desc="20 Period SMA ± 2.0 Standard Deviations"
+                    activeColor="purple"
+                />
+                <IndicatorToggle
+                    active={showIchimoku}
+                    onClick={() => setShowIchimoku(!showIchimoku)}
+                    name="Ichimoku Cloud"
+                    desc="Tenkan (9) / Kijun (26) / Senkou / Chikou"
+                    activeColor="orange"
+                />
             </div>
 
             <div className="mt-12 pt-6 border-t border-white/5">
@@ -145,19 +160,32 @@ function IndicatorsPanel({ showFib, setShowFib }: { showFib: boolean; setShowFib
     );
 }
 
-function LockedIndicator({ name, desc, hoverColor }: { name: string; desc: string; hoverColor: string }) {
+function IndicatorToggle({ active, onClick, name, desc, activeColor }: {
+    active: boolean; onClick: () => void; name: string; desc: string; activeColor: string;
+}) {
+    const colorMap: Record<string, { bg: string; border: string; text: string; glow: string; hoverBg: string; hoverBorder: string }> = {
+        cyan: { bg: 'bg-cyan-400/10', border: 'border-cyan-400/30', text: 'text-cyan-400', glow: 'shadow-[0_0_12px_rgba(34,211,238,0.8)]', hoverBg: 'hover:bg-cyan-400/5', hoverBorder: 'hover:border-cyan-400/30' },
+        purple: { bg: 'bg-purple-400/10', border: 'border-purple-400/30', text: 'text-purple-400', glow: 'shadow-[0_0_12px_rgba(168,85,247,0.8)]', hoverBg: 'hover:bg-purple-400/5', hoverBorder: 'hover:border-purple-400/30' },
+        orange: { bg: 'bg-orange-400/10', border: 'border-orange-400/30', text: 'text-orange-400', glow: 'shadow-[0_0_12px_rgba(251,146,60,0.8)]', hoverBg: 'hover:bg-orange-400/5', hoverBorder: 'hover:border-orange-400/30' },
+    };
+    const c = colorMap[activeColor] || colorMap.cyan;
     return (
-        <div className={`p-4 rounded-2xl bg-white/5 border border-white/10 hover:bg-${hoverColor}-400/5 hover:border-${hoverColor}-400/30 transition-all cursor-pointer group opacity-60`}>
+        <div
+            onClick={onClick}
+            className={`p-4 rounded-2xl border transition-all cursor-pointer group ${active ? `${c.bg} ${c.border}` : `bg-white/5 border-white/10 ${c.hoverBg} ${c.hoverBorder}`
+                }`}
+        >
             <div className="flex items-center justify-between">
                 <div>
-                    <div className={`text-xs font-black text-zinc-400 group-hover:text-${hoverColor}-400 transition-colors`}>{name}</div>
-                    <div className="text-[9px] text-zinc-600 font-bold mt-1">{desc}</div>
+                    <div className={`text-xs font-black transition-colors ${active ? c.text : `text-white group-hover:${c.text}`}`}>{name}</div>
+                    <div className="text-[9px] text-muted font-bold mt-1 line-clamp-1">{desc}</div>
                 </div>
-                <LockIcon size={12} className="text-zinc-700" />
+                <div className={`h-2.5 w-2.5 rounded-full transition-all ${active ? `bg-current ${c.text} ${c.glow}` : 'bg-zinc-700'}`} />
             </div>
         </div>
     );
 }
+
 
 function AlertsPanel() {
     return (

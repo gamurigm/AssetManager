@@ -2,19 +2,21 @@
 
 import React, { useRef, useState, useEffect } from "react";
 import { TrendingUp, TrendingDown, ChevronDown, ChevronUp, Activity } from "lucide-react";
-import { createChart, ColorType, CandlestickSeries, LineSeries, HistogramSeries } from "lightweight-charts";
+import { createChart, ColorType, CandlestickSeries, LineSeries, HistogramSeries, createSeriesMarkers } from "lightweight-charts";
 import { usePortfolio } from "@/context/PortfolioContext";
 import { useChartData } from "@/hooks/useChartData";
-import { calcEMA, calcMACD, calcStochastic, FIBONACCI_LEVELS } from "@/lib/indicators";
+import { calcEMA, calcMACD, calcStochastic, FIBONACCI_LEVELS, calcBollingerBands, calcIchimoku } from "@/lib/indicators";
 
 // ─── Props ──────────────────────────────────────────────────────────
 interface SymbolChartProps {
     symbol: string;
     showFib?: boolean;
+    showBollinger?: boolean;
+    showIchimoku?: boolean;
 }
 
 // ─── Component ──────────────────────────────────────────────────────
-export default function SymbolChart({ symbol, showFib: propShowFib }: SymbolChartProps) {
+export default function SymbolChart({ symbol, showFib: propShowFib, showBollinger = false, showIchimoku = false }: SymbolChartProps) {
     const { holdings, closePosition, openTrade } = usePortfolio();
     const { candles, quote, loading, theme, isLight } = useChartData(symbol);
 
@@ -100,6 +102,43 @@ export default function SymbolChart({ symbol, showFib: propShowFib }: SymbolChar
             });
         }
 
+        // Bollinger Bands overlay
+        if (showBollinger && candles.length > 20) {
+            const closes = candles.map(d => d.close);
+            const times = candles.map(d => d.date);
+            const { upper, middle, lower } = calcBollingerBands(closes, 20, 2.0);
+            // Upper band
+            chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 1, lineStyle: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+                .setData(times.map((t, i) => upper[i] !== null ? { time: t, value: upper[i]! } : null).filter(Boolean) as any);
+            // Middle SMA
+            chart.addSeries(LineSeries, { color: '#a855f780', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+                .setData(times.map((t, i) => middle[i] !== null ? { time: t, value: middle[i]! } : null).filter(Boolean) as any);
+            // Lower band
+            chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 1, lineStyle: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+                .setData(times.map((t, i) => lower[i] !== null ? { time: t, value: lower[i]! } : null).filter(Boolean) as any);
+        }
+
+        // Ichimoku Cloud overlay
+        if (showIchimoku && candles.length > 52) {
+            const highs = candles.map(d => d.high);
+            const lows = candles.map(d => d.low);
+            const closes = candles.map(d => d.close);
+            const times = candles.map(d => d.date);
+            const { tenkan, kijun, senkouA, senkouB } = calcIchimoku(highs, lows, closes);
+            // Tenkan-sen (conversion line)
+            chart.addSeries(LineSeries, { color: '#22d3ee', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+                .setData(times.map((t, i) => tenkan[i] !== null ? { time: t, value: tenkan[i]! } : null).filter(Boolean) as any);
+            // Kijun-sen (base line)
+            chart.addSeries(LineSeries, { color: '#f97316', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+                .setData(times.map((t, i) => kijun[i] !== null ? { time: t, value: kijun[i]! } : null).filter(Boolean) as any);
+            // Senkou A (leading span A) — trimmed to match candle times
+            chart.addSeries(LineSeries, { color: '#22c55e80', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+                .setData(times.map((t, i) => senkouA[i] !== null ? { time: t, value: senkouA[i]! } : null).filter(Boolean) as any);
+            // Senkou B (leading span B)
+            chart.addSeries(LineSeries, { color: '#ef444480', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+                .setData(times.map((t, i) => senkouB[i] !== null ? { time: t, value: senkouB[i]! } : null).filter(Boolean) as any);
+        }
+
         // Trade markers
         const myHolding = holdings.find(h => h.symbol === symbol);
         const markers: any[] = [];
@@ -109,13 +148,17 @@ export default function SymbolChart({ symbol, showFib: propShowFib }: SymbolChar
         transactions.filter(t => t.symbol === symbol && t.type === 'SELL').forEach(t => {
             markers.push({ time: t.date, position: 'aboveBar', color: '#ef4444', shape: 'arrowDown', text: `SOLD @ ${t.price.toFixed(2)}` });
         });
-        (series as any).setMarkers(markers.sort((a, b) => a.time.localeCompare(b.time)));
+        createSeriesMarkers(series, markers.sort((a, b) => {
+            const timeA = typeof a.time === 'string' ? a.time : '';
+            const timeB = typeof b.time === 'string' ? b.time : '';
+            return timeA.localeCompare(timeB);
+        }));
 
         chart.timeScale().fitContent();
         const handleResize = () => chart.applyOptions({ width: el.clientWidth });
         window.addEventListener('resize', handleResize);
         return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
-    }, [candles, theme, showEmas, showFib, ema1, ema2, ema3, holdings, transactions]);
+    }, [candles, theme, showEmas, showFib, showBollinger, showIchimoku, ema1, ema2, ema3, holdings, transactions]);
 
     // ─── MACD Effect ────────────────────────────────────────────
     useEffect(() => {
@@ -148,9 +191,9 @@ export default function SymbolChart({ symbol, showFib: propShowFib }: SymbolChar
         const times = candles.map(d => d.date);
         const { kLine, dLine } = calcStochastic(highs, lows, closes, stochK, stochD, stochSmooth);
         chart.addSeries(LineSeries, { color: '#8b5cf6', lineWidth: 1, priceLineVisible: false })
-            .setData(times.map((t, i) => ({ time: t, value: isNaN(kLine[i]) ? undefined : kLine[i] })).filter(d => d.value !== undefined));
+            .setData(times.map((t, i) => ({ time: t, value: isNaN(kLine[i]) ? undefined : kLine[i] })).filter(d => d.value !== undefined) as any);
         chart.addSeries(LineSeries, { color: '#ec4899', lineWidth: 1, priceLineVisible: false })
-            .setData(times.map((t, i) => ({ time: t, value: isNaN(dLine[i]) ? undefined : dLine[i] })).filter(d => d.value !== undefined));
+            .setData(times.map((t, i) => ({ time: t, value: isNaN(dLine[i]) ? undefined : dLine[i] })).filter(d => d.value !== undefined) as any);
         chart.timeScale().fitContent();
         const handleResize = () => chart.applyOptions({ width: el.clientWidth });
         window.addEventListener('resize', handleResize);

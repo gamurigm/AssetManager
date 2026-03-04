@@ -31,6 +31,8 @@ export default function ClientDashboard() {
     const [watchlistPinned, setWatchlistPinned] = useState(false);
     const [activeSidebarTab, setActiveSidebarTab] = useState<SidebarTab>('watchlist');
     const [globalShowFib, setGlobalShowFib] = useState(false);
+    const [globalShowBollinger, setGlobalShowBollinger] = useState(false);
+    const [globalShowIchimoku, setGlobalShowIchimoku] = useState(false);
 
     // Tab actions
     const openSymbolTab = (symbol: string) => {
@@ -90,7 +92,7 @@ export default function ClientDashboard() {
                             />
                         ) : (
                             <div className="flex-1 min-h-0 rounded-2xl overflow-hidden border border-border bg-card">
-                                <SymbolChart symbol={activeTab} showFib={globalShowFib} />
+                                <SymbolChart symbol={activeTab} showFib={globalShowFib} showBollinger={globalShowBollinger} showIchimoku={globalShowIchimoku} />
                             </div>
                         )}
                     </div>
@@ -103,6 +105,10 @@ export default function ClientDashboard() {
                         setActiveTab={setActiveSidebarTab}
                         showFib={globalShowFib}
                         setShowFib={setGlobalShowFib}
+                        showBollinger={globalShowBollinger}
+                        setShowBollinger={setGlobalShowBollinger}
+                        showIchimoku={globalShowIchimoku}
+                        setShowIchimoku={setGlobalShowIchimoku}
                         transactions={transactions}
                         onSelectSymbol={openSymbolTab}
                     />
