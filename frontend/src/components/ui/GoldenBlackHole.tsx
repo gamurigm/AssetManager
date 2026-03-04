@@ -308,9 +308,6 @@ export default function GoldenBlackHole() {
                     <meshBasicMaterial color="#000000" />
                 </mesh>
 
-                {/* Photon glow rings */}
-                <PhotonRings />
-
                 {/* Golden accretion disk */}
                 <AccretionDisk />
 

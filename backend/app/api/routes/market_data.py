@@ -58,6 +58,36 @@ async def get_historical_endpoint(symbol: str, limit: int = 300):
     return data
 
 
+@router.get("/intraday/{symbol:path}")
+async def get_intraday_endpoint(
+    symbol: str,
+    interval: str = Query("1h", description="Candle interval: 15m, 1h, 4h"),
+    period: str = Query("1mo", description="Lookback window: 5d, 1mo, 3mo, 6mo"),
+):
+    """Get intraday OHLCV candles (DuckDB-first, then Yahoo/Polygon fallback)."""
+    from ...services.market_data import market_data_service
+    data = await market_data_service.get_intraday(symbol, interval, period)
+    if not data or "error" in data:
+        raise HTTPException(status_code=404, detail=data.get("error", "Intraday data unavailable"))
+    # Normalize output to match the historical endpoint shape
+    candles = data.get("candles", [])
+    historical = []
+    for c in candles:
+        row = c if isinstance(c, dict) else {
+            "date": str(getattr(c, "ts", getattr(c, "date", ""))),
+            "open": getattr(c, "open", 0),
+            "high": getattr(c, "high", 0),
+            "low": getattr(c, "low", 0),
+            "close": getattr(c, "close", 0),
+            "volume": getattr(c, "volume", 0),
+        }
+        # Ensure "date" key exists for dicts from DuckDB
+        if isinstance(row, dict) and "date" not in row and "ts" in row:
+            row["date"] = str(row["ts"])
+        historical.append(row)
+    return {"symbol": symbol, "historical": historical, "source": data.get("source", "intraday")}
+
+
 @router.get("/profile/{symbol}")
 async def get_profile(symbol: str):
     """Get company profile (FMP-specific)."""
