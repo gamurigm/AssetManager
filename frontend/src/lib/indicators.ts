@@ -408,3 +408,180 @@ export function calcADX(highs: number[], lows: number[], closes: number[], perio
 
     return { adx, pdi, ndi };
 }
+
+export function calcWilliamsR(highs: number[], lows: number[], closes: number[], period = 14): (number | null)[] {
+    const res: (number | null)[] = [];
+    if (closes.length < period) return closes.map(() => null);
+
+    for (let i = 0; i < closes.length; i++) {
+        if (i < period - 1) {
+            res.push(null);
+            continue;
+        }
+        const sliceH = highs.slice(i - period + 1, i + 1);
+        const sliceL = lows.slice(i - period + 1, i + 1);
+        const hh = Math.max(...sliceH);
+        const ll = Math.min(...sliceL);
+        const w = (hh - closes[i]) / (hh - ll === 0 ? 1 : hh - ll) * -100;
+        res.push(w);
+    }
+    return res;
+}
+
+export function calcSupertrend(highs: number[], lows: number[], closes: number[], period = 10, multiplier = 3) {
+    const atr = calcATR(highs, lows, closes, period);
+    const supertrend: (number | null)[] = [];
+    const dir: (1 | -1 | null)[] = []; // 1 = up, -1 = down
+
+    if (closes.length === 0) return { supertrend, dir };
+
+    let currentDir = 1;
+    let finalUpper = 0;
+    let finalLower = 0;
+
+    for (let i = 0; i < closes.length; i++) {
+        if (atr[i] === null) {
+            supertrend.push(null);
+            dir.push(null);
+            continue;
+        }
+
+        const basicUpper = (highs[i] + lows[i]) / 2 + multiplier * atr[i]!;
+        const basicLower = (highs[i] + lows[i]) / 2 - multiplier * atr[i]!;
+
+        if (i === 0 || atr[i - 1] === null) {
+            finalUpper = basicUpper;
+            finalLower = basicLower;
+            currentDir = 1;
+            supertrend.push(finalLower);
+            dir.push(currentDir as 1);
+            continue;
+        }
+
+        const prevClose = closes[i - 1];
+
+        finalUpper = (basicUpper < finalUpper || prevClose > finalUpper) ? basicUpper : finalUpper;
+        finalLower = (basicLower > finalLower || prevClose < finalLower) ? basicLower : finalLower;
+
+        if (currentDir === 1 && closes[i] < finalLower) {
+            currentDir = -1;
+        } else if (currentDir === -1 && closes[i] > finalUpper) {
+            currentDir = 1;
+        }
+
+        supertrend.push(currentDir === 1 ? finalLower : finalUpper);
+        dir.push(currentDir as 1 | -1);
+    }
+    return { supertrend, dir };
+}
+
+export function calcParabolicSAR(highs: number[], lows: number[], step = 0.02, maxStep = 0.2) {
+    const len = highs.length;
+    const sar: (number | null)[] = Array(len).fill(null);
+    if (len < 2) return sar;
+
+    let isUp = true;
+    let ep = highs[0];
+    let currentSAR = lows[0];
+    let af = step;
+
+    for (let i = 1; i < len; i++) {
+        const prevSAR = currentSAR;
+
+        if (isUp) {
+            currentSAR = prevSAR + af * (ep - prevSAR);
+            if (currentSAR > lows[i]) currentSAR = lows[i];
+            if (i > 1 && currentSAR > lows[i - 1]) currentSAR = lows[i - 1];
+
+            if (lows[i] < currentSAR) {
+                isUp = false;
+                currentSAR = Math.max(ep, highs[i]); // Revert to recent extreme
+                ep = lows[i];
+                af = step;
+            } else if (highs[i] > ep) {
+                ep = highs[i];
+                af = Math.min(af + step, maxStep);
+            }
+        } else {
+            currentSAR = prevSAR + af * (ep - prevSAR);
+            if (currentSAR < highs[i]) currentSAR = highs[i];
+            if (i > 1 && currentSAR < highs[i - 1]) currentSAR = highs[i - 1];
+
+            if (highs[i] > currentSAR) {
+                isUp = true;
+                currentSAR = Math.min(ep, lows[i]); // Revert to recent extreme
+                ep = highs[i];
+                af = step;
+            } else if (lows[i] < ep) {
+                ep = lows[i];
+                af = Math.min(af + step, maxStep);
+            }
+        }
+        sar[i] = currentSAR;
+    }
+    sar[0] = null; // No SAR on first element
+    return sar;
+}
+
+export function calcMFI(highs: number[], lows: number[], closes: number[], volumes: number[], period = 14): (number | null)[] {
+    const mfi: (number | null)[] = [];
+    if (closes.length < period) return closes.map(() => null);
+
+    const typPrice = closes.map((c, i) => (highs[i] + lows[i] + c) / 3);
+    const rawMoneyFlow = typPrice.map((tp, i) => tp * (volumes[i] || 0));
+
+    for (let i = 0; i < closes.length; i++) {
+        if (i < period) {
+            mfi.push(null);
+            continue;
+        }
+
+        let positiveFlow = 0;
+        let negativeFlow = 0;
+
+        for (let j = i - period + 1; j <= i; j++) {
+            if (typPrice[j] > typPrice[j - 1]) {
+                positiveFlow += rawMoneyFlow[j];
+            } else if (typPrice[j] < typPrice[j - 1]) {
+                negativeFlow += rawMoneyFlow[j];
+            }
+        }
+
+        if (negativeFlow === 0) {
+            mfi.push(100);
+        } else {
+            const mfr = positiveFlow / negativeFlow;
+            mfi.push(100 - (100 / (1 + mfr)));
+        }
+    }
+    return mfi;
+}
+
+export function calcCMF(highs: number[], lows: number[], closes: number[], volumes: number[], period = 20): (number | null)[] {
+    const cmf: (number | null)[] = [];
+    if (closes.length < period) return closes.map(() => null);
+
+    const mfv = closes.map((c, i) => {
+        const h = highs[i];
+        const l = lows[i];
+        const v = volumes[i] || 0;
+        if (h === l) return 0;
+        const multiplier = ((c - l) - (h - c)) / (h - l);
+        return multiplier * v;
+    });
+
+    for (let i = 0; i < closes.length; i++) {
+        if (i < period - 1) {
+            cmf.push(null);
+            continue;
+        }
+        let sumMFV = 0;
+        let sumV = 0;
+        for (let j = i - period + 1; j <= i; j++) {
+            sumMFV += mfv[j];
+            sumV += volumes[j] || 0;
+        }
+        cmf.push(sumV === 0 ? 0 : sumMFV / sumV);
+    }
+    return cmf;
+}

@@ -39,6 +39,11 @@ export default function ClientDashboard() {
     const [globalShowKeltner, setGlobalShowKeltner] = useState(false);
     const [globalShowCci, setGlobalShowCci] = useState(false);
     const [globalShowAdx, setGlobalShowAdx] = useState(false);
+    const [globalShowPsar, setGlobalShowPsar] = useState(false);
+    const [globalShowSupertrend, setGlobalShowSupertrend] = useState(false);
+    const [globalShowWilliams, setGlobalShowWilliams] = useState(false);
+    const [globalShowMfi, setGlobalShowMfi] = useState(false);
+    const [globalShowCmf, setGlobalShowCmf] = useState(false);
 
     // Tab actions
     const openSymbolTab = (symbol: string) => {
@@ -98,7 +103,13 @@ export default function ClientDashboard() {
                             />
                         ) : (
                             <div className="flex-1 min-h-0 rounded-2xl overflow-hidden border border-border bg-card">
-                                <SymbolChart symbol={activeTab} showFib={globalShowFib} showBollinger={globalShowBollinger} showIchimoku={globalShowIchimoku} showVwap={globalShowVwap} showRsi={globalShowRsi} showAtr={globalShowAtr} showKeltner={globalShowKeltner} showCci={globalShowCci} showAdx={globalShowAdx} />
+                                <SymbolChart
+                                    symbol={activeTab} showFib={globalShowFib} showBollinger={globalShowBollinger}
+                                    showIchimoku={globalShowIchimoku} showVwap={globalShowVwap} showRsi={globalShowRsi}
+                                    showAtr={globalShowAtr} showKeltner={globalShowKeltner} showCci={globalShowCci}
+                                    showAdx={globalShowAdx} showPsar={globalShowPsar} showSupertrend={globalShowSupertrend}
+                                    showWilliams={globalShowWilliams} showMfi={globalShowMfi} showCmf={globalShowCmf}
+                                />
                             </div>
                         )}
                     </div>
@@ -127,6 +138,16 @@ export default function ClientDashboard() {
                         setShowCci={setGlobalShowCci}
                         showAdx={globalShowAdx}
                         setShowAdx={setGlobalShowAdx}
+                        showPsar={globalShowPsar}
+                        setShowPsar={setGlobalShowPsar}
+                        showSupertrend={globalShowSupertrend}
+                        setShowSupertrend={setGlobalShowSupertrend}
+                        showWilliams={globalShowWilliams}
+                        setShowWilliams={setGlobalShowWilliams}
+                        showMfi={globalShowMfi}
+                        setShowMfi={setGlobalShowMfi}
+                        showCmf={globalShowCmf}
+                        setShowCmf={setGlobalShowCmf}
                         transactions={transactions}
                         onSelectSymbol={openSymbolTab}
                     />

@@ -5,7 +5,7 @@ import { TrendingUp, TrendingDown, ChevronDown, ChevronUp, Activity } from "luci
 import { createChart, ColorType, CandlestickSeries, LineSeries, HistogramSeries, createSeriesMarkers } from "lightweight-charts";
 import { usePortfolio } from "@/context/PortfolioContext";
 import { useChartData } from "@/hooks/useChartData";
-import { calcEMA, calcMACD, calcStochastic, FIBONACCI_LEVELS, calcBollingerBands, calcIchimoku, calcRSI, calcVWAP, calcATR, calcKeltner, calcCCI, calcADX } from "@/lib/indicators";
+import { calcEMA, calcMACD, calcStochastic, FIBONACCI_LEVELS, calcBollingerBands, calcIchimoku, calcRSI, calcVWAP, calcATR, calcKeltner, calcCCI, calcADX, calcParabolicSAR, calcSupertrend, calcWilliamsR, calcMFI, calcCMF } from "@/lib/indicators";
 
 // ─── Props ──────────────────────────────────────────────────────────
 interface SymbolChartProps {
@@ -19,10 +19,15 @@ interface SymbolChartProps {
     showKeltner?: boolean;
     showCci?: boolean;
     showAdx?: boolean;
+    showPsar?: boolean;
+    showSupertrend?: boolean;
+    showWilliams?: boolean;
+    showMfi?: boolean;
+    showCmf?: boolean;
 }
 
 // ─── Component ──────────────────────────────────────────────────────
-export default function SymbolChart({ symbol, showFib: propShowFib, showBollinger = false, showIchimoku = false, showVwap = false, showRsi = false, showAtr = false, showKeltner = false, showCci = false, showAdx = false }: SymbolChartProps) {
+export default function SymbolChart({ symbol, showFib: propShowFib, showBollinger = false, showIchimoku = false, showVwap = false, showRsi = false, showAtr = false, showKeltner = false, showCci = false, showAdx = false, showPsar = false, showSupertrend = false, showWilliams = false, showMfi = false, showCmf = false }: SymbolChartProps) {
     const { holdings, closePosition, openTrade } = usePortfolio();
     const { candles, quote, loading, theme, isLight } = useChartData(symbol);
 
@@ -43,6 +48,9 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
     const atrRef = useRef<HTMLDivElement>(null);
     const cciRef = useRef<HTMLDivElement>(null);
     const adxRef = useRef<HTMLDivElement>(null);
+    const williamsRef = useRef<HTMLDivElement>(null);
+    const mfiRef = useRef<HTMLDivElement>(null);
+    const cmfRef = useRef<HTMLDivElement>(null);
 
     // Dynamic Fib State
     const [fibMode, setFibMode] = useState(false);
@@ -259,6 +267,36 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
                 .setData(times.map((t, i) => lower[i] !== null ? { time: t, value: lower[i]! } : null).filter(Boolean) as any);
         }
 
+        // Parabolic SAR overlay
+        if (showPsar && candles.length > 5) {
+            const highs = candles.map(d => d.high);
+            const lows = candles.map(d => d.low);
+            const times = candles.map(d => d.date);
+            const sar = calcParabolicSAR(highs, lows);
+
+            // Render as scattered dots/line with small markers
+            chart.addSeries(LineSeries, { color: '#ec4899', lineWidth: 2, lineStyle: 3, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: true })
+                .setData(times.map((t, i) => sar[i] !== null ? { time: t, value: sar[i]! } : null).filter(Boolean) as any);
+        }
+
+        // Supertrend overlay
+        if (showSupertrend && candles.length > 20) {
+            const highs = candles.map(d => d.high);
+            const lows = candles.map(d => d.low);
+            const closes = candles.map(d => d.close);
+            const times = candles.map(d => d.date);
+            const { supertrend, dir } = calcSupertrend(highs, lows, closes);
+
+            // To simulate changing colors based on trend, we draw two lines and mask out nulls
+            const upLine = times.map((t, i) => dir[i] === 1 && supertrend[i] !== null ? { time: t, value: supertrend[i]! } : null).filter(Boolean);
+            const downLine = times.map((t, i) => dir[i] === -1 && supertrend[i] !== null ? { time: t, value: supertrend[i]! } : null).filter(Boolean);
+
+            chart.addSeries(LineSeries, { color: '#2dd4bf', lineWidth: 2, lineStyle: 0, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+                .setData(upLine as any);
+            chart.addSeries(LineSeries, { color: '#ef4444', lineWidth: 2, lineStyle: 0, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+                .setData(downLine as any);
+        }
+
         // Trade markers
         const myHolding = holdings.find(h => h.symbol === symbol);
         const markers: any[] = [];
@@ -278,7 +316,7 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
         const handleResize = () => chart.applyOptions({ width: el.clientWidth });
         window.addEventListener('resize', handleResize);
         return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
-    }, [candles, theme, showEmas, showFib, showBollinger, showIchimoku, showVwap, showKeltner, ema1, ema2, ema3, holdings, transactions]);
+    }, [candles, theme, showEmas, showFib, showBollinger, showIchimoku, showVwap, showKeltner, showPsar, showSupertrend, ema1, ema2, ema3, holdings, transactions]);
 
     // ─── MACD Effect ────────────────────────────────────────────
     useEffect(() => {
@@ -411,6 +449,70 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
         window.addEventListener('resize', handleResize);
         return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
     }, [candles, theme, showAdx]);
+
+    // ─── Williams %R Effect ──────────────────────────────────────────────
+    useEffect(() => {
+        if (!williamsRef.current || candles.length === 0 || !showWilliams) return;
+        const el = williamsRef.current;
+        const chart = createChart(el, { ...chartOpts(100), width: el.clientWidth });
+        const highs = candles.map(d => d.high);
+        const lows = candles.map(d => d.low);
+        const closes = candles.map(d => d.close);
+        const times = candles.map(d => d.date);
+        const williams = calcWilliamsR(highs, lows, closes, 14);
+        chart.addSeries(LineSeries, { color: '#22d3ee', lineWidth: 2, priceLineVisible: false })
+            .setData(times.map((t, i) => williams[i] !== null ? { time: t, value: williams[i]! } : null).filter(Boolean) as any);
+        chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
+            .setData(times.map(t => ({ time: t, value: -20 })));
+        chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
+            .setData(times.map(t => ({ time: t, value: -80 })));
+        chart.timeScale().fitContent();
+        const handleResize = () => chart.applyOptions({ width: el.clientWidth });
+        window.addEventListener('resize', handleResize);
+        return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
+    }, [candles, theme, showWilliams]);
+
+    // ─── MFI Effect ──────────────────────────────────────────────
+    useEffect(() => {
+        if (!mfiRef.current || candles.length === 0 || !showMfi) return;
+        const el = mfiRef.current;
+        const chart = createChart(el, { ...chartOpts(100), width: el.clientWidth });
+        const highs = candles.map(d => d.high);
+        const lows = candles.map(d => d.low);
+        const closes = candles.map(d => d.close);
+        const volumes = candles.map(d => (d as any).volume ?? 0) as number[];
+        const times = candles.map(d => d.date);
+        const mfi = calcMFI(highs, lows, closes, volumes, 14);
+        chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 2, priceLineVisible: false })
+            .setData(times.map((t, i) => mfi[i] !== null ? { time: t, value: mfi[i]! } : null).filter(Boolean) as any);
+        chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
+            .setData(times.map(t => ({ time: t, value: 80 })));
+        chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
+            .setData(times.map(t => ({ time: t, value: 20 })));
+        chart.timeScale().fitContent();
+        const handleResize = () => chart.applyOptions({ width: el.clientWidth });
+        window.addEventListener('resize', handleResize);
+        return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
+    }, [candles, theme, showMfi]);
+
+    // ─── CMF Effect ──────────────────────────────────────────────
+    useEffect(() => {
+        if (!cmfRef.current || candles.length === 0 || !showCmf) return;
+        const el = cmfRef.current;
+        const chart = createChart(el, { ...chartOpts(100), width: el.clientWidth });
+        const highs = candles.map(d => d.high);
+        const lows = candles.map(d => d.low);
+        const closes = candles.map(d => d.close);
+        const volumes = candles.map(d => (d as any).volume ?? 0) as number[];
+        const times = candles.map(d => d.date);
+        const cmf = calcCMF(highs, lows, closes, volumes, 20);
+        chart.addSeries(HistogramSeries, { color: '#3b82f6', priceLineVisible: false })
+            .setData(times.map((t, i) => cmf[i] !== null ? { time: t, value: cmf[i]!, color: cmf[i]! > 0 ? '#22c55e80' : '#ef444480' } : null).filter(Boolean) as any);
+        chart.timeScale().fitContent();
+        const handleResize = () => chart.applyOptions({ width: el.clientWidth });
+        window.addEventListener('resize', handleResize);
+        return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
+    }, [candles, theme, showCmf]);
 
     // ─── Input class helper ─────────────────────────────────────
     const inputClass = `w-10 px-1 py-0.5 border rounded text-[10px] font-mono text-center focus:outline-none ${isLight ? "bg-zinc-100 border-zinc-200 text-zinc-900" : "bg-white/5 border-white/10 text-white"}`;
@@ -599,6 +701,45 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
                         </div>
                     </div>
                     <div ref={adxRef} className="w-full" style={{ height: 120 }} />
+                </div>
+            )}
+
+            {/* Williams %R Panel */}
+            {showWilliams && (
+                <div className="border-t border-border/30 flex-shrink-0">
+                    <div className="flex items-center justify-between px-3 py-1.5 bg-card-hover/30">
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black uppercase tracking-[0.15em] text-cyan-400/80">Williams %R (14)</span>
+                            <span className="text-[8px] text-muted font-bold">-20 / -80</span>
+                        </div>
+                    </div>
+                    <div ref={williamsRef} className="w-full" style={{ height: 100 }} />
+                </div>
+            )}
+
+            {/* MFI Panel */}
+            {showMfi && (
+                <div className="border-t border-border/30 flex-shrink-0">
+                    <div className="flex items-center justify-between px-3 py-1.5 bg-card-hover/30">
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black uppercase tracking-[0.15em] text-purple-400/80">MFI (14)</span>
+                            <span className="text-[8px] text-muted font-bold">80 / 20</span>
+                        </div>
+                    </div>
+                    <div ref={mfiRef} className="w-full" style={{ height: 100 }} />
+                </div>
+            )}
+
+            {/* CMF Panel */}
+            {showCmf && (
+                <div className="border-t border-border/30 flex-shrink-0">
+                    <div className="flex items-center justify-between px-3 py-1.5 bg-card-hover/30">
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black uppercase tracking-[0.15em] text-blue-400/80">CMF (20)</span>
+                            <span className="text-[8px] text-muted font-bold">Accumulation/Dist</span>
+                        </div>
+                    </div>
+                    <div ref={cmfRef} className="w-full" style={{ height: 100 }} />
                 </div>
             )}
         </div>

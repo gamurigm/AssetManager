@@ -38,6 +38,16 @@ interface DashboardSidebarProps {
     setShowCci: (v: boolean) => void;
     showAdx: boolean;
     setShowAdx: (v: boolean) => void;
+    showPsar: boolean;
+    setShowPsar: (v: boolean) => void;
+    showSupertrend: boolean;
+    setShowSupertrend: (v: boolean) => void;
+    showWilliams: boolean;
+    setShowWilliams: (v: boolean) => void;
+    showMfi: boolean;
+    setShowMfi: (v: boolean) => void;
+    showCmf: boolean;
+    setShowCmf: (v: boolean) => void;
     transactions: TransactionRecord[];
     onSelectSymbol: (symbol: string) => void;
 }
@@ -48,6 +58,8 @@ export default function DashboardSidebar({
     showFib, setShowFib, showBollinger, setShowBollinger, showIchimoku, setShowIchimoku,
     showVwap, setShowVwap, showRsi, setShowRsi, showAtr, setShowAtr,
     showKeltner, setShowKeltner, showCci, setShowCci, showAdx, setShowAdx,
+    showPsar, setShowPsar, showSupertrend, setShowSupertrend,
+    showWilliams, setShowWilliams, showMfi, setShowMfi, showCmf, setShowCmf,
     transactions, onSelectSymbol,
 }: DashboardSidebarProps) {
     const expanded = pinned;
@@ -99,7 +111,7 @@ export default function DashboardSidebar({
                 <div className="flex-1 bg-card/50 backdrop-blur-3xl border-l border-border/15 flex flex-col h-full shadow-[-25px_0_50px_rgba(0,0,0,0.1)] overflow-hidden animate-in slide-in-from-right duration-500">
                     {activeTab === 'watchlist' && <Watchlist onSelectSymbol={onSelectSymbol} />}
 
-                    {activeTab === 'indicators' && <IndicatorsPanel showFib={showFib} setShowFib={setShowFib} showBollinger={showBollinger} setShowBollinger={setShowBollinger} showIchimoku={showIchimoku} setShowIchimoku={setShowIchimoku} showVwap={showVwap} setShowVwap={setShowVwap} showRsi={showRsi} setShowRsi={setShowRsi} showAtr={showAtr} setShowAtr={setShowAtr} showKeltner={showKeltner} setShowKeltner={setShowKeltner} showCci={showCci} setShowCci={setShowCci} showAdx={showAdx} setShowAdx={setShowAdx} />}
+                    {activeTab === 'indicators' && <IndicatorsPanel showFib={showFib} setShowFib={setShowFib} showBollinger={showBollinger} setShowBollinger={setShowBollinger} showIchimoku={showIchimoku} setShowIchimoku={setShowIchimoku} showVwap={showVwap} setShowVwap={setShowVwap} showRsi={showRsi} setShowRsi={setShowRsi} showAtr={showAtr} setShowAtr={setShowAtr} showKeltner={showKeltner} setShowKeltner={setShowKeltner} showCci={showCci} setShowCci={setShowCci} showAdx={showAdx} setShowAdx={setShowAdx} showPsar={showPsar} setShowPsar={setShowPsar} showSupertrend={showSupertrend} setShowSupertrend={setShowSupertrend} showWilliams={showWilliams} setShowWilliams={setShowWilliams} showMfi={showMfi} setShowMfi={setShowMfi} showCmf={showCmf} setShowCmf={setShowCmf} />}
 
                     {activeTab === 'alerts' && <AlertsPanel />}
 
@@ -124,7 +136,7 @@ function RailButton({ active, onClick, title, children, activeClass, hoverClass 
     );
 }
 
-function IndicatorsPanel({ showFib, setShowFib, showBollinger, setShowBollinger, showIchimoku, setShowIchimoku, showVwap, setShowVwap, showRsi, setShowRsi, showAtr, setShowAtr, showKeltner, setShowKeltner, showCci, setShowCci, showAdx, setShowAdx }: {
+function IndicatorsPanel({ showFib, setShowFib, showBollinger, setShowBollinger, showIchimoku, setShowIchimoku, showVwap, setShowVwap, showRsi, setShowRsi, showAtr, setShowAtr, showKeltner, setShowKeltner, showCci, setShowCci, showAdx, setShowAdx, showPsar, setShowPsar, showSupertrend, setShowSupertrend, showWilliams, setShowWilliams, showMfi, setShowMfi, showCmf, setShowCmf }: {
     showFib: boolean; setShowFib: (v: boolean) => void;
     showBollinger: boolean; setShowBollinger: (v: boolean) => void;
     showIchimoku: boolean; setShowIchimoku: (v: boolean) => void;
@@ -134,6 +146,11 @@ function IndicatorsPanel({ showFib, setShowFib, showBollinger, setShowBollinger,
     showKeltner: boolean; setShowKeltner: (v: boolean) => void;
     showCci: boolean; setShowCci: (v: boolean) => void;
     showAdx: boolean; setShowAdx: (v: boolean) => void;
+    showPsar: boolean; setShowPsar: (v: boolean) => void;
+    showSupertrend: boolean; setShowSupertrend: (v: boolean) => void;
+    showWilliams: boolean; setShowWilliams: (v: boolean) => void;
+    showMfi: boolean; setShowMfi: (v: boolean) => void;
+    showCmf: boolean; setShowCmf: (v: boolean) => void;
 }) {
     return (
         <div className="flex-1 p-6 overflow-y-auto">
@@ -154,23 +171,20 @@ function IndicatorsPanel({ showFib, setShowFib, showBollinger, setShowBollinger,
                 <IndicatorToggle active={showKeltner} onClick={() => setShowKeltner(!showKeltner)} name="Keltner Channels" desc="EMA ± Multiplier × ATR" activeColor="blue" Icon={Maximize2} />
                 <IndicatorToggle active={showIchimoku} onClick={() => setShowIchimoku(!showIchimoku)} name="Ichimoku Cloud" desc="Tenkan (9) / Kijun (26) / Senkou / Chikou" activeColor="orange" Icon={LineChart} />
                 <IndicatorToggle active={showVwap} onClick={() => setShowVwap(!showVwap)} name="VWAP" desc="Volume Weighted Average Price (institutional)" activeColor="yellow" Icon={BarChart2} />
-
-                {/* Visual additions per request (not yet functional in logic) */}
-                <IndicatorToggle active={false} onClick={() => { }} name="Parabolic SAR" desc="Stop and Reverse trend tracking" activeColor="pink" Icon={Target} />
-                <IndicatorToggle active={false} onClick={() => { }} name="Supertrend" desc="ATR-based trailing stop trend identifier" activeColor="teal" Icon={TrendingUp} />
+                <IndicatorToggle active={showPsar} onClick={() => setShowPsar(!showPsar)} name="Parabolic SAR" desc="Stop and Reverse trend tracking" activeColor="pink" Icon={Target} />
+                <IndicatorToggle active={showSupertrend} onClick={() => setShowSupertrend(!showSupertrend)} name="Supertrend" desc="ATR-based trailing stop trend identifier" activeColor="teal" Icon={TrendingUp} />
             </div>
 
             <p className="text-[9px] text-muted/60 font-bold uppercase tracking-widest mt-6 mb-2">Oscillators & Volatility</p>
             <div className="space-y-3">
                 <IndicatorToggle active={showRsi} onClick={() => setShowRsi(!showRsi)} name="RSI (14)" desc="Relative Strength Index — Overbought 70 / Oversold 30" activeColor="amber" Icon={Activity} />
-                <IndicatorToggle active={false} onClick={() => { }} name="MACD (12,26,9)" desc="Moving Average Convergence Divergence" activeColor="cyan" Icon={Sliders} />
+                <IndicatorToggle active={showWilliams} onClick={() => setShowWilliams(!showWilliams)} name="Williams %R" desc="Momentum oscillator measuring overbought/oversold levels" activeColor="cyan" Icon={Sliders} />
                 <IndicatorToggle active={showAtr} onClick={() => setShowAtr(!showAtr)} name="ATR (14)" desc="Average True Range — Wilder's Volatility Metric" activeColor="teal" Icon={Zap} />
                 <IndicatorToggle active={showCci} onClick={() => setShowCci(!showCci)} name="CCI (20)" desc="Commodity Channel Index — Cyclical turns" activeColor="violet" Icon={Repeat} />
                 <IndicatorToggle active={showAdx} onClick={() => setShowAdx(!showAdx)} name="ADX (14)" desc="Average Directional Index — Trend Strength" activeColor="pink" Icon={TrendingUp} />
 
-                {/* Visual additions per request (not yet functional in logic) */}
-                <IndicatorToggle active={false} onClick={() => { }} name="MFI (14)" desc="Money Flow Index — Volume-weighted RSI" activeColor="purple" Icon={Activity} />
-                <IndicatorToggle active={false} onClick={() => { }} name="CMF (20)" desc="Chaikin Money Flow — Institutional accumulation" activeColor="blue" Icon={BarChart2} />
+                <IndicatorToggle active={showMfi} onClick={() => setShowMfi(!showMfi)} name="MFI (14)" desc="Money Flow Index — Volume-weighted RSI" activeColor="purple" Icon={Activity} />
+                <IndicatorToggle active={showCmf} onClick={() => setShowCmf(!showCmf)} name="CMF (20)" desc="Chaikin Money Flow — Institutional accumulation" activeColor="blue" Icon={BarChart2} />
             </div>
 
             <div className="mt-8 pt-6 border-t border-white/5">
