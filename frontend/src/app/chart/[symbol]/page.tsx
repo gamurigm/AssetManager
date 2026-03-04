@@ -471,6 +471,19 @@ export default function ChartWindow() {
         { label: "1M", value: "monthly" },
     ];
 
+    const isIntradayTF = ["15m", "1h", "4h"].includes(timeframe);
+
+    // Normalize time: intraday datetimes → Unix timestamp (seconds), daily → YYYY-MM-DD string
+    const normalizeTime = (dateStr: string) => {
+        if (!dateStr) return 0;
+        // If it contains a space or T, it's a datetime → convert to UTC epoch seconds
+        if (dateStr.includes(' ') || dateStr.includes('T')) {
+            return Math.floor(new Date(dateStr).getTime() / 1000);
+        }
+        // YYYY-MM-DD string is fine for business-day charts
+        return dateStr;
+    };
+
     const chartOpts = useCallback((height?: number) => ({
         layout: {
             background: { type: ColorType.Solid as const, color: '#0a0a0a' },
@@ -481,14 +494,14 @@ export default function ChartWindow() {
             vertLines: { color: '#141414' },
             horzLines: { color: '#141414' },
         },
-        timeScale: { borderColor: '#1f1f1f', timeVisible: false },
+        timeScale: { borderColor: '#1f1f1f', timeVisible: isIntradayTF },
         rightPriceScale: { borderColor: '#1f1f1f' },
         crosshair: {
             vertLine: { labelBackgroundColor: '#2962FF' },
             horzLine: { labelBackgroundColor: '#2962FF' },
         },
         ...(height ? { height } : {}),
-    }), []);
+    }), [isIntradayTF]);
 
     // Fetch data — historical + quote in PARALLEL
     useEffect(() => {
@@ -549,7 +562,7 @@ export default function ChartWindow() {
             upColor: '#26a69d', downColor: '#ef5350',
             borderVisible: false, wickUpColor: '#26a69d', wickDownColor: '#ef5350',
         });
-        candleSeries.setData(rawData.map(d => ({ time: d.date, open: d.open, high: d.high, low: d.low, close: d.close })));
+        candleSeries.setData(rawData.map(d => ({ time: normalizeTime(d.date) as any, open: d.open, high: d.high, low: d.low, close: d.close })));
 
         // Render Volume Profile Price Lines (frontend computed)
         if (showVP && vpData && typeof vpData.poc === 'number') {
@@ -560,7 +573,7 @@ export default function ChartWindow() {
 
         // Render Moving Averages
         const closes = rawData.map(d => d.close);
-        const times = rawData.map(d => d.date);
+        const times = rawData.map(d => normalizeTime(d.date) as any);
         const highs = rawData.map(d => d.high);
         const lows = rawData.map(d => d.low);
         const volumes = rawData.map(d => d.volume ?? 0);
@@ -627,7 +640,7 @@ export default function ChartWindow() {
         macdChartApi.current = chart;
 
         const closes = rawData.map(d => d.close);
-        const times = rawData.map(d => d.date);
+        const times = rawData.map(d => normalizeTime(d.date) as any);
         const { macdLine, signalLine, histogram } = calcMACD(closes, macdFast, macdSlow, macdSignal);
 
         const histSeries = chart.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false });
@@ -662,7 +675,7 @@ export default function ChartWindow() {
         const highs = rawData.map(d => d.high);
         const lows = rawData.map(d => d.low);
         const closes = rawData.map(d => d.close);
-        const times = rawData.map(d => d.date);
+        const times = rawData.map(d => normalizeTime(d.date) as any);
         const { kLine, dLine } = calcStochastic(highs, lows, closes, stochK, stochD, stochSmooth);
 
         const kSeries = chart.addSeries(LineSeries, { color: '#2962FF', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, title: '%K' });
@@ -694,7 +707,7 @@ export default function ChartWindow() {
         const highs = rawData.map(d => d.high);
         const lows = rawData.map(d => d.low);
         const closes = rawData.map(d => d.close);
-        const times = rawData.map(d => d.date);
+        const times = rawData.map(d => normalizeTime(d.date) as any);
         const atrValues = calcATR(highs, lows, closes, atrPeriod);
 
         const atrSeries = chart.addSeries(LineSeries, { color: '#e040fb', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: 'ATR' });
@@ -718,7 +731,7 @@ export default function ChartWindow() {
         if (williamsChartApi.current) { williamsChartApi.current.remove(); williamsChartApi.current = null; }
         const chart = createChart(williamsChartRef.current, { ...chartOpts(146), width: williamsChartRef.current.clientWidth });
         williamsChartApi.current = chart;
-        const highs = rawData.map(d => d.high), lows = rawData.map(d => d.low), closes = rawData.map(d => d.close), times = rawData.map(d => d.date);
+        const highs = rawData.map(d => d.high), lows = rawData.map(d => d.low), closes = rawData.map(d => d.close), times = rawData.map(d => normalizeTime(d.date) as any);
         const w = calcWilliamsR(highs, lows, closes, 14);
         chart.addSeries(LineSeries, { color: '#22d3ee', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: '%R' })
             .setData(times.map((t, i) => w[i] !== null ? { time: t, value: w[i]! } : null).filter(Boolean) as any);
@@ -742,7 +755,7 @@ export default function ChartWindow() {
         if (mfiChartApi.current) { mfiChartApi.current.remove(); mfiChartApi.current = null; }
         const chart = createChart(mfiChartRef.current, { ...chartOpts(146), width: mfiChartRef.current.clientWidth });
         mfiChartApi.current = chart;
-        const highs = rawData.map(d => d.high), lows = rawData.map(d => d.low), closes = rawData.map(d => d.close), volumes = rawData.map(d => d.volume ?? 0), times = rawData.map(d => d.date);
+        const highs = rawData.map(d => d.high), lows = rawData.map(d => d.low), closes = rawData.map(d => d.close), volumes = rawData.map(d => d.volume ?? 0), times = rawData.map(d => normalizeTime(d.date) as any);
         const mfi = calcMFI(highs, lows, closes, volumes, 14);
         chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: 'MFI' })
             .setData(times.map((t, i) => mfi[i] !== null ? { time: t, value: mfi[i]! } : null).filter(Boolean) as any);
@@ -766,7 +779,7 @@ export default function ChartWindow() {
         if (cmfChartApi.current) { cmfChartApi.current.remove(); cmfChartApi.current = null; }
         const chart = createChart(cmfChartRef.current, { ...chartOpts(146), width: cmfChartRef.current.clientWidth });
         cmfChartApi.current = chart;
-        const highs = rawData.map(d => d.high), lows = rawData.map(d => d.low), closes = rawData.map(d => d.close), volumes = rawData.map(d => d.volume ?? 0), times = rawData.map(d => d.date);
+        const highs = rawData.map(d => d.high), lows = rawData.map(d => d.low), closes = rawData.map(d => d.close), volumes = rawData.map(d => d.volume ?? 0), times = rawData.map(d => normalizeTime(d.date) as any);
         const cmf = calcCMF(highs, lows, closes, volumes, 20);
         chart.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: true })
             .setData(times.map((t, i) => cmf[i] !== null ? { time: t, value: cmf[i]!, color: cmf[i]! > 0 ? 'rgba(38,166,157,0.5)' : 'rgba(239,83,80,0.5)' } : null).filter(Boolean) as any);
