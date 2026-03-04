@@ -200,11 +200,17 @@ export default function OpenBBTerminal() {
                     history: [...newHistory, { type: 'output', text: '📊 Chart opened in new window.' }],
                     isExecuting: false,
                 });
+                window.dispatchEvent(new CustomEvent('terminal-success', { detail: { command: cmd } }));
             } else {
                 updateSession(sessionId, {
                     history: [...newHistory, { type: data.type === 'error' ? 'error' : 'output', text: data.output ?? data.error ?? 'OK' }],
                     isExecuting: false,
                 });
+                if (data.type === 'error') {
+                    window.dispatchEvent(new CustomEvent('terminal-error', { detail: { command: cmd, error: data.error ?? data.output ?? 'Unknown error' } }));
+                } else {
+                    window.dispatchEvent(new CustomEvent('terminal-success', { detail: { command: cmd } }));
+                }
                 // If liquidation completed successfully, refresh the frontend portfolio state
                 if (data.output && data.output.includes('LIQUIDATION COMPLETE')) {
                     refreshPortfolio();

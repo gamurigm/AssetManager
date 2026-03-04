@@ -113,7 +113,11 @@ export default function BackendGate({ children }: BackendGateProps) {
             {/* Background image — cinematic dark overlay */}
             <div
                 className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-                style={{ backgroundImage: "url('/fondo-bg1.jpg')", opacity: 0.85 }}
+                style={{
+                    backgroundImage: "url('/fondo-bg1.jpg')",
+                    opacity: 1,
+                    filter: 'saturate(1.4) contrast(1.15) brightness(0.75)'
+                }}
             />
             {/* Rich vignette — dark edges, slightly open center */}
             <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(ellipse 70% 60% at 50% 50%, rgba(0,0,0,0.2) 0%, rgba(0,0,0,0.6) 100%)' }} />

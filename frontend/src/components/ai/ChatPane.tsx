@@ -37,6 +37,7 @@ export default function ChatPane({
 }: ChatPaneProps) {
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
+    const [correctionAttempts, setCorrectionAttempts] = useState(0);
     const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -76,6 +77,31 @@ export default function ChatPane({
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isLoading, messages.length]);
+
+    // ── Auto-Correction Loop (ReAct) ──
+    useEffect(() => {
+        const handleTerminalError = (e: Event) => {
+            const customEvent = e as CustomEvent;
+            const { command, error } = customEvent.detail;
+
+            if (isLoading) return; // Prevent concurrent corrections
+            if (correctionAttempts >= 3) {
+                console.warn("Max correction attempts reached.");
+                setCorrectionAttempts(0);
+                return;
+            }
+
+            const formatError = error && typeof error === 'object' ? JSON.stringify(error) : error;
+            const prompt = `[SYSTEM: Auto-Correction] The previous command \`${command}\` failed with error: \`${formatError}\`. Please fix the syntax and output ONLY the corrected \`\`\`openbb block. Do not apologize, just fix it.`;
+
+            // Trigger invisible correction
+            performChat({ role: "user", content: prompt, isAutoCorrection: true }, messages, true);
+        };
+
+        window.addEventListener('terminal-error', handleTerminalError);
+        return () => window.removeEventListener('terminal-error', handleTerminalError);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isLoading, correctionAttempts, messages]);
 
     const preprocessMarkdown = (text: string) => {
         if (!text) return "";
@@ -168,17 +194,15 @@ export default function ChatPane({
         }
     };
 
-    const handleSend = async () => {
-        if (!input.trim()) return;
-        const userMsg = { role: "user", content: input };
-        onUpdateMessages(session.id, prev => [...prev, userMsg]);
-        setInput("");
+    const performChat = async (userMsg: { role: string; content: string; isAutoCorrection?: boolean }, currentHistory: any[], isCorrection = false) => {
         setIsLoading(true);
-        const assistantMsgIndex = messages.length + 1;
-        onUpdateMessages(session.id, prev => [...prev, { role: "assistant", content: "", reasoning: "" }]);
+        if (!isCorrection) setCorrectionAttempts(0);
 
-        if (messages.length === 0 && session.title.startsWith("Chat")) {
-            onUpdateTitle(session.id, input.slice(0, 30) + (input.length > 30 ? "…" : ""));
+        const newLength = currentHistory.length + 1;
+        onUpdateMessages(session.id, prev => [...prev, userMsg, { role: "assistant", content: "", reasoning: "" }]);
+
+        if (currentHistory.length === 0 && session.title.startsWith("Chat") && !isCorrection) {
+            onUpdateTitle(session.id, userMsg.content.slice(0, 30) + (userMsg.content.length > 30 ? "…" : ""));
         }
 
         try {
@@ -194,7 +218,7 @@ export default function ChatPane({
                     user_id: 1,
                     session_id: session.id,
                     target_agent: selectedAgent,
-                    history: messages.map(m => ({ role: m.role, content: m.content })),
+                    history: [...currentHistory, userMsg].map(m => ({ role: m.role, content: m.content })),
                     portfolio: {
                         holdings: holdings.filter(h => h.price > 0),
                         total_value: totalValue,
@@ -244,19 +268,29 @@ export default function ChatPane({
 
                 onUpdateMessages(session.id, prev => {
                     const u = [...prev];
-                    u[assistantMsgIndex] = { role: "assistant", content: accC, reasoning: accR };
+                    u[newLength] = { role: "assistant", content: accC, reasoning: accR };
                     return u;
                 });
             }
         } catch {
             onUpdateMessages(session.id, prev => {
                 const u = [...prev];
-                u[assistantMsgIndex] = { role: "assistant", content: "⚠️ **Link Error.**" };
+                u[newLength] = { role: "assistant", content: "⚠️ **Link Error.**" };
                 return u;
             });
         } finally {
             setIsLoading(false);
+            if (isCorrection) {
+                setCorrectionAttempts(prev => prev + 1);
+            }
         }
+    };
+
+    const handleSend = async () => {
+        if (!input.trim()) return;
+        const userMsg = { role: "user", content: input };
+        setInput("");
+        await performChat(userMsg, messages, false);
     };
 
     return (
@@ -399,7 +433,7 @@ export default function ChatPane({
                                             <div className="flex items-center gap-3 h-8 px-1">
                                                 <Loader2 size={14} className="animate-spin text-accent" />
                                                 <span className={`text-[10px] font-black uppercase tracking-widest animate-pulse ${isDarkMode ? "text-zinc-600" : "text-zinc-400"}`}>
-                                                    Processing…
+                                                    {correctionAttempts > 0 ? `Auto-Correcting Syntax (Attempt ${correctionAttempts}/3)…` : 'Processing…'}
                                                 </span>
                                             </div>
                                         ) : (

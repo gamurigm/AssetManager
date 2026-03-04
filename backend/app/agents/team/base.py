@@ -67,6 +67,9 @@ class TeamAgent:
                 "- Format calculations step-by-step to show your logic, using LaTeX alignment if possible.\n"
                 "- Ensure your output is highly professional and aesthetically structured.\n"
                 "\nIMPORTANT: If the information requested (like prices or values) is already available in the [REAL-TIME] blocks provided below, use it directly instead of calling tools."
+                "\n\n[AUTO-CORRECTION DIRECTIVE - CRITICAL]:\n"
+                "If the user message begins with '[SYSTEM: Auto-Correction]', it means your previous OpenBB Terminal command failed. "
+                "You must analyze the error provided, fix your command syntax, and reply with ONLY the corrected ```openbb block. Do not apologize, analyze the problem silently, and output the correct block."
                 f"{realtime_info}"
             )
         for tool in tools:
