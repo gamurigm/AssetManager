@@ -116,21 +116,37 @@ async def openbb_cli(body: dict = Body(...)):
             "stream": False,
         }
         
-        try:
-            res = requests.post(invoke_url, headers=headers, json=payload, timeout=20)
-            res.raise_for_status()
-            ai_text = res.json()["choices"][0]["message"]["content"].strip()
-            
-            if "<execute>" in ai_text and "</execute>" in ai_text:
-                cmd_to_run = ai_text.split("<execute>")[1].split("</execute>")[0].strip()
-                # Run the command recursively
-                inner_res = await openbb_cli({"command": cmd_to_run})
-                inner_output = inner_res.get("output", "Done")
-                return {"output": f"🤖 [QWEN EXECUTOR]: Entendido. Preparando ejecución...\n⚡ Ejecutando: {cmd_to_run}\n\n{inner_output}"}
-            
-            return {"output": f"🤖 Qwen: {ai_text}"}
-        except Exception as e:
-            return {"output": f"Qwen API Error: {str(e)}", "type": "error"}
+        models_to_try = [
+            ("qwen/qwen3.5-397b-a17b", 25),
+            ("meta/llama3-70b-instruct", 35),
+            ("mistralai/mixtral-8x22b-instruct-v0.1", 45)
+        ]
+        
+        last_error = None
+        for model_id, timeout_sec in models_to_try:
+            payload["model"] = model_id
+            try:
+                res = requests.post(invoke_url, headers=headers, json=payload, timeout=timeout_sec)
+                res.raise_for_status()
+                ai_text = res.json()["choices"][0]["message"]["content"].strip()
+                
+                if "<execute>" in ai_text and "</execute>" in ai_text:
+                    cmd_to_run = ai_text.split("<execute>")[1].split("</execute>")[0].strip()
+                    # Run the command recursively
+                    inner_res = await openbb_cli({"command": cmd_to_run})
+                    inner_output = inner_res.get("output", "Done")
+                    model_name = model_id.split('/')[1].split('-')[0].upper()
+                    return {"output": f"🤖 [{model_name} EXECUTOR]: Entendido. Preparando ejecución...\n⚡ Ejecutando: {cmd_to_run}\n\n{inner_output}"}
+                
+                model_name = model_id.split('/')[1].split('-')[0].capitalize()
+                return {"output": f"🤖 {model_name}: {ai_text}"}
+                
+            except Exception as e:
+                last_error = e
+                print(f"[LLM Failover] {model_id} failed: {e}. Trying next...")
+                continue
+                
+        return {"output": f"LLM Connectivity Error (Failover exhausted). Last Error: {str(last_error)}", "type": "error"}
 
     # ─── Built-in commands ──────────────────────────────────────────
     if low in ("help", "h", "?"):
