@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import GoldenBlackHole from "@/components/ui/GoldenBlackHole";
 
 const BACKEND_URL = "http://127.0.0.1:8282";
 const POLL_INTERVAL = 1500; // ms between health checks
@@ -14,18 +15,6 @@ export default function BackendGate({ children }: BackendGateProps) {
     const [ready, setReady] = useState(false);
     const [attempt, setAttempt] = useState(0);
     const [status, setStatus] = useState("Initializing systems...");
-    const [phase, setPhase] = useState(0);
-
-    const statusMessages = [
-        "Initializing systems...",
-        "Connecting to backend services...",
-        "Loading market data engine...",
-        "Synchronizing DuckDB schema...",
-        "Warming up AI agents...",
-        "Establishing provider connections...",
-        "Calibrating risk models...",
-        "Almost ready...",
-    ];
 
     const checkBackend = useCallback(async () => {
         try {
@@ -58,13 +47,6 @@ export default function BackendGate({ children }: BackendGateProps) {
             retryCount++;
             setAttempt(retryCount);
 
-            // Cycle through status messages
-            const msgIndex = Math.min(
-                Math.floor(retryCount / 3),
-                statusMessages.length - 1
-            );
-            setStatus(statusMessages[msgIndex]);
-            setPhase(msgIndex);
 
             if (retryCount >= MAX_RETRIES) {
                 setStatus("Backend unreachable. Please start the server.");
@@ -79,141 +61,50 @@ export default function BackendGate({ children }: BackendGateProps) {
         return () => clearInterval(timer);
     }, [checkBackend]);
 
-    const [particles, setParticles] = useState<{ left: string; top: string; delay: string; duration: string; size: number }[]>([]);
-    const [ripples, setRipples] = useState<{ left: string; top: string; delay: string; duration: string }[]>([]);
 
-    useEffect(() => {
-        // Small dots only — lots of them
-        setParticles(
-            Array.from({ length: 90 }).map(() => ({
-                left: `${Math.random() * 100}%`,
-                top: `${Math.random() * 100}%`,
-                delay: `${Math.random() * 8}s`,
-                duration: `${2.5 + Math.random() * 5}s`,
-                size: 1 + Math.random() * 3, // 1–4px only
-            }))
-        );
-        // Ripple waves that expand outward
-        setRipples(
-            Array.from({ length: 6 }).map(() => ({
-                left: `${15 + Math.random() * 70}%`,
-                top: `${15 + Math.random() * 70}%`,
-                delay: `${Math.random() * 10}s`,
-                duration: `${4 + Math.random() * 4}s`,
-            }))
-        );
-    }, []);
 
     if (ready) {
         return <div className="animate-gate-reveal">{children}</div>;
     }
 
     return (
-        <div className="gate-container">
-            {/* Background image — cinematic dark overlay */}
-            <div
-                className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-                style={{
-                    backgroundImage: "url('/fondo-bg1.jpg')",
-                    opacity: 1,
-                    filter: 'saturate(1.4) contrast(1.15) brightness(0.75)'
-                }}
-            />
-            {/* Rich vignette — dark edges, slightly open center */}
-            <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(ellipse 70% 60% at 50% 50%, rgba(0,0,0,0.2) 0%, rgba(0,0,0,0.6) 100%)' }} />
-            {/* Top & bottom hard black bars */}
-            <div className="absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black to-transparent pointer-events-none" />
-            <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-black to-transparent pointer-events-none" />
+        <div className="relative w-screen h-screen flex items-center justify-center overflow-hidden bg-black text-white font-sans">
+            {/* 3D Background */}
+            <GoldenBlackHole />
 
-            {/* Animated background grid */}
-            <div className="gate-grid" />
-
-            {/* Floating particles (hydrated safely) */}
-            <div className="gate-particles">
-                {particles.map((p, i) => (
-                    <div
-                        key={i}
-                        className="gate-particle"
-                        style={{
-                            left: p.left,
-                            top: p.top,
-                            width: `${p.size}px`,
-                            height: `${p.size}px`,
-                            animationDelay: p.delay,
-                            animationDuration: p.duration,
-                            boxShadow: `0 0 ${p.size * 2}px rgba(255,248,160,0.75)`,
-                        }}
-                    />
-                ))}
-            </div>
-
-            {/* Ripple waves */}
-            <div className="gate-particles">
-                {ripples.map((r, i) => (
-                    <div
-                        key={`ripple-${i}`}
-                        className="gate-ripple"
-                        style={{
-                            left: r.left,
-                            top: r.top,
-                            animationDelay: r.delay,
-                            animationDuration: r.duration,
-                        }}
-                    />
-                ))}
-            </div>
-
-            {/* Central content */}
-            <div className="gate-content">
+            {/* Central content - Glassmorphism overlay */}
+            <div className="relative z-10 flex flex-col items-center justify-center p-12 rounded-3xl bg-black/40 backdrop-blur-xl border border-white/10 shadow-[0_0_50px_rgba(212,175,55,0.1)] transition-all duration-700 ease-out transform hover:scale-105">
                 {/* Logo / Brand */}
-                <div className="gate-logo-ring">
-                    <div className="gate-ring gate-ring-outer" />
-                    <div className="gate-ring gate-ring-middle" />
-                    <div className="gate-ring gate-ring-inner" />
-                    <div className="gate-logo-core">
-                        <span className="gate-logo-text">M</span>
-                    </div>
+                <div className="relative w-24 h-24 mb-6 flex items-center justify-center">
+                    <div className="absolute inset-0 rounded-full border border-white/20 animate-[spin_4s_linear_infinite]" />
+                    <div className="absolute inset-2 rounded-full border border-yellow-500/30 animate-[spin_3s_linear_infinite_reverse]" />
+                    <div className="absolute inset-x-4 inset-y-4 rounded-full bg-gradient-to-tr from-yellow-600 to-orange-400 opacity-20 blur-md animate-pulse" />
+                    <span className="text-4xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white to-yellow-500/50">G</span>
                 </div>
 
                 {/* Title */}
-                <h1 className="gate-title">
-                    <span className="gate-title-main">MMAM</span>
-                    <span className="gate-title-sub">Intelligence Core</span>
+                <h1 className="flex flex-col items-center gap-1 mb-8">
+                    <span className="text-3xl font-black tracking-[0.2em] uppercase text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">Gravity</span>
+                    <span className="text-xs font-bold tracking-[0.3em] uppercase text-yellow-500/80">Asset Manager U</span>
                 </h1>
 
                 {/* Progress section */}
-                <div className="gate-progress-section">
+                <div className="w-64 flex flex-col items-center gap-4">
                     {/* Progress bar */}
-                    <div className="gate-progress-track">
+                    <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden relative">
                         <div
-                            className="gate-progress-fill"
+                            className="h-full bg-gradient-to-r from-orange-500 to-yellow-400 transition-all duration-500 ease-out"
                             style={{
                                 width: `${Math.min((attempt / 8) * 100, 95)}%`,
                             }}
                         />
-                        <div className="gate-progress-glow" />
                     </div>
 
                     {/* Status text */}
-                    <p className="gate-status" key={status}>
+                    <p className="text-[10px] font-mono uppercase tracking-widest text-white/50 h-4 text-center animate-pulse" key={status}>
                         {status}
                     </p>
-
-                    {/* Phase indicators */}
-                    <div className="gate-phases">
-                        {statusMessages.slice(0, 5).map((_, i) => (
-                            <div
-                                key={i}
-                                className={`gate-phase-dot ${i <= phase ? "gate-phase-active" : ""}`}
-                            />
-                        ))}
-                    </div>
                 </div>
-
-                {/* Version / footer */}
-                <p className="gate-footer">
-                    Murillo Medina Asset Management • v4.0
-                </p>
             </div>
         </div>
     );

@@ -152,8 +152,8 @@ async def openbb_cli(body: dict = Body(...)):
     if low in ("help", "h", "?"):
         return {"output": (
             "╔════════════════════════════════════════════════════════════════════════════════════╗\n"
-            "║                        🌌 MMAM INTELLIGENCE · OPENBB PLATFORM                      ║\n"
-            "║                            ADVANCED CLI TERMINAL v2.5.0                            ║\n"
+            "║                      🌌 GRAVITY ASSET MANAGER U · OPENBB PLATFORM                  ║\n"
+            "║                            ADVANCED CLI TERMINAL v3.0.0                            ║\n"
             "╚════════════════════════════════════════════════════════════════════════════════════╝\n\n"
             "  SYNTAX:  command --flag value --flag2 value2\n"
             "           Add  --chart true  to any ★ command to open an interactive Plotly chart.\n\n"

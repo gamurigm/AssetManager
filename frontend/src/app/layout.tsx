@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "MMAM — Intelligence Core",
-  description: "Murillo Medina Asset Management: AI-powered terminal with NVIDIA NIM, real-time analytics, and automated trading.",
+  title: "Gravity Asset Manager U",
+  description: "Next-generation AI-powered financial terminal, rendering real-time portfolio analytics and autonomous trading execution.",
 };
 
 import ClientProviders from "@/components/providers/ClientProviders";

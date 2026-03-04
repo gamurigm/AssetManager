@@ -113,7 +113,7 @@ function IndicatorsPanel({ showFib, setShowFib }: { showFib: boolean; setShowFib
                 </div>
                 <div>
                     <h3 className="text-sm font-black uppercase tracking-widest text-white">Technicals</h3>
-                    <p className="text-[10px] text-muted font-bold mt-0.5">MMAM Analysis Engine</p>
+                    <p className="text-[10px] text-muted font-bold mt-0.5">Gravity Engine</p>
                 </div>
             </div>
 
