@@ -463,6 +463,7 @@ export default function ChartWindow() {
     // Timeframe
     const [timeframe, setTimeframe] = useState("daily");
     const TIMEFRAMES = [
+        { label: "5m", value: "5m" },
         { label: "15m", value: "15m" },
         { label: "1H", value: "1h" },
         { label: "4H", value: "4h" },
@@ -471,7 +472,7 @@ export default function ChartWindow() {
         { label: "1M", value: "monthly" },
     ];
 
-    const isIntradayTF = ["15m", "1h", "4h"].includes(timeframe);
+    const isIntradayTF = ["5m", "15m", "1h", "4h"].includes(timeframe);
 
     // Normalize time: intraday datetimes → Unix timestamp (seconds), daily → YYYY-MM-DD string
     const normalizeTime = (dateStr: string) => {
@@ -508,8 +509,8 @@ export default function ChartWindow() {
         if (!symbol) return;
         const fetchData = async () => {
             try {
-                const isIntraday = ["15m", "1h", "4h"].includes(timeframe);
-                const periodMap: Record<string, string> = { "15m": "5d", "1h": "1mo", "4h": "3mo" };
+                const isIntraday = ["5m", "15m", "1h", "4h"].includes(timeframe);
+                const periodMap: Record<string, string> = { "5m": "5d", "15m": "5d", "1h": "1mo", "4h": "3mo" };
                 const dataUrl = isIntraday
                     ? `http://localhost:8282/api/v1/market/intraday/${encodeURIComponent(symbol)}?interval=${timeframe}&period=${periodMap[timeframe] || "1mo"}`
                     : `http://localhost:8282/api/v1/market/historical/${encodeURIComponent(symbol)}?limit=10000`;
@@ -520,7 +521,11 @@ export default function ChartWindow() {
                 ]);
                 const data = await res.json();
                 if (data.historical) {
-                    setRawData([...data.historical].sort((a: any, b: any) => String(a.date).localeCompare(String(b.date))));
+                    const mapped = data.historical.map((d: any) => ({
+                        ...d,
+                        date: d.date || d.timestamp || d.time || d.ts || ""
+                    }));
+                    setRawData(mapped.sort((a: any, b: any) => String(a.date).localeCompare(String(b.date))));
                 } else {
                     setRawData([]);
                 }

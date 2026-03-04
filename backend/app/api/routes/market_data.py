@@ -61,7 +61,7 @@ async def get_historical_endpoint(symbol: str, limit: int = 300):
 @router.get("/intraday/{symbol:path}")
 async def get_intraday_endpoint(
     symbol: str,
-    interval: str = Query("1h", description="Candle interval: 15m, 1h, 4h"),
+    interval: str = Query("1h", description="Candle interval: 5m, 15m, 1h, 4h"),
     period: str = Query("1mo", description="Lookback window: 5d, 1mo, 3mo, 6mo"),
 ):
     """Get intraday OHLCV candles (DuckDB-first, then Yahoo/Polygon fallback)."""
