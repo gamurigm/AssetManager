@@ -44,6 +44,79 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
     const obvRef = useRef<HTMLDivElement>(null);
     const adxRef = useRef<HTMLDivElement>(null);
 
+    // Dynamic Fib State
+    const [fibMode, setFibMode] = useState(false);
+    const [hasUserFib, setHasUserFib] = useState(false);
+    const mainSeriesRef = useRef<any>(null);
+    const drawStateRef = useRef<{ isDrawing: boolean, p1: number | null, p2: number | null }>({ isDrawing: false, p1: null, p2: null });
+    const userFibLinesRef = useRef<any[]>([]);
+
+    const clearUserFibLines = () => {
+        if (mainSeriesRef.current && userFibLinesRef.current.length > 0) {
+            userFibLinesRef.current.forEach(line => {
+                try { mainSeriesRef.current.removePriceLine(line); } catch (e) { }
+            });
+        }
+        userFibLinesRef.current = [];
+        setHasUserFib(false);
+        drawStateRef.current = { isDrawing: false, p1: null, p2: null };
+    };
+
+    const drawFibLines = (p1: number, p2: number) => {
+        if (!mainSeriesRef.current) return;
+        if (userFibLinesRef.current.length > 0) {
+            userFibLinesRef.current.forEach(line => {
+                try { mainSeriesRef.current.removePriceLine(line); } catch (e) { }
+            });
+            userFibLinesRef.current = [];
+        }
+
+        const diff = p2 - p1;
+        FIBONACCI_LEVELS.forEach(level => {
+            const price = p1 + (diff * level.level);
+            const line = mainSeriesRef.current.createPriceLine({
+                price,
+                color: level.color,
+                lineWidth: 1,
+                lineStyle: 1,
+                axisLabelVisible: true,
+                title: level.text,
+            });
+            userFibLinesRef.current.push(line);
+        });
+        if (!hasUserFib) setHasUserFib(true);
+    };
+
+    const handleFibMouseDown = (e: React.MouseEvent) => {
+        if (!fibMode || !mainSeriesRef.current || !chartContainerRef.current) return;
+        const rect = chartContainerRef.current.getBoundingClientRect();
+        const y = e.clientY - rect.top;
+        const price = mainSeriesRef.current.coordinateToPrice(y as any);
+        if (price !== null) {
+            drawStateRef.current = { isDrawing: true, p1: price, p2: price };
+            drawFibLines(price, price);
+        }
+    };
+
+    const handleFibMouseMove = (e: React.MouseEvent) => {
+        const state = drawStateRef.current;
+        if (!state.isDrawing || state.p1 === null || !mainSeriesRef.current || !chartContainerRef.current) return;
+        const rect = chartContainerRef.current.getBoundingClientRect();
+        const y = e.clientY - rect.top;
+        const price = mainSeriesRef.current.coordinateToPrice(y as any);
+        if (price !== null) {
+            state.p2 = price;
+            drawFibLines(state.p1, price);
+        }
+    };
+
+    const handleFibMouseUp = () => {
+        if (drawStateRef.current.isDrawing) {
+            drawStateRef.current.isDrawing = false;
+            setFibMode(false);
+        }
+    };
+
     // Indicator params
     const [macdFast, setMacdFast] = useState(12);
     const [macdSlow, setMacdSlow] = useState(26);
@@ -79,7 +152,14 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
             upColor: '#22c55e', downColor: '#ef4444', borderVisible: false,
             wickUpColor: '#22c55e', wickDownColor: '#ef4444',
         });
+        mainSeriesRef.current = series;
         series.setData(candles.map(d => ({ time: d.date, open: d.open, high: d.high, low: d.low, close: d.close })));
+
+        // Re-draw any existing custom fib if chart recreated
+        const st = drawStateRef.current;
+        if (st.p1 !== null && st.p2 !== null) {
+            drawFibLines(st.p1, st.p2);
+        }
 
         // EMA overlays
         if (showEmas) {
@@ -380,10 +460,29 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
             </div>
 
             {/* Main Candlestick */}
-            <div className="relative w-full" style={{ height: 'calc(100% - 320px)', minHeight: 300 }}>
-                <div ref={chartContainerRef} className="absolute inset-0" />
+            <div className="relative w-full" style={{ height: 'calc(100% - 320px)', minHeight: 400 }}>
+                {fibMode && (
+                    <div
+                        className="absolute inset-0 z-40 cursor-crosshair bg-white/5"
+                        onMouseDown={handleFibMouseDown}
+                        onMouseMove={handleFibMouseMove}
+                        onMouseUp={handleFibMouseUp}
+                        onMouseLeave={handleFibMouseUp}
+                    />
+                )}
+                <div ref={chartContainerRef} className="absolute inset-0 z-10" />
                 {/* Overlay EMA Controls */}
-                <div className="absolute top-2 left-2 z-10 flex flex-col gap-1">
+                <div className="absolute top-2 left-2 z-20 flex flex-col gap-1">
+                    <div
+                        className={`flex items-center gap-2 px-2 py-1 bg-card-hover/90 backdrop-blur-sm rounded border cursor-pointer hover:bg-card-hover transition-colors select-none ${fibMode ? 'border-amber-400/50 shadow-[0_0_10px_rgba(251,191,36,0.2)]' : 'border-border/50'}`}
+                        onClick={() => {
+                            if (!fibMode) clearUserFibLines();
+                            setFibMode(!fibMode);
+                        }}
+                    >
+                        <span className={`text-[10px] font-black uppercase tracking-[0.15em] ${fibMode ? 'text-amber-400' : 'text-muted'}`}>DRAW FIB</span>
+                    </div>
+
                     <div
                         className="flex items-center gap-2 px-2 py-1 bg-card-hover/90 backdrop-blur-sm rounded border border-border/50 cursor-pointer hover:bg-card-hover transition-colors select-none"
                         onClick={() => setShowEmas(!showEmas)}

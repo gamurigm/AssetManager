@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import GoldenBlackHole from "@/components/ui/GoldenBlackHole";
 
 const BACKEND_URL = "http://127.0.0.1:8282";
@@ -15,6 +15,8 @@ export default function BackendGate({ children }: BackendGateProps) {
     const [ready, setReady] = useState(false);
     const [attempt, setAttempt] = useState(0);
     const [status, setStatus] = useState("Initializing systems...");
+    const [progressOverride, setProgressOverride] = useState<number | null>(null);
+    const mountTime = useRef(Date.now());
 
     const checkBackend = useCallback(async () => {
         try {
@@ -23,9 +25,17 @@ export default function BackendGate({ children }: BackendGateProps) {
                 signal: AbortSignal.timeout(3000),
             });
             if (res.ok) {
-                setStatus("Systems online. Launching terminal...");
-                // Brief pause for the transition animation
-                setTimeout(() => setReady(true), 400);
+                setStatus("Systems online. Appreciating 3D aesthetics...");
+
+                // Ensure at least 10 seconds of loading screen
+                const elapsed = Date.now() - mountTime.current;
+                const remaining = Math.max(0, 10000 - elapsed);
+                setProgressOverride(100);
+
+                setTimeout(() => {
+                    setStatus("Launching terminal...");
+                    setTimeout(() => setReady(true), 400);
+                }, remaining);
                 return true;
             }
         } catch {
@@ -93,9 +103,9 @@ export default function BackendGate({ children }: BackendGateProps) {
                     {/* Progress bar */}
                     <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden relative">
                         <div
-                            className="h-full bg-gradient-to-r from-orange-500 to-yellow-400 transition-all duration-500 ease-out"
+                            className="h-full bg-gradient-to-r from-orange-500 to-yellow-400 transition-all duration-1000 ease-out"
                             style={{
-                                width: `${Math.min((attempt / 8) * 100, 95)}%`,
+                                width: `${progressOverride !== null ? progressOverride : Math.min((attempt / 8) * 100, 95)}%`,
                             }}
                         />
                     </div>
