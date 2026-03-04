@@ -4,7 +4,8 @@ import React from "react";
 import dynamic from "next/dynamic";
 import {
     TrendingUp, Activity, Bell, Settings, Pin, PinOff,
-    History as HistoryIcon
+    History as HistoryIcon,
+    LineChart, BarChart2, Zap, Layers, Maximize2, Repeat, Target, Sliders, Hash
 } from "lucide-react";
 import type { SidebarTab, TransactionRecord } from "@/types/dashboard";
 
@@ -148,19 +149,28 @@ function IndicatorsPanel({ showFib, setShowFib, showBollinger, setShowBollinger,
 
             <p className="text-[9px] text-muted/60 font-bold uppercase tracking-widest mb-2">Overlays</p>
             <div className="space-y-3">
-                <IndicatorToggle active={showFib} onClick={() => setShowFib(!showFib)} name="Fibonacci Auto-Levels" desc="Golden ratio retracements (23.6 - 78.6%)" activeColor="cyan" />
-                <IndicatorToggle active={showBollinger} onClick={() => setShowBollinger(!showBollinger)} name="Bollinger Bands" desc="20 Period SMA ± 2.0 Standard Deviations" activeColor="purple" />
-                <IndicatorToggle active={showKeltner} onClick={() => setShowKeltner(!showKeltner)} name="Keltner Channels" desc="EMA ± Multiplier × ATR" activeColor="blue" />
-                <IndicatorToggle active={showIchimoku} onClick={() => setShowIchimoku(!showIchimoku)} name="Ichimoku Cloud" desc="Tenkan (9) / Kijun (26) / Senkou / Chikou" activeColor="orange" />
-                <IndicatorToggle active={showVwap} onClick={() => setShowVwap(!showVwap)} name="VWAP" desc="Volume Weighted Average Price (institutional)" activeColor="yellow" />
+                <IndicatorToggle active={showFib} onClick={() => setShowFib(!showFib)} name="Fibonacci Auto-Levels" desc="Golden ratio retracements (23.6 - 78.6%)" activeColor="cyan" Icon={Hash} />
+                <IndicatorToggle active={showBollinger} onClick={() => setShowBollinger(!showBollinger)} name="Bollinger Bands" desc="20 Period SMA ± 2.0 Standard Deviations" activeColor="purple" Icon={Layers} />
+                <IndicatorToggle active={showKeltner} onClick={() => setShowKeltner(!showKeltner)} name="Keltner Channels" desc="EMA ± Multiplier × ATR" activeColor="blue" Icon={Maximize2} />
+                <IndicatorToggle active={showIchimoku} onClick={() => setShowIchimoku(!showIchimoku)} name="Ichimoku Cloud" desc="Tenkan (9) / Kijun (26) / Senkou / Chikou" activeColor="orange" Icon={LineChart} />
+                <IndicatorToggle active={showVwap} onClick={() => setShowVwap(!showVwap)} name="VWAP" desc="Volume Weighted Average Price (institutional)" activeColor="yellow" Icon={BarChart2} />
+
+                {/* Visual additions per request (not yet functional in logic) */}
+                <IndicatorToggle active={false} onClick={() => { }} name="Parabolic SAR" desc="Stop and Reverse trend tracking" activeColor="pink" Icon={Target} />
+                <IndicatorToggle active={false} onClick={() => { }} name="Supertrend" desc="ATR-based trailing stop trend identifier" activeColor="teal" Icon={TrendingUp} />
             </div>
 
             <p className="text-[9px] text-muted/60 font-bold uppercase tracking-widest mt-6 mb-2">Oscillators & Volatility</p>
             <div className="space-y-3">
-                <IndicatorToggle active={showRsi} onClick={() => setShowRsi(!showRsi)} name="RSI (14)" desc="Relative Strength Index — Overbought 70 / Oversold 30" activeColor="amber" />
-                <IndicatorToggle active={showAtr} onClick={() => setShowAtr(!showAtr)} name="ATR (14)" desc="Average True Range — Wilder's Volatility Metric" activeColor="teal" />
-                <IndicatorToggle active={showCci} onClick={() => setShowCci(!showCci)} name="CCI (20)" desc="Commodity Channel Index — Cyclical turns" activeColor="violet" />
-                <IndicatorToggle active={showAdx} onClick={() => setShowAdx(!showAdx)} name="ADX (14)" desc="Average Directional Index — Trend Strength" activeColor="pink" />
+                <IndicatorToggle active={showRsi} onClick={() => setShowRsi(!showRsi)} name="RSI (14)" desc="Relative Strength Index — Overbought 70 / Oversold 30" activeColor="amber" Icon={Activity} />
+                <IndicatorToggle active={false} onClick={() => { }} name="MACD (12,26,9)" desc="Moving Average Convergence Divergence" activeColor="cyan" Icon={Sliders} />
+                <IndicatorToggle active={showAtr} onClick={() => setShowAtr(!showAtr)} name="ATR (14)" desc="Average True Range — Wilder's Volatility Metric" activeColor="teal" Icon={Zap} />
+                <IndicatorToggle active={showCci} onClick={() => setShowCci(!showCci)} name="CCI (20)" desc="Commodity Channel Index — Cyclical turns" activeColor="violet" Icon={Repeat} />
+                <IndicatorToggle active={showAdx} onClick={() => setShowAdx(!showAdx)} name="ADX (14)" desc="Average Directional Index — Trend Strength" activeColor="pink" Icon={TrendingUp} />
+
+                {/* Visual additions per request (not yet functional in logic) */}
+                <IndicatorToggle active={false} onClick={() => { }} name="MFI (14)" desc="Money Flow Index — Volume-weighted RSI" activeColor="purple" Icon={Activity} />
+                <IndicatorToggle active={false} onClick={() => { }} name="CMF (20)" desc="Chaikin Money Flow — Institutional accumulation" activeColor="blue" Icon={BarChart2} />
             </div>
 
             <div className="mt-8 pt-6 border-t border-white/5">
@@ -173,8 +183,8 @@ function IndicatorsPanel({ showFib, setShowFib, showBollinger, setShowBollinger,
     );
 }
 
-function IndicatorToggle({ active, onClick, name, desc, activeColor }: {
-    active: boolean; onClick: () => void; name: string; desc: string; activeColor: string;
+function IndicatorToggle({ active, onClick, name, desc, activeColor, Icon }: {
+    active: boolean; onClick: () => void; name: string; desc: string; activeColor: string; Icon?: any;
 }) {
     const colorMap: Record<string, { bg: string; border: string; text: string; glow: string; hoverBg: string; hoverBorder: string }> = {
         cyan: { bg: 'bg-cyan-400/10', border: 'border-cyan-400/30', text: 'text-cyan-400', glow: 'shadow-[0_0_12px_rgba(34,211,238,0.8)]', hoverBg: 'hover:bg-cyan-400/5', hoverBorder: 'hover:border-cyan-400/30' },
@@ -191,15 +201,20 @@ function IndicatorToggle({ active, onClick, name, desc, activeColor }: {
     return (
         <div
             onClick={onClick}
-            className={`p-4 rounded-2xl border transition-all cursor-pointer group ${active ? `${c.bg} ${c.border}` : `bg-white/5 border-white/10 ${c.hoverBg} ${c.hoverBorder}`
+            className={`flex items-center gap-4 p-4 rounded-2xl border transition-all cursor-pointer group ${active ? `${c.bg} ${c.border}` : `bg-white/5 border-white/10 ${c.hoverBg} ${c.hoverBorder}`
                 }`}
         >
-            <div className="flex items-center justify-between">
+            {Icon && (
+                <div className={`p-2 rounded-xl transition-colors ${active ? `bg-[${c.text}]/20 ${c.text}` : `bg-white/5 text-muted group-hover:${c.text}`}`}>
+                    <Icon size={16} />
+                </div>
+            )}
+            <div className="flex items-center justify-between flex-1">
                 <div>
                     <div className={`text-xs font-black transition-colors ${active ? c.text : `text-white group-hover:${c.text}`}`}>{name}</div>
                     <div className="text-[9px] text-muted font-bold mt-1 line-clamp-1">{desc}</div>
                 </div>
-                <div className={`h-2.5 w-2.5 rounded-full transition-all ${active ? `bg-current ${c.text} ${c.glow}` : 'bg-zinc-700'}`} />
+                <div className={`h-2.5 w-2.5 rounded-full transition-all ${active ? `bg-current ${c.text} ${c.glow}` : 'bg-white/10 group-hover:bg-white/30'}`} />
             </div>
         </div>
     );
