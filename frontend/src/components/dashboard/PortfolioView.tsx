@@ -136,9 +136,9 @@ export default function PortfolioView({
             </div>
 
             {/* BENTO GRID */}
-            <div className="shrink-0 min-w-0 grid grid-cols-1 xl:grid-cols-3 xl:grid-rows-2 gap-4">
-                {/* NAV Chart (Top Left) */}
-                <div className={`xl:col-span-2 xl:row-span-1 relative bg-card/30 border border-border/40 rounded-3xl overflow-hidden shadow-2xl flex flex-col transition-all duration-300 ${collapsed['equity-curve'] ? 'min-h-[60px]' : ''}`}>
+            <div className="shrink-0 min-w-0 flex flex-col gap-4">
+                {/* NAV Chart (Full Width) */}
+                <div className={`relative bg-card/30 border border-border/40 rounded-3xl overflow-hidden shadow-2xl flex flex-col transition-all duration-300 ${collapsed['equity-curve'] ? 'min-h-[60px]' : ''}`}>
                     <div onClick={() => togglePanel('equity-curve')} className="px-6 py-4 flex items-center justify-between bg-card-hover/20 cursor-pointer border-b border-white/5 active:bg-card-hover/40 transition-colors">
                         <div className="flex items-center gap-3">
                             <div className="h-8 w-8 rounded-lg bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center"><TrendingUp size={16} className="text-cyan-400" /></div>
@@ -156,24 +156,24 @@ export default function PortfolioView({
                         </div>
                     </div>
                     {!collapsed['equity-curve'] && (
-                        <div className="p-6 flex-1 min-h-0 flex flex-col animate-in fade-in slide-in-from-top-4 duration-700 delay-150"><PortfolioEquityChart /></div>
+                        <div className="p-6 flex-1 min-h-[350px] flex flex-col animate-in fade-in slide-in-from-top-4 duration-700 delay-150"><PortfolioEquityChart /></div>
                     )}
                 </div>
 
-                {/* Sector Chart (Bottom Left) */}
-                <div className="xl:col-span-2 xl:row-span-1 flex flex-col">
+                {/* Sector Chart (Full Width) */}
+                <div className="flex flex-col">
                     <CollapsiblePanel id="sector" collapsed={collapsed} toggle={togglePanel} title="Sector Exposure" icon={<ChartPie size={14} className="text-accent" />}>
-                        <div className="p-4 flex-1 min-h-0"><SectorPieChart data={sectorData} total={totalValue} /></div>
+                        <div className="p-4 flex-1 min-h-[350px]"><SectorPieChart data={sectorData} total={totalValue} /></div>
                     </CollapsiblePanel>
                 </div>
 
-                {/* Treemap (Right Full Height) */}
-                <div className="xl:col-span-1 xl:row-span-2 flex flex-col">
+                {/* Treemap (Full Width) */}
+                <div className="flex flex-col">
                     <CollapsiblePanel id="treemap" collapsed={collapsed} toggle={togglePanel} title="Allocation Intensity" icon={<LayoutGrid size={14} className="text-accent" />}
                         badge={<span className="hidden sm:block text-[9px] text-muted font-black px-2 py-0.5 bg-background rounded border border-border tracking-tighter uppercase">Hi-Density</span>}
                         minHeight="400px"
                     >
-                        <div className="p-4 flex-1 min-h-[300px] h-full"><AssetTreemap data={treemapData} /></div>
+                        <div className="p-4 flex-1 min-h-[400px]"><AssetTreemap data={treemapData} /></div>
                     </CollapsiblePanel>
                 </div>
             </div>
