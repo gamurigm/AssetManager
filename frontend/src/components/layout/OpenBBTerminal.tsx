@@ -35,6 +35,49 @@ export default function OpenBBTerminal() {
     const endRef = useRef<HTMLDivElement>(null);
     const inactivityTimer = useRef<NodeJS.Timeout | null>(null);
 
+    // Draggable icon state
+    const [termIconPos, setTermIconPos] = useState({ x: 24, y: 24 });
+    const [termDragging, setTermDragging] = useState(false);
+    const termDragRef = useRef<{ startX: number; startY: number; startPosX: number; startPosY: number; moved: boolean } | null>(null);
+
+    const snapToSafePosition = useCallback(() => {
+        setTermIconPos({ x: 24, y: 24 });
+    }, []);
+
+    // Drag handler for the floating terminal icon
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!termDragging || !termDragRef.current) return;
+            const dX = termDragRef.current.startX - e.clientX;
+            const dY = termDragRef.current.startY - e.clientY;
+            if (Math.abs(dX) > 5 || Math.abs(dY) > 5) termDragRef.current.moved = true;
+            const padding = 20;
+            const maxRight = window.innerWidth - 80 - padding;
+            const maxBottom = window.innerHeight - 80 - padding;
+            setTermIconPos({
+                x: Math.min(Math.max(padding, termDragRef.current.startPosX + dX), Math.max(padding, maxRight)),
+                y: Math.min(Math.max(padding, termDragRef.current.startPosY + dY), Math.max(padding, maxBottom)),
+            });
+        };
+        const handleMouseUp = () => {
+            if (!termDragging) return;
+            setTermDragging(false);
+            if (termDragRef.current && !termDragRef.current.moved) {
+                snapToSafePosition();
+                setIsOpen(true); setIsStellar(false); resetInactivity();
+            }
+            termDragRef.current = null;
+        };
+        if (termDragging) {
+            window.addEventListener('mousemove', handleMouseMove);
+            window.addEventListener('mouseup', handleMouseUp);
+        }
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [termDragging]);
+
     const activeSession = sessions.find(s => s.id === activeId) || sessions[0];
     const lineCount = activeSession.history.length + 1;
 
@@ -84,6 +127,46 @@ export default function OpenBBTerminal() {
             window.dispatchEvent(new CustomEvent('terminal-resize', { detail: { height: 0 } }));
         };
     }, []);
+
+    // ── Agent Bridge: listen for 'terminal-execute' events from chat agents ──
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const cmd = (e as CustomEvent).detail?.command;
+            if (!cmd || typeof cmd !== 'string') return;
+
+            // Open terminal if closed, exit stellar mode
+            setIsOpen(true);
+            setIsStellar(false);
+
+            // Use the active session to inject the command
+            setSessions(prev => {
+                const sid = activeId;
+                const session = prev.find(s => s.id === sid);
+                if (!session) return prev;
+
+                // Add a visual marker showing this was agent-dispatched
+                const agentMarker: Message = { type: 'output', text: '🤖 Agent executed:' };
+                const newHistory = [...session.history, agentMarker];
+
+                // If already executing, queue it
+                if (session.isExecuting) {
+                    return prev.map(s => s.id === sid
+                        ? { ...s, history: newHistory, pendingCmd: cmd }
+                        : s
+                    );
+                }
+
+                // Otherwise execute immediately via runCommand (we'll trigger it via state)
+                return prev.map(s => s.id === sid
+                    ? { ...s, history: newHistory, pendingCmd: cmd }
+                    : s
+                );
+            });
+        };
+
+        window.addEventListener('terminal-execute', handler);
+        return () => window.removeEventListener('terminal-execute', handler);
+    }, [activeId]);
 
     useEffect(() => {
         if (isOpen && inputRef.current) inputRef.current.focus();
@@ -260,11 +343,13 @@ export default function OpenBBTerminal() {
                 if (window.getSelection()?.toString()) return;
                 e.preventDefault();
                 if (activeSession.isExecuting) {
-                    updateActiveSession({ isExecuting: false, pendingCmd: null,
+                    updateActiveSession({
+                        isExecuting: false, pendingCmd: null,
                         history: [...activeSession.history, { type: 'error', text: '^C' }]
                     });
                 } else {
-                    updateActiveSession({ input: '',
+                    updateActiveSession({
+                        input: '',
                         history: val ? [...activeSession.history, { type: 'input', text: val + '^C' }] : activeSession.history
                     });
                 }
@@ -372,7 +457,7 @@ export default function OpenBBTerminal() {
     if (isStellar && !isOpen) {
         return (
             <button
-                onClick={() => { setIsStellar(false); setIsOpen(true); resetInactivity(); }}
+                onClick={() => { setIsStellar(false); snapToSafePosition(); setIsOpen(true); resetInactivity(); }}
                 className="fixed z-[9999] cursor-pointer group flex items-center justify-center transition-transform hover:scale-150"
                 style={{ top: 20, right: 90 }}
             >
@@ -382,23 +467,31 @@ export default function OpenBBTerminal() {
         );
     }
 
-    // ─── Closed: Icon button (aligned top-right, next to chat) ─────
+    // ─── Closed: Draggable icon button ─────
     if (!isOpen) {
         return (
-            <button
-                onClick={() => { setIsOpen(true); setIsStellar(false); resetInactivity(); }}
-                className={`fixed z-[9999] h-12 w-12 flex items-center justify-center transition-all duration-500 group overflow-hidden relative shadow-2xl cursor-pointer
-                    ${isDark
-                        ? 'bg-zinc-950 border-2 border-cyan-500/50 rounded-[18px] ring-4 ring-cyan-500/10 shadow-[0_0_30px_-5px_#22d3ee80]'
-                        : 'bg-gradient-to-br from-teal-500 via-cyan-600 to-teal-700 rounded-[18px] shadow-[0_15px_35px_-5px_rgba(20,184,166,0.5)] border border-white/20'
-                    }`}
-                style={{ top: 14, right: 86 }}
+            <div
+                className={`fixed z-[9999] transition-all ease-[cubic-bezier(0.2,0.8,0.2,1)] duration-700 ${termDragging ? 'select-none transition-none' : ''}`}
+                style={{ right: termIconPos.x, bottom: termIconPos.y }}
             >
-                <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
-                {!isDark && <div className="absolute inset-0 rounded-full bg-teal-400/20 animate-ping [animation-duration:3s]" />}
-                <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity ${isDark ? 'bg-cyan-600/10' : 'bg-white/10'}`} />
-                <TerminalIcon size={20} className="text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)] relative z-10" />
-            </button>
+                <button
+                    onMouseDown={(e) => {
+                        setTermDragging(true);
+                        termDragRef.current = { startX: e.clientX, startY: e.clientY, startPosX: termIconPos.x, startPosY: termIconPos.y, moved: false };
+                    }}
+                    className={`h-14 w-14 flex items-center justify-center transition-all duration-500 group overflow-hidden relative shadow-2xl
+                        ${isDark
+                            ? 'bg-zinc-950 border-2 border-cyan-500/50 rounded-[22px] ring-4 ring-cyan-500/10 shadow-[0_0_30px_-5px_#22d3ee80]'
+                            : 'bg-gradient-to-br from-teal-500 via-cyan-600 to-teal-700 rounded-[22px] shadow-[0_15px_35px_-5px_rgba(20,184,166,0.5)] border border-white/20'
+                        }
+                        ${termDragging ? 'cursor-grabbing scale-110' : 'cursor-grab'}`}
+                >
+                    <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+                    {!isDark && <div className="absolute inset-0 rounded-full bg-teal-400/20 animate-ping [animation-duration:3s]" />}
+                    <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity ${isDark ? 'bg-cyan-600/10' : 'bg-white/10'}`} />
+                    <TerminalIcon size={22} className="text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)] relative z-10" />
+                </button>
+            </div>
         );
     }
 

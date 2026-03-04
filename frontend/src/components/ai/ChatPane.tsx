@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -6,7 +6,7 @@ import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 
 import {
-    Send, Sparkles, Bot, Activity, FileText, Copy, Check, ShieldCheck, Loader2, Trash2
+    Send, Sparkles, Bot, Activity, FileText, Copy, Check, ShieldCheck, Loader2, Trash2, Terminal
 } from "lucide-react";
 
 interface Session {
@@ -46,6 +46,36 @@ export default function ChatPane({
     useEffect(() => {
         if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }, [messages, isMaximized]);
+
+    // ── Agent → Terminal Bridge: detect ```openbb blocks and auto-execute ──
+    const dispatchToTerminal = useCallback((command: string) => {
+        window.dispatchEvent(new CustomEvent('terminal-execute', { detail: { command: command.trim() } }));
+    }, []);
+
+    // Auto-execute: when the last assistant message finishes streaming and contains ```openbb blocks
+    useEffect(() => {
+        if (isLoading) return; // still streaming
+        if (messages.length === 0) return;
+
+        const lastMsg = messages[messages.length - 1];
+        if (lastMsg.role !== 'assistant' || !lastMsg.content) return;
+
+        // Extract all ```openbb ... ``` blocks
+        const openbbRegex = /```openbb\n([\s\S]*?)```/g;
+        let match;
+        const commands: string[] = [];
+        while ((match = openbbRegex.exec(lastMsg.content)) !== null) {
+            commands.push(match[1].trim());
+        }
+
+        if (commands.length === 0) return;
+
+        // Auto-execute each command with a small delay between them
+        commands.forEach((cmd, i) => {
+            setTimeout(() => dispatchToTerminal(cmd), i * 1500);
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isLoading, messages.length]);
 
     const preprocessMarkdown = (text: string) => {
         if (!text) return "";
@@ -377,7 +407,32 @@ export default function ChatPane({
                                                 remarkPlugins={[remarkGfm, remarkMath]}
                                                 rehypePlugins={[[rehypeKatex, { strict: false, throwOnError: false }]]}
                                                 components={{
-                                                    a: ({ node, ...props }) => <a target="_blank" rel="noopener noreferrer" {...props} />
+                                                    a: ({ node, ...props }) => <a target="_blank" rel="noopener noreferrer" {...props} />,
+                                                    code: ({ node, className, children, ...props }) => {
+                                                        const lang = className?.replace('language-', '') || '';
+                                                        const codeStr = String(children).replace(/\n$/, '');
+                                                        if (lang === 'openbb') {
+                                                            return (
+                                                                <div className={`my-3 rounded-xl overflow-hidden border ${isDarkMode ? 'border-cyan-500/30 bg-cyan-950/20' : 'border-teal-300 bg-teal-50'}`}>
+                                                                    <div className={`flex items-center justify-between px-3 py-1.5 ${isDarkMode ? 'bg-cyan-950/40 border-b border-cyan-500/20' : 'bg-teal-100 border-b border-teal-200'}`}>
+                                                                        <span className={`text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'text-cyan-400' : 'text-teal-700'}`}>OpenBB Command</span>
+                                                                        <button
+                                                                            onClick={() => dispatchToTerminal(codeStr)}
+                                                                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95 ${isDarkMode ? 'bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 border border-cyan-500/30' : 'bg-teal-600 text-white hover:bg-teal-700'}`}
+                                                                        >
+                                                                            <Terminal size={10} />
+                                                                            Run in Terminal
+                                                                        </button>
+                                                                    </div>
+                                                                    <pre className={`px-4 py-3 text-[13px] font-mono font-bold overflow-x-auto ${isDarkMode ? 'text-cyan-300' : 'text-teal-800'}`}>
+                                                                        <code>{codeStr}</code>
+                                                                    </pre>
+                                                                </div>
+                                                            );
+                                                        }
+                                                        // Default code block rendering
+                                                        return <code className={className} {...props}>{children}</code>;
+                                                    }
                                                 }}
                                             >
                                                 {preprocessMarkdown(m.content)}

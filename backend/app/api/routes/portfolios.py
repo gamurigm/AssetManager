@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Body
 from typing import List, Dict, Any
 from ...services.report_service import report_service
+from ...services.risk_service import risk_service
 
 from ...core.container import duckdb_repo, calculate_equity_curve_uc
 
@@ -37,6 +38,34 @@ async def save_portfolio(holdings: List[Dict[str, Any]] = Body(...)):
     success = duckdb_repo.save_portfolio(holdings)
     return {"status": "success" if success else "failed"}
 
+@router.get("/risk")
+async def get_portfolio_risk():
+    """Live portfolio risk metrics: VaR, Volatility, Sharpe, Drawdown, etc."""
+    holdings = duckdb_repo.get_portfolio()
+    if not holdings:
+        return {"error": "No holdings"}
+
+    report = risk_service.get_portfolio_risk_report(holdings)
+    if "error" in report:
+        return report
+
+    # Calculate max drawdown from equity snapshots
+    max_dd = 0.0
+    try:
+        snapshots = calculate_equity_curve_uc.execute(days=365)
+        if isinstance(snapshots, list) and snapshots:
+            equities = [s.get("total", 0) for s in snapshots]
+            peak = equities[0]
+            for e in equities:
+                peak = max(peak, e)
+                dd = (peak - e) / peak * 100 if peak else 0
+                max_dd = max(max_dd, dd)
+    except Exception:
+        pass
+
+    report["max_drawdown"] = round(max_dd, 2)
+    return report
+
 @router.post("/report")
 async def generate_portfolio_report(
     holdings: List[Dict[str, Any]] = Body(...),
@@ -57,3 +86,4 @@ async def snapshot_equity(total_value: float = Body(..., embed=True)):
 async def get_equity_history():
     """Retrieve dynamic equity history (realized vs total) for charts."""
     return calculate_equity_curve_uc.execute(days=730)
+

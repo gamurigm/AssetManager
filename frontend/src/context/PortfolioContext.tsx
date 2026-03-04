@@ -1,6 +1,6 @@
 "use client"
 
-import React, { createContext, useContext, useState, ReactNode } from "react";
+import React, { createContext, useContext, useState, ReactNode, useCallback } from "react";
 
 interface Holding {
     symbol: string;
@@ -20,9 +20,11 @@ interface Holding {
 interface PortfolioContextType {
     holdings: Holding[];
     totalValue: number;      // Current Market Value of Assets (Sum shares * price * factor)
-    accountEquity: number;   // Total AUM (1200 + Realized + Unrealized)
+    accountEquity: number;   // Total AUM (50000 + Realized + Unrealized)
     totalPnL: number;
     pnlPercent: number;
+    realizedPnL: number;
+    unrealizedPnL: number;
     setHoldings: (holdings: Holding[]) => void;
     closePosition: (symbol: string) => void;
 }
@@ -34,32 +36,24 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
     const [isInitialized, setIsInitialized] = useState(false);
     const [realizedPnL, setRealizedPnL] = useState(0);
 
-    // 1. Initial Load from Backend
+    // Initial Load from Backend
     React.useEffect(() => {
         const loadInitialData = async () => {
             try {
                 const [hRes, pnlRes] = await Promise.all([
                     fetch('http://127.0.0.1:8282/api/v1/portfolios/'),
-                    fetch('http://127.0.0.1:8282/api/v1/trading/history') // We'll calculate realized from transactions
+                    fetch('http://127.0.0.1:8282/api/v1/trading/history')
                 ]);
 
                 const hData = await hRes.json();
                 if (Array.isArray(hData)) {
-                    // Ensure every holding has valid metrics (default to 0 to avoid NaN)
                     const sanitized = hData.map(h => {
                         const price = h.price || h.entryPrice || 0;
                         const factor = h.factor || 1;
                         const change = h.change !== undefined ? h.change : (price - h.entryPrice) * h.shares * factor;
                         const changePercent = h.changePercent !== undefined ? h.changePercent :
                             (h.entryPrice !== 0 ? ((price - h.entryPrice) / h.entryPrice) * 100 : 0);
-
-                        return {
-                            ...h,
-                            price,
-                            factor,
-                            change,
-                            changePercent
-                        };
+                        return { ...h, price, factor, change, changePercent };
                     });
                     setHoldings(sanitized);
                 }
@@ -78,10 +72,9 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
         loadInitialData();
     }, []);
 
-    // 2. Persist to Backend on Changes
+    // Persist to Backend on Changes
     React.useEffect(() => {
         if (!isInitialized) return;
-
         const syncTimeout = setTimeout(async () => {
             try {
                 await fetch('http://127.0.0.1:8282/api/v1/portfolios/save', {
@@ -92,29 +85,21 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
             } catch (err) {
                 console.error("Failed to sync holdings:", err);
             }
-        }, 1000); // 1s Debounce
-
+        }, 1000);
         return () => clearTimeout(syncTimeout);
     }, [holdings, isInitialized]);
 
     const totalUnrealizedPnL = holdings.reduce((sum: number, h: Holding) => sum + h.change, 0);
     const totalPnL = realizedPnL + totalUnrealizedPnL;
-
-    // totalValue = Current Market Value of ASSETS (Only holdings)
     const totalValue = holdings.reduce((sum: number, h: Holding) => sum + (Math.abs(h.shares) * h.price * h.factor), 0);
-
-    // accountEquity = Total Capital (50000 baseline + all gains/losses)
     const accountEquity = 50000 + totalPnL;
-
     const pnlPercent = (totalPnL / 50000) * 100;
 
-    // 3. Periodic Balance Snapshot for Equity Curve — fires every 60s, NOT on every price tick
     const accountEquityRef = React.useRef(accountEquity);
     accountEquityRef.current = accountEquity;
 
     React.useEffect(() => {
         if (!isInitialized) return;
-
         const recordSnapshot = async () => {
             const equity = accountEquityRef.current;
             if (!equity || equity <= 0) return;
@@ -125,33 +110,21 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
                     body: JSON.stringify({ total_value: equity }),
                     signal: AbortSignal.timeout(5000),
                 });
-            } catch {
-                // Backend not ready yet — silently skip, will retry next interval
-            }
+            } catch { }
         };
-
-        // First snapshot after 10s (backend warmup), then every 60s
         const initial = setTimeout(recordSnapshot, 10000);
         const interval = setInterval(recordSnapshot, 60000);
         return () => { clearTimeout(initial); clearInterval(interval); };
-    }, [isInitialized]); // ← solo depende de isInitialized, no de accountEquity
+    }, [isInitialized]);
 
-    const updateHoldings = (newHoldings: Holding[]) => {
-        const timestamp = new Date().toLocaleTimeString();
-        console.log(`[${timestamp}] [PORTFOLIO] Updating holdings data | Assets: ${newHoldings.length}`);
+    const updateHoldings = useCallback((newHoldings: Holding[]) => {
         setHoldings(newHoldings);
-    };
+    }, []);
 
     const closePosition = async (symbol: string) => {
-        const timestamp = new Date().toLocaleTimeString();
         const holdingToClose = holdings.find(h => h.symbol === symbol);
-
         if (holdingToClose) {
-            console.log(`[${timestamp}] [TRADING] Liquidating position: ${symbol} | Shares: ${holdingToClose.shares}`);
-
-            const realized = holdingToClose.change; // Change at moment of closure is realized
-
-            // 1. Record transaction in backend
+            const realized = holdingToClose.change;
             try {
                 await fetch('http://127.0.0.1:8282/api/v1/trading/record', {
                     method: 'POST',
@@ -164,20 +137,26 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
                         realized_pnl: realized
                     })
                 });
-
-                // Update local realized total
                 setRealizedPnL(prev => prev + realized);
             } catch (err) {
                 console.error("Failed to record transaction:", err);
             }
         }
-
-        // 2. Update local state (which triggers the save_portfolio effect)
         setHoldings(prev => prev.filter(h => h.symbol !== symbol));
     };
 
     return (
-        <PortfolioContext.Provider value={{ holdings, totalValue, accountEquity, totalPnL, pnlPercent, setHoldings: updateHoldings, closePosition }}>
+        <PortfolioContext.Provider value={{
+            holdings,
+            totalValue,
+            accountEquity,
+            totalPnL,
+            pnlPercent,
+            realizedPnL,
+            unrealizedPnL: totalUnrealizedPnL,
+            setHoldings: updateHoldings,
+            closePosition
+        }}>
             {children}
         </PortfolioContext.Provider>
     );

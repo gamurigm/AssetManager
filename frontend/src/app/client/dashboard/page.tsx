@@ -90,6 +90,7 @@ export default function ClientDashboard() {
     const [watchlistPinned, setWatchlistPinned] = useState(false);
     const watchlistExpanded = watchlistPinned;
     const [transactions, setTransactions] = useState<any[]>([]);
+    const [riskData, setRiskData] = useState<any>(null);
 
     const togglePanel = (id: string) => {
         setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
@@ -114,6 +115,21 @@ export default function ClientDashboard() {
 
     useEffect(() => {
         logger.info("Dashboard", "Terminal Main Dashboard initialized");
+    }, []);
+
+    // Fetch real risk metrics from backend
+    useEffect(() => {
+        const fetchRisk = async () => {
+            try {
+                const res = await fetch('http://127.0.0.1:8282/api/v1/portfolios/risk');
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!data.error) setRiskData(data);
+            } catch { /* backend may be offline */ }
+        };
+        fetchRisk();
+        const interval = setInterval(fetchRisk, 120000); // Refresh every 2 minutes
+        return () => clearInterval(interval);
     }, []);
 
     useEffect(() => {
@@ -274,398 +290,508 @@ export default function ClientDashboard() {
                     <div className={`flex-1 overflow-y-auto p-4 lg:px-8 lg:py-6 space-y-4 transition-[padding] ease-[cubic-bezier(0.16,1,0.3,1)] duration-500 ${watchlistPinned ? 'pr-[355px]' : 'pr-[60px]'}`}>
                         {activeTab === "portfolio" ? (
                             <>
-                                {/* Condensed Header */}
-                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6 border-b border-border/10 pb-6 mb-4 relative overflow-hidden group">
-                                    <div className="absolute bottom-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-accent/30 to-transparent" />
+                                {/* ── Refined Header + Metrics Ribbon ── */}
+                                <div className="relative overflow-hidden rounded-2xl bg-card/40 border border-border/50 mb-4">
+                                    <div className="absolute inset-0 bg-gradient-to-r from-accent/[0.03] via-transparent to-purple-500/[0.03]" />
+                                    <div className="absolute bottom-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-accent/20 to-transparent" />
 
-                                    <div className="flex items-center gap-6">
-                                        <div className="relative">
-                                            <div className="h-14 w-14 rounded-2xl bg-accent/10 border border-accent/20 flex items-center justify-center shadow-lg group-hover:shadow-accent/20 transition-all duration-500">
-                                                <Activity size={24} className="text-accent animate-pulse" />
+                                    {/* Top Row: Branding + Actions */}
+                                    <div className="relative z-10 px-6 py-4 flex items-center justify-between">
+                                        <div className="flex items-center gap-4">
+                                            <div className="relative">
+                                                <div className="h-12 w-12 rounded-2xl bg-accent/15 border border-accent/30 flex items-center justify-center shadow-lg shadow-accent/5">
+                                                    <Activity size={24} className="text-accent animate-pulse" />
+                                                </div>
+                                                <div className="absolute -top-1 -right-1 h-3.5 w-3.5 rounded-full bg-green border-2 border-background animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
                                             </div>
-                                            <div className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-green border-4 border-background animate-pulse shadow-[0_0_10px_#10b981]" />
-                                        </div>
-                                        <div>
-                                            <p className="text-accent text-[10px] font-black uppercase tracking-[0.4em] mb-1">Terminal System Node: ALPHA-9</p>
-                                            <h1 className="text-3xl font-black tracking-tighter dark:text-white text-zinc-900">Institutional Asset Mandate <span className="text-muted font-light">/ Alpha Core</span></h1>
-                                            <div className="flex items-center gap-4 mt-1.5 capitalize text-[11px] font-bold text-muted">
-                                                <span className="flex items-center gap-1.5"><Star size={10} className="text-yellow-500" /> Tier 1 Liquidity</span>
-                                                <span className="flex items-center gap-1.5"><ShieldCheck size={10} className="text-emerald-500" /> Risk Audited</span>
+                                            <div>
+                                                <div className="flex items-center gap-3">
+                                                    <h1 className="text-3xl font-black tracking-tighter dark:text-white text-zinc-900 drop-shadow-sm">Alpha Core</h1>
+                                                    <span className="text-[10px] font-black uppercase tracking-[0.4em] text-accent font-mono bg-accent/10 px-3 py-1 rounded-lg border border-accent/20">NODE:ALPHA-9</span>
+                                                </div>
+                                                <div className="flex items-center gap-5 text-[11px] font-bold text-muted/80 mt-1">
+                                                    <span className="flex items-center gap-1.5"><Star size={10} className="text-yellow-500" /> Tier 1 Liquidity</span>
+                                                    <span className="flex items-center gap-1.5"><ShieldCheck size={10} className="text-emerald-500" /> Institutional Audit</span>
+                                                    <span className="flex items-center gap-1.5"><div className="h-2 w-2 rounded-full bg-green animate-pulse" /> Real-time Node</span>
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
 
-                                    <div className="flex items-center gap-4">
-                                        <div className="flex flex-col items-end mr-4 hidden md:flex">
-                                            <span className="text-[9px] dark:text-muted text-zinc-500 font-black tracking-widest uppercase">Connectivity</span>
-                                            <span className="text-xs font-black text-green animate-pulse">UPSTREAM: ACTIVE</span>
-                                        </div>
                                         <button
                                             onClick={async () => {
                                                 const btn = document.getElementById('audit-btn');
-                                                if (btn) { btn.textContent = '⏳ Generating…'; (btn as any).disabled = true; }
+                                                if (btn) { btn.textContent = '⏳ Processing...'; (btn as any).disabled = true; }
                                                 try {
                                                     const res = await fetch('http://127.0.0.1:8282/api/v1/portfolios/report', {
                                                         method: 'POST',
                                                         headers: { 'Content-Type': 'application/json' },
-                                                        body: JSON.stringify({
-                                                            holdings: activeHoldings,
-                                                            total_value: totalValue,
-                                                            total_pnl: totalPnL
-                                                        })
+                                                        body: JSON.stringify({ holdings: activeHoldings, total_value: totalValue, total_pnl: totalPnL })
                                                     });
-                                                    if (res.ok) {
-                                                        const data = await res.json();
-                                                        window.open(data.url, '_blank');
-                                                    } else {
-                                                        alert("Report generation failed (backend error).");
-                                                    }
-                                                } catch (e) {
-                                                    alert("Cannot reach backend. Make sure it's running.");
-                                                } finally {
-                                                    if (btn) { btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>Generate Portfolio Audit'; (btn as any).disabled = false; }
-                                                }
+                                                    if (res.ok) { const data = await res.json(); window.open(data.url, '_blank'); }
+                                                    else alert("Report failed.");
+                                                } catch { alert("Backend unreachable."); }
+                                                finally { if (btn) { btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg> Generate Audit'; (btn as any).disabled = false; } }
                                             }}
                                             id="audit-btn"
-                                            className="px-6 py-3 bg-white text-black hover:bg-zinc-200 text-[11px] font-black uppercase tracking-widest rounded-2xl transition-all shadow-2xl flex items-center gap-3 active:scale-95 disabled:opacity-50"
+                                            className="px-6 py-2.5 bg-white dark:bg-zinc-50 text-black hover:bg-zinc-200 text-xs font-black uppercase tracking-widest rounded-2xl transition-all shadow-xl flex items-center gap-3 active:scale-95 disabled:opacity-50"
                                         >
                                             <FileText size={14} />
-                                            Generate Portfolio Audit
+                                            Generate Audit
                                         </button>
                                     </div>
-                                </div>
 
-                                {/* Stat Cards */}
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 stagger">
-                                    <StatCard
-                                        label="AUM (TOTAL EQUITY)"
-                                        value={`$${accountEquity.toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}`}
-                                        icon={<DollarSign size={14} />}
-                                        accent="blue"
-                                    />
-                                    <StatCard
-                                        label="P&L (YTD)"
-                                        value={`${totalPnL >= 0 ? "+" : ""}$${totalPnL.toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}`}
-                                        sub={`${pnlPercent >= 0 ? "+" : ""}${pnlPercent.toFixed(2)}%`}
-                                        icon={totalPnL >= 0 ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
-                                        accent={totalPnL >= 0 ? "green" : "red"}
-                                    />
-                                    <StatCard
-                                        label="VAR (RISK)"
-                                        value="4.20%"
-                                        sub="LIMIT 7.5%"
-                                        icon={<BarChart3 size={14} />}
-                                        accent="purple"
-                                    />
-                                    <StatCard
-                                        label="BETA (S&P 500)"
-                                        value="1.14"
-                                        sub="HIGH VOL."
-                                        icon={<TrendingUp size={14} />}
-                                        accent="emerald"
-                                    />
-                                </div>
+                                    {/* Bottom Row: Ultra-Rich Metrics Ribbon */}
+                                    {(() => {
+                                        const { realizedPnL, unrealizedPnL } = usePortfolio();
+                                        const winners = activeHoldings.filter(h => h.change > 0).length;
+                                        const winRate = activeHoldings.length > 0 ? ((winners / activeHoldings.length) * 100) : 0;
+                                        const exposure = totalValue;
+                                        const cash = Math.max(0, accountEquity - exposure);
+                                        const leverage = accountEquity > 0 ? totalValue / accountEquity : 0;
+                                        const topHolding = activeHoldings.length > 0
+                                            ? activeHoldings.reduce((max, h) => (Math.abs(h.shares) * h.price * h.factor) > (Math.abs(max.shares) * max.price * max.factor) ? h : max, activeHoldings[0])
+                                            : null;
+                                        const topWeight = topHolding && totalValue > 0 ? ((Math.abs(topHolding.shares) * topHolding.price * topHolding.factor) / totalValue * 100) : 0;
+                                        const sectors = new Set(activeHoldings.map(h => h.sector)).size;
+                                        const avgChange = activeHoldings.length > 0
+                                            ? activeHoldings.reduce((sum, h) => sum + h.changePercent, 0) / activeHoldings.length
+                                            : 0;
 
-                                {/* Advanced Visualizations Row - Professional Stacked Layout */}
-                                <div className="grid grid-cols-1 gap-6 animate-slide-up" style={{ animationDelay: '0.2s' }}>
-                                    {/* Sector Allocation Chart - TOP */}
-                                    <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['sector'] ? 'min-h-[50px]' : 'min-h-[450px]'}`}>
-                                        <div
-                                            onClick={() => togglePanel('sector')}
-                                            className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/20 cursor-pointer hover:bg-card-hover/40 transition-colors"
-                                        >
-                                            <div className="flex items-center gap-2">
-                                                <ChartPie size={14} className="text-accent" />
-                                                <h2 className="text-xs font-black uppercase tracking-widest text-muted">Sector Exposure</h2>
-                                            </div>
-                                            {collapsed['sector'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
-                                        </div>
-                                        {!collapsed['sector'] && (
-                                            <div className="flex-1 animate-in fade-in slide-in-from-top-2 duration-300">
-                                                <SectorPieChart data={sectorData} total={totalValue} />
-                                            </div>
-                                        )}
-                                    </div>
+                                        // Sector concentration calculation
+                                        const sectorWeights: Record<string, number> = {};
+                                        activeHoldings.forEach(h => {
+                                            const val = Math.abs(h.shares) * h.price * h.factor;
+                                            sectorWeights[h.sector] = (sectorWeights[h.sector] || 0) + val;
+                                        });
+                                        const topSectorVal = Object.values(sectorWeights).length > 0 ? Math.max(...Object.values(sectorWeights)) : 0;
+                                        const maxConcentration = totalValue > 0 ? (topSectorVal / totalValue) * 100 : 0;
 
-                                    {/* Treemap Visualizer - BOTTOM */}
-                                    <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['treemap'] ? 'min-h-[50px]' : 'min-h-[400px]'}`}>
-                                        <div
-                                            onClick={() => togglePanel('treemap')}
-                                            className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/20 cursor-pointer hover:bg-card-hover/40 transition-colors"
-                                        >
-                                            <div className="flex items-center gap-2">
-                                                <LayoutGrid size={14} className="text-accent" />
-                                                <h2 className="text-xs font-black uppercase tracking-widest text-muted">Allocation Intensity</h2>
-                                            </div>
-                                            <div className="flex items-center gap-4">
-                                                <span className="hidden sm:block text-[9px] text-muted font-black px-2 py-0.5 bg-background rounded border border-border tracking-tighter uppercase">Hi-Density</span>
-                                                {collapsed['treemap'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
-                                            </div>
-                                        </div>
-                                        {!collapsed['treemap'] && (
-                                            <div className="p-4 flex-1 animate-in fade-in slide-in-from-top-2 duration-300">
-                                                <AssetTreemap data={treemapData} />
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Main Grid */}
-                                <div className="space-y-6">
-                                    {/* Holdings Table */}
-                                    <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm transition-all duration-300 ${collapsed['holdings'] ? 'h-[60px]' : ''}`}>
-                                        <div
-                                            onClick={() => togglePanel('holdings')}
-                                            className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/30 cursor-pointer hover:bg-card-hover/50 transition-colors"
-                                        >
-                                            <h2 className="text-xs font-bold uppercase tracking-widest text-muted">Positions</h2>
-                                            <div className="flex items-center gap-4">
-                                                <div className="flex items-center gap-2">
-                                                    {holdings.length > activeHoldings.length && (
-                                                        <div className="flex items-center gap-1.5 bg-yellow-400/5 px-2 py-0.5 rounded border border-yellow-400/20">
-                                                            <span className="h-1 w-1 rounded-full bg-yellow-400 animate-pulse" />
-                                                            <span className="text-[9px] text-yellow-400 font-black uppercase">{holdings.length - activeHoldings.length} Sync</span>
-                                                        </div>
-                                                    )}
-                                                    <span className="text-[10px] text-accent font-bold">{activeHoldings.length} Active</span>
+                                        return (
+                                            <div className="relative z-10 px-6 py-3 border-t border-border/40 flex items-center gap-2 overflow-x-auto scrollbar-none bg-accent/[0.02]">
+                                                {/* Total Equity */}
+                                                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-500/10 border border-blue-500/20 shrink-0">
+                                                    <DollarSign size={14} className="text-blue-400" />
+                                                    <span className="text-[10px] text-blue-400/60 font-black uppercase">Equity</span>
+                                                    <span className="text-lg font-black tracking-tighter text-blue-100">${accountEquity.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
                                                 </div>
-                                                <button
-                                                    onClick={async (e) => {
-                                                        e.stopPropagation();
-                                                        if (confirm("Are you sure you want to liquidate all positions?")) {
-                                                            // Record each one as a SELL
-                                                            for (const h of activeHoldings) {
-                                                                try {
-                                                                    await fetch('http://127.0.0.1:8282/api/v1/trading/record', {
-                                                                        method: 'POST',
-                                                                        headers: { 'Content-Type': 'application/json' },
-                                                                        body: JSON.stringify({
-                                                                            type_str: 'SELL',
-                                                                            symbol: h.symbol,
-                                                                            shares: h.shares,
-                                                                            price: h.price
-                                                                        })
-                                                                    });
-                                                                } catch (err) {
-                                                                    console.error("Failed to record liquidation:", err);
-                                                                }
-                                                            }
-                                                            setHoldings([]);
-                                                        }
-                                                    }}
-                                                    className="px-2 py-0.5 rounded border border-red/40 bg-red/5 text-[9px] font-bold text-red uppercase tracking-tighter hover:bg-red hover:text-white transition-all ml-2"
-                                                >
-                                                    Liquidate All
-                                                </button>
-                                                {collapsed['holdings'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
-                                            </div>
-                                        </div>
-                                        {!collapsed['holdings'] && (
-                                            <div className="overflow-x-auto animate-in fade-in slide-in-from-top-2 duration-300">
-                                                <table className="w-full text-sm">
-                                                    <thead>
-                                                        <tr className="text-left text-muted text-[10px] font-bold uppercase tracking-widest border-b border-border bg-background/50">
-                                                            <th className="px-6 py-3">Posicion</th>
-                                                            <th className="px-4 py-3 text-right">Tipo</th>
-                                                            <th className="px-4 py-3 text-right">Volumen</th>
-                                                            <th className="px-4 py-3 text-right">Beneficio Neto</th>
-                                                            <th className="px-4 py-3 text-right">Valor Mercado</th>
-                                                            <th className="px-4 py-3 text-right">Fecha Adq.</th>
-                                                            <th className="px-4 py-3 text-right">Evolución</th>
-                                                            <th className="px-6 py-3 text-right">Acción</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody className="stagger">
-                                                        {activeHoldings
-                                                            .sort((a, b) => (b.shares * b.price) - (a.shares * a.price))
-                                                            .map((h: any) => {
-                                                                const changeValue = h.changePercent || 0;
 
-                                                                // Synchronized Heatmap Color matching Treemap
-                                                                const getHeatmapColor = (cv: number) => {
-                                                                    if (cv > 5) return '#065f46';
-                                                                    if (cv > 2.5) return '#10b981';
-                                                                    if (cv > 1) return '#4ade80';
-                                                                    if (cv >= 0.5) return '#fde047';
-                                                                    if (cv >= 0.1) return '#facc15';
-                                                                    if (cv > -0.1) return '#71717a';
-                                                                    if (cv >= -0.5) return '#fbbf24';
-                                                                    if (cv >= -1) return '#f97316';
-                                                                    if (cv >= -3) return '#f43f5e';
-                                                                    return '#ef4444';
-                                                                };
-
-                                                                const badgeColor = getHeatmapColor(changeValue);
-                                                                const isBright = ['#fde047', '#facc15', '#fbbf24', '#4ade80'].includes(badgeColor);
-
-                                                                return (
-                                                                    <tr
-                                                                        key={h.symbol}
-                                                                        onClick={() => openSymbolTab(h.symbol)}
-                                                                        className="border-b border-border/50 hover:bg-card-hover transition-colors group cursor-pointer"
-                                                                    >
-                                                                        <td className="px-6 py-4">
-                                                                            <div className="flex items-center gap-3">
-                                                                                <div
-                                                                                    className="h-9 w-9 rounded-lg flex items-center justify-center text-white font-bold text-xs group-hover:scale-110 transition-all shadow-sm"
-                                                                                    style={{ backgroundColor: badgeColor }}
-                                                                                >
-                                                                                    {h.symbol.slice(0, 2)}
-                                                                                </div>
-                                                                                <div>
-                                                                                    <p className="font-semibold group-hover:text-accent transition-colors">{h.symbol}</p>
-                                                                                    <p className="text-xs text-muted truncate max-w-[120px]">{h.name}</p>
-                                                                                </div>
-                                                                            </div>
-                                                                        </td>
-                                                                        <td className="px-4 py-4 text-right font-bold text-xs uppercase tracking-tighter">
-                                                                            {h.shares >= 0 ? "Buy" : "Sell"}
-                                                                        </td>
-                                                                        <td className="px-4 py-4 text-right font-mono text-xs font-bold">{Math.abs(h.shares)}</td>
-                                                                        <td className={`px-4 py-4 text-right font-mono font-bold text-sm tracking-tight ${h.change >= 0 ? 'text-green' : 'text-red'}`}>
-                                                                            {h.change >= 0 ? "+" : ""}{h.change.toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
-                                                                        </td>
-                                                                        <td className={`px-4 py-4 text-right font-mono font-bold text-sm tracking-tight ${h.change >= 0 ? 'text-green' : 'text-red'}`}>
-                                                                            ${(Math.abs(h.shares) * h.price).toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
-                                                                        </td>
-                                                                        <td className="px-4 py-4 text-right font-mono text-[10px] text-muted tracking-tighter uppercase whitespace-nowrap">
-                                                                            {(h as any).purchaseDate || "N/A"}
-                                                                        </td>
-                                                                        <td className="px-4 py-4 pr-6 flex justify-end">
-                                                                            <AssetSparkline symbol={h.symbol} color={badgeColor} />
-                                                                        </td>
-                                                                        <td className="px-6 py-4 text-right">
-                                                                            <button
-                                                                                onClick={(e) => {
-                                                                                    e.stopPropagation();
-                                                                                    closePosition(h.symbol);
-                                                                                }}
-                                                                                className="opacity-0 group-hover:opacity-100 transition-all px-3 py-1.5 rounded-lg border border-red/20 text-[10px] font-black uppercase tracking-tighter text-red hover:bg-red/10 hover:border-red/40 hover:shadow-[0_0_12px_rgba(239,68,68,0.2)]"
-                                                                            >
-                                                                                Liquidate
-                                                                            </button>
-                                                                        </td>
-                                                                    </tr>
-                                                                );
-                                                            })}
-                                                    </tbody>
-                                                </table>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Bottom Panels Row */}
-                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                        {/* Fee Analysis Panel */}
-                                        <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['economics'] ? 'h-[50px]' : ''}`}>
-                                            <div
-                                                onClick={() => togglePanel('economics')}
-                                                className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/30 cursor-pointer hover:bg-card-hover/50 transition-colors"
-                                            >
-                                                <h2 className="text-xs font-bold uppercase tracking-widest text-muted">Economics</h2>
-                                                <div className="flex items-center gap-4">
-                                                    {collapsed['economics'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
+                                                {/* Total P&L */}
+                                                <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl shrink-0 ${totalPnL >= 0 ? 'bg-green/10 border border-green/20' : 'bg-red/10 border border-red/20'}`}>
+                                                    {totalPnL >= 0 ? <TrendingUp size={14} className="text-green/80" /> : <TrendingDown size={14} className="text-red/80" />}
+                                                    <span className="text-[10px] text-muted font-black uppercase tracking-tight">Net P&L</span>
+                                                    <div className="flex flex-col">
+                                                        <span className={`text-lg font-black tracking-tighter leading-none ${totalPnL >= 0 ? 'text-green' : 'text-red'}`}>
+                                                            {totalPnL >= 0 ? '+' : ''}${Math.abs(totalPnL).toLocaleString("en-US", { maximumFractionDigits: 0 })}
+                                                        </span>
+                                                        <span className={`text-[10px] font-black tracking-tighter ${totalPnL >= 0 ? 'text-green/60' : 'text-red/60'}`}>
+                                                            {pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%
+                                                        </span>
+                                                    </div>
                                                 </div>
-                                            </div>
-                                            {!collapsed['economics'] && (
-                                                <div className="p-6 space-y-5 flex-1 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-300">
-                                                    <div className="space-y-3">
-                                                        <div className="flex justify-between text-xs">
-                                                            <span className="text-muted font-medium">Management Fee (2.75%)</span>
-                                                            <span className="font-mono dark:text-white text-zinc-900">${(totalValue * 0.0275 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+
+                                                {/* Separator */}
+                                                <div className="h-8 w-[1px] bg-border/40 mx-1 shrink-0" />
+
+                                                {/* NEW: Unrealized / Realized Split */}
+                                                <div className="flex flex-col gap-1 px-3 py-1.5 rounded-xl bg-zinc-500/5 border border-border/20 shrink-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[9px] text-muted font-black uppercase w-12">Unreal'd</span>
+                                                        <span className={`text-sm font-bold ${unrealizedPnL >= 0 ? 'text-green/80' : 'text-red/80'}`}>${Math.abs(unrealizedPnL).toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[9px] text-muted font-black uppercase w-12">Real'd</span>
+                                                        <span className={`text-sm font-bold ${realizedPnL >= 0 ? 'text-green/80' : 'text-red/80'}`}>${Math.abs(realizedPnL).toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
+                                                    </div>
+                                                </div>
+
+                                                {/* Exposure & Leverage */}
+                                                <div className="flex flex-col gap-1 px-3 py-1.5 rounded-xl bg-orange-500/10 border border-orange-500/20 shrink-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[9px] text-orange-400 font-black uppercase w-12">Exposure</span>
+                                                        <span className="text-sm font-bold text-orange-200">${exposure.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[9px] text-orange-400 font-black uppercase w-12">Leverage</span>
+                                                        <span className={`text-sm font-bold ${leverage > 1.5 ? 'text-red' : 'text-orange-200'}`}>{leverage.toFixed(2)}x</span>
+                                                    </div>
+                                                </div>
+
+                                                {/* NEW: Cash Reserves */}
+                                                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 shrink-0">
+                                                    <DollarSign size={14} className="text-cyan-400" />
+                                                    <span className="text-[10px] text-cyan-400/60 font-black uppercase">Liquidity</span>
+                                                    <span className="text-lg font-black tracking-tighter text-cyan-100">${cash.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
+                                                </div>
+
+                                                {/* Risk metrics Pack (VaR / Vol / Sharpe) — LIVE DATA */}
+                                                <div className="flex flex-col gap-1 px-3 py-1.5 rounded-xl bg-purple-500/10 border border-purple-500/20 shrink-0">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-[9px] text-purple-400 font-black uppercase w-8">mVaR</span>
+                                                            <span className="text-sm font-bold text-purple-200">{riskData ? `${riskData.mvar_95_percent ?? riskData.var_95_percent ?? '—'}%` : '…'}</span>
                                                         </div>
-                                                        <div className="flex justify-between text-xs">
-                                                            <span className="text-muted font-medium">Service Fee (0.75%)</span>
-                                                            <span className="font-mono dark:text-white text-zinc-900">${(totalValue * 0.0075 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                                        </div>
-                                                        <div className="flex justify-between text-xs">
-                                                            <span className="text-muted font-medium">Other Exp. & Interest (0.59%)</span>
-                                                            <span className="font-mono dark:text-white text-zinc-900">${(totalValue * 0.0059 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                                        </div>
-                                                        <div className="flex justify-between text-xs">
-                                                            <span className="text-muted font-medium">Reimbursements & Waivers</span>
-                                                            <span className="font-mono text-green-500">-${(totalValue * 0.0059 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                                        </div>
-                                                        <div className="pt-2 border-t border-border/50 flex justify-between text-xs font-bold">
-                                                            <span className="text-accent uppercase tracking-tighter">Total Net Expenses (3.50%)</span>
-                                                            <span className="font-mono text-accent">~${(totalValue * 0.0350 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })} / mo</span>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-[9px] text-purple-400 font-black uppercase w-8">Vol(σ)</span>
+                                                            <span className="text-sm font-bold text-purple-200">{riskData ? `${riskData.annualized_volatility ?? '—'}%` : '…'}</span>
                                                         </div>
                                                     </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[9px] text-purple-400 font-black uppercase w-8">Sharpe</span>
+                                                        <span className={`text-sm font-bold ${riskData && riskData.sharpe_ratio > 1 ? 'text-green' : riskData && riskData.sharpe_ratio > 0 ? 'text-purple-200' : 'text-red/80'}`}>{riskData ? (riskData.sharpe_ratio ?? '—') : '…'}</span>
+                                                    </div>
+                                                </div>
 
-                                                    <div className="space-y-2 pt-4 border-t border-border/20">
-                                                        <div className="flex justify-between text-xs">
-                                                            <span className="text-muted">High-Water Mark (HWM)</span>
-                                                            <span className="font-mono dark:text-white text-zinc-900">${totalValue > 1250500 ? totalValue.toLocaleString() : "1,250,500.00"}</span>
+                                                {/* Diversity & Performance Pack */}
+                                                <div className="flex flex-col gap-1 px-3 py-1.5 rounded-xl bg-indigo-500/10 border border-border/30 shrink-0">
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="flex items-center gap-1">
+                                                            <span className="text-[9px] text-muted font-black uppercase">Holdings:</span>
+                                                            <span className="text-sm font-bold text-indigo-100">{activeHoldings.length}</span>
                                                         </div>
-                                                        <div className="p-3 rounded-lg bg-green/5 border border-green/10 flex items-center justify-between">
-                                                            <span className="text-[10px] text-green font-bold uppercase tracking-tight">Accrued Perf. Fee (20% above HWM)</span>
-                                                            <span className="text-sm font-bold text-green font-mono">
-                                                                ${totalValue > 1250500 ? ((totalValue - 1250500) * 0.20).toFixed(2) : "0.00"}
+                                                        <div className="flex items-center gap-1">
+                                                            <span className="text-[9px] text-muted font-black uppercase">Sectors:</span>
+                                                            <span className="text-sm font-bold text-indigo-100">{sectors}</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="flex items-center gap-1">
+                                                            <span className="text-[9px] text-muted font-black uppercase">Win Rate:</span>
+                                                            <span className={`text-sm font-bold ${winRate >= 50 ? 'text-green' : 'text-amber-400'}`}>{winRate.toFixed(0)}%</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Sector Concentration & Real Drawdown — LIVE DATA */}
+                                                <div className="flex flex-col gap-1 px-3 py-1.5 rounded-xl bg-pink-500/10 border border-pink-500/20 shrink-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[9px] text-pink-400 font-black uppercase w-10">Concen.</span>
+                                                        <span className="text-sm font-bold text-pink-100">{maxConcentration.toFixed(1)}%</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[9px] text-pink-400 font-black uppercase w-10">Drawdn</span>
+                                                        <span className={`text-sm font-bold ${riskData && riskData.max_drawdown > 10 ? 'text-red' : 'text-pink-100'}`}>{riskData ? `-${riskData.max_drawdown}%` : '—'}</span>
+                                                    </div>
+                                                </div>
+
+                                                {/* Top Asset & Performance Badge */}
+                                                {topHolding && (
+                                                    <div className="flex items-center gap-3 px-4 py-1.5 rounded-xl bg-accent/10 border border-accent/30 shrink-0 shadow-lg shadow-accent/5">
+                                                        <div className="flex flex-col">
+                                                            <span className="text-[9px] text-accent font-black uppercase tracking-tighter">Top Focus Asset</span>
+                                                            <span className="text-lg font-black tracking-tighter text-white">{topHolding.symbol}</span>
+                                                        </div>
+                                                        <div className="flex flex-col items-end">
+                                                            <span className="text-[10px] font-bold text-accent/60">{topWeight.toFixed(1)}% Weight</span>
+                                                            <span className={`text-xs font-black ${avgChange >= 0 ? 'text-green' : 'text-red'}`}>
+                                                                Avg Δ {avgChange >= 0 ? '+' : ''}{avgChange.toFixed(2)}%
                                                             </span>
                                                         </div>
                                                     </div>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
 
-                                                    <div className="mt-auto pt-4 border-t border-border/50">
-                                                        <p className="text-[10px] text-muted leading-relaxed">
-                                                            Fees are calculated based on the <span className="text-foreground">Net Asset Value (NAV)</span> at the end of each billing cycle. Performance fees are subject to HWM principles as per the investment mandate.
-                                                        </p>
-                                                    </div>
+                                <div className="space-y-6">
+
+                                    {/* Advanced Visualizations Row - Professional Stacked Layout */}
+                                    <div className="grid grid-cols-1 gap-6 animate-slide-up" style={{ animationDelay: '0.2s' }}>
+                                        {/* Sector Allocation Chart - TOP */}
+                                        <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['sector'] ? 'min-h-[50px]' : 'min-h-[450px]'}`}>
+                                            <div
+                                                onClick={() => togglePanel('sector')}
+                                                className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/20 cursor-pointer hover:bg-card-hover/40 transition-colors"
+                                            >
+                                                <div className="flex items-center gap-2">
+                                                    <ChartPie size={14} className="text-accent" />
+                                                    <h2 className="text-xs font-black uppercase tracking-widest text-muted">Sector Exposure</h2>
+                                                </div>
+                                                {collapsed['sector'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
+                                            </div>
+                                            {!collapsed['sector'] && (
+                                                <div className="flex-1 animate-in fade-in slide-in-from-top-2 duration-300">
+                                                    <SectorPieChart data={sectorData} total={totalValue} />
                                                 </div>
                                             )}
                                         </div>
 
-                                        {/* Recent Activity Panel */}
-                                        <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['activity'] ? 'h-[50px]' : 'h-[400px]'}`}>
+                                        {/* Treemap Visualizer - BOTTOM */}
+                                        <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['treemap'] ? 'min-h-[50px]' : 'min-h-[400px]'}`}>
                                             <div
-                                                onClick={() => togglePanel('activity')}
-                                                className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/30 cursor-pointer hover:bg-card-hover/50 transition-colors"
+                                                onClick={() => togglePanel('treemap')}
+                                                className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/20 cursor-pointer hover:bg-card-hover/40 transition-colors"
                                             >
                                                 <div className="flex items-center gap-2">
-                                                    <Activity size={12} className="text-accent" />
-                                                    <h2 className="text-xs font-bold uppercase tracking-widest text-muted">Recent Activity</h2>
+                                                    <LayoutGrid size={14} className="text-accent" />
+                                                    <h2 className="text-xs font-black uppercase tracking-widest text-muted">Allocation Intensity</h2>
                                                 </div>
                                                 <div className="flex items-center gap-4">
-                                                    <span className="text-[10px] text-accent font-bold">{transactions.length} Events</span>
-                                                    {collapsed['activity'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
+                                                    <span className="hidden sm:block text-[9px] text-muted font-black px-2 py-0.5 bg-background rounded border border-border tracking-tighter uppercase">Hi-Density</span>
+                                                    {collapsed['treemap'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
                                                 </div>
                                             </div>
-                                            {!collapsed['activity'] && (
-                                                <div className="flex-1 overflow-y-auto p-0 animate-in fade-in slide-in-from-top-2 duration-300">
-                                                    {transactions.length === 0 ? (
-                                                        <div className="h-full flex flex-col items-center justify-center p-8 text-center">
-                                                            <Activity size={32} className="text-muted/20 mb-3" />
-                                                            <p className="text-xs text-muted font-bold uppercase tracking-widest">No recent transactions</p>
-                                                            <p className="text-[10px] text-muted/60 mt-1 max-w-[180px]">Automated and manual liquidations will appear here.</p>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="divide-y divide-border/50">
-                                                            {transactions.map((t, i) => (
-                                                                <div key={i} className="px-5 py-3 hover:bg-card-hover/20 transition-colors flex items-center justify-between group">
-                                                                    <div className="flex items-center gap-3">
-                                                                        <div className={`h-8 w-8 rounded-lg flex items-center justify-center font-bold text-[10px] ${t.type === 'BUY' ? 'bg-green/10 text-green' : 'bg-red/10 text-red'}`}>
-                                                                            {t.type.slice(0, 1)}
-                                                                        </div>
-                                                                        <div className="flex flex-col">
-                                                                            <span className="text-xs font-bold group-hover:text-accent transition-colors">{t.symbol}</span>
-                                                                            <span className="text-[9px] text-muted font-bold uppercase tracking-tighter">{t.date} • {t.time}</span>
-                                                                        </div>
-                                                                    </div>
-                                                                    <div className="text-right flex flex-col">
-                                                                        <span className="text-xs font-mono font-bold">${(t.price * t.shares).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                                                        <span className="text-[9px] text-muted font-bold tracking-tighter">{t.shares} units @ ${t.price.toFixed(2)}</span>
-                                                                    </div>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    )}
+                                            {!collapsed['treemap'] && (
+                                                <div className="p-4 flex-1 animate-in fade-in slide-in-from-top-2 duration-300">
+                                                    <AssetTreemap data={treemapData} />
                                                 </div>
                                             )}
                                         </div>
                                     </div>
 
-                                    {/* Watchlist Panel - Always Visible */}
+                                    {/* Main Grid */}
+                                    <div className="space-y-6">
+                                        {/* Holdings Table */}
+                                        <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm transition-all duration-300 ${collapsed['holdings'] ? 'h-[60px]' : ''}`}>
+                                            <div
+                                                onClick={() => togglePanel('holdings')}
+                                                className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/30 cursor-pointer hover:bg-card-hover/50 transition-colors"
+                                            >
+                                                <h2 className="text-xs font-bold uppercase tracking-widest text-muted">Positions</h2>
+                                                <div className="flex items-center gap-4">
+                                                    <div className="flex items-center gap-2">
+                                                        {holdings.length > activeHoldings.length && (
+                                                            <div className="flex items-center gap-1.5 bg-yellow-400/5 px-2 py-0.5 rounded border border-yellow-400/20">
+                                                                <span className="h-1 w-1 rounded-full bg-yellow-400 animate-pulse" />
+                                                                <span className="text-[9px] text-yellow-400 font-black uppercase">{holdings.length - activeHoldings.length} Sync</span>
+                                                            </div>
+                                                        )}
+                                                        <span className="text-[10px] text-accent font-bold">{activeHoldings.length} Active</span>
+                                                    </div>
+                                                    <button
+                                                        onClick={async (e) => {
+                                                            e.stopPropagation();
+                                                            if (confirm("Are you sure you want to liquidate all positions?")) {
+                                                                // Record each one as a SELL
+                                                                for (const h of activeHoldings) {
+                                                                    try {
+                                                                        await fetch('http://127.0.0.1:8282/api/v1/trading/record', {
+                                                                            method: 'POST',
+                                                                            headers: { 'Content-Type': 'application/json' },
+                                                                            body: JSON.stringify({
+                                                                                type_str: 'SELL',
+                                                                                symbol: h.symbol,
+                                                                                shares: h.shares,
+                                                                                price: h.price
+                                                                            })
+                                                                        });
+                                                                    } catch (err) {
+                                                                        console.error("Failed to record liquidation:", err);
+                                                                    }
+                                                                }
+                                                                setHoldings([]);
+                                                            }
+                                                        }}
+                                                        className="px-2 py-0.5 rounded border border-red/40 bg-red/5 text-[9px] font-bold text-red uppercase tracking-tighter hover:bg-red hover:text-white transition-all ml-2"
+                                                    >
+                                                        Liquidate All
+                                                    </button>
+                                                    {collapsed['holdings'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
+                                                </div>
+                                            </div>
+                                            {!collapsed['holdings'] && (
+                                                <div className="overflow-x-auto animate-in fade-in slide-in-from-top-2 duration-300">
+                                                    <table className="w-full text-sm">
+                                                        <thead>
+                                                            <tr className="text-left text-muted text-[10px] font-bold uppercase tracking-widest border-b border-border bg-background/50">
+                                                                <th className="px-6 py-3">Posicion</th>
+                                                                <th className="px-4 py-3 text-right">Tipo</th>
+                                                                <th className="px-4 py-3 text-right">Volumen</th>
+                                                                <th className="px-4 py-3 text-right">Beneficio Neto</th>
+                                                                <th className="px-4 py-3 text-right">Valor Mercado</th>
+                                                                <th className="px-4 py-3 text-right">Fecha Adq.</th>
+                                                                <th className="px-4 py-3 text-right">Evolución</th>
+                                                                <th className="px-6 py-3 text-right">Acción</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody className="stagger">
+                                                            {activeHoldings
+                                                                .sort((a, b) => (b.shares * b.price) - (a.shares * a.price))
+                                                                .map((h: any) => {
+                                                                    const changeValue = h.changePercent || 0;
 
-                                    {/* REMOVED from here */}
+                                                                    // Synchronized Heatmap Color matching Treemap
+                                                                    const getHeatmapColor = (cv: number) => {
+                                                                        if (cv > 5) return '#065f46';
+                                                                        if (cv > 2.5) return '#10b981';
+                                                                        if (cv > 1) return '#4ade80';
+                                                                        if (cv >= 0.5) return '#fde047';
+                                                                        if (cv >= 0.1) return '#facc15';
+                                                                        if (cv > -0.1) return '#71717a';
+                                                                        if (cv >= -0.5) return '#fbbf24';
+                                                                        if (cv >= -1) return '#f97316';
+                                                                        if (cv >= -3) return '#f43f5e';
+                                                                        return '#ef4444';
+                                                                    };
+
+                                                                    const badgeColor = getHeatmapColor(changeValue);
+                                                                    const isBright = ['#fde047', '#facc15', '#fbbf24', '#4ade80'].includes(badgeColor);
+
+                                                                    return (
+                                                                        <tr
+                                                                            key={h.symbol}
+                                                                            onClick={() => openSymbolTab(h.symbol)}
+                                                                            className="border-b border-border/50 hover:bg-card-hover transition-colors group cursor-pointer"
+                                                                        >
+                                                                            <td className="px-6 py-4">
+                                                                                <div className="flex items-center gap-3">
+                                                                                    <div
+                                                                                        className="h-9 w-9 rounded-lg flex items-center justify-center text-white font-bold text-xs group-hover:scale-110 transition-all shadow-sm"
+                                                                                        style={{ backgroundColor: badgeColor }}
+                                                                                    >
+                                                                                        {h.symbol.slice(0, 2)}
+                                                                                    </div>
+                                                                                    <div>
+                                                                                        <p className="font-semibold group-hover:text-accent transition-colors">{h.symbol}</p>
+                                                                                        <p className="text-xs text-muted truncate max-w-[120px]">{h.name}</p>
+                                                                                    </div>
+                                                                                </div>
+                                                                            </td>
+                                                                            <td className="px-4 py-4 text-right font-bold text-xs uppercase tracking-tighter">
+                                                                                {h.shares >= 0 ? "Buy" : "Sell"}
+                                                                            </td>
+                                                                            <td className="px-4 py-4 text-right font-mono text-xs font-bold">{Math.abs(h.shares)}</td>
+                                                                            <td className={`px-4 py-4 text-right font-mono font-bold text-sm tracking-tight ${h.change >= 0 ? 'text-green' : 'text-red'}`}>
+                                                                                {h.change >= 0 ? "+" : ""}{h.change.toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+                                                                            </td>
+                                                                            <td className={`px-4 py-4 text-right font-mono font-bold text-sm tracking-tight ${h.change >= 0 ? 'text-green' : 'text-red'}`}>
+                                                                                ${(Math.abs(h.shares) * h.price).toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+                                                                            </td>
+                                                                            <td className="px-4 py-4 text-right font-mono text-[10px] text-muted tracking-tighter uppercase whitespace-nowrap">
+                                                                                {(h as any).purchaseDate || "N/A"}
+                                                                            </td>
+                                                                            <td className="px-4 py-4 pr-6 flex justify-end">
+                                                                                <AssetSparkline symbol={h.symbol} color={badgeColor} />
+                                                                            </td>
+                                                                            <td className="px-6 py-4 text-right">
+                                                                                <button
+                                                                                    onClick={(e) => {
+                                                                                        e.stopPropagation();
+                                                                                        closePosition(h.symbol);
+                                                                                    }}
+                                                                                    className="opacity-0 group-hover:opacity-100 transition-all px-3 py-1.5 rounded-lg border border-red/20 text-[10px] font-black uppercase tracking-tighter text-red hover:bg-red/10 hover:border-red/40 hover:shadow-[0_0_12px_rgba(239,68,68,0.2)]"
+                                                                                >
+                                                                                    Liquidate
+                                                                                </button>
+                                                                            </td>
+                                                                        </tr>
+                                                                    );
+                                                                })}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Bottom Panels Row */}
+                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                            {/* Fee Analysis Panel */}
+                                            <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['economics'] ? 'h-[50px]' : ''}`}>
+                                                <div
+                                                    onClick={() => togglePanel('economics')}
+                                                    className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/30 cursor-pointer hover:bg-card-hover/50 transition-colors"
+                                                >
+                                                    <h2 className="text-xs font-bold uppercase tracking-widest text-muted">Economics</h2>
+                                                    <div className="flex items-center gap-4">
+                                                        {collapsed['economics'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
+                                                    </div>
+                                                </div>
+                                                {!collapsed['economics'] && (
+                                                    <div className="p-6 space-y-5 flex-1 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-300">
+                                                        <div className="space-y-3">
+                                                            <div className="flex justify-between text-xs">
+                                                                <span className="text-muted font-medium">Management Fee (2.75%)</span>
+                                                                <span className="font-mono dark:text-white text-zinc-900">${(totalValue * 0.0275 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                            </div>
+                                                            <div className="flex justify-between text-xs">
+                                                                <span className="text-muted font-medium">Service Fee (0.75%)</span>
+                                                                <span className="font-mono dark:text-white text-zinc-900">${(totalValue * 0.0075 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                            </div>
+                                                            <div className="flex justify-between text-xs">
+                                                                <span className="text-muted font-medium">Other Exp. & Interest (0.59%)</span>
+                                                                <span className="font-mono dark:text-white text-zinc-900">${(totalValue * 0.0059 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                            </div>
+                                                            <div className="flex justify-between text-xs">
+                                                                <span className="text-muted font-medium">Reimbursements & Waivers</span>
+                                                                <span className="font-mono text-green-500">-${(totalValue * 0.0059 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                            </div>
+                                                            <div className="pt-2 border-t border-border/50 flex justify-between text-xs font-bold">
+                                                                <span className="text-accent uppercase tracking-tighter">Total Net Expenses (3.50%)</span>
+                                                                <span className="font-mono text-accent">~${(totalValue * 0.0350 / 12).toLocaleString(undefined, { minimumFractionDigits: 2 })} / mo</span>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="space-y-2 pt-4 border-t border-border/20">
+                                                            <div className="flex justify-between text-xs">
+                                                                <span className="text-muted">High-Water Mark (HWM)</span>
+                                                                <span className="font-mono dark:text-white text-zinc-900">${totalValue > 1250500 ? totalValue.toLocaleString() : "1,250,500.00"}</span>
+                                                            </div>
+                                                            <div className="p-3 rounded-lg bg-green/5 border border-green/10 flex items-center justify-between">
+                                                                <span className="text-[10px] text-green font-bold uppercase tracking-tight">Accrued Perf. Fee (20% above HWM)</span>
+                                                                <span className="text-sm font-bold text-green font-mono">
+                                                                    ${totalValue > 1250500 ? ((totalValue - 1250500) * 0.20).toFixed(2) : "0.00"}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="mt-auto pt-4 border-t border-border/50">
+                                                            <p className="text-[10px] text-muted leading-relaxed">
+                                                                Fees are calculated based on the <span className="text-foreground">Net Asset Value (NAV)</span> at the end of each billing cycle. Performance fees are subject to HWM principles as per the investment mandate.
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Recent Activity Panel */}
+                                            <div className={`bg-card border border-border rounded-2xl overflow-hidden shadow-sm flex flex-col transition-all duration-300 ${collapsed['activity'] ? 'h-[50px]' : 'h-[400px]'}`}>
+                                                <div
+                                                    onClick={() => togglePanel('activity')}
+                                                    className="px-5 py-3 border-b border-border flex items-center justify-between bg-card-hover/30 cursor-pointer hover:bg-card-hover/50 transition-colors"
+                                                >
+                                                    <div className="flex items-center gap-2">
+                                                        <Activity size={12} className="text-accent" />
+                                                        <h2 className="text-xs font-bold uppercase tracking-widest text-muted">Recent Activity</h2>
+                                                    </div>
+                                                    <div className="flex items-center gap-4">
+                                                        <span className="text-[10px] text-accent font-bold">{transactions.length} Events</span>
+                                                        {collapsed['activity'] ? <ChevronDown size={14} className="text-muted" /> : <ChevronUp size={14} className="text-muted" />}
+                                                    </div>
+                                                </div>
+                                                {!collapsed['activity'] && (
+                                                    <div className="flex-1 overflow-y-auto p-0 animate-in fade-in slide-in-from-top-2 duration-300">
+                                                        {transactions.length === 0 ? (
+                                                            <div className="h-full flex flex-col items-center justify-center p-8 text-center">
+                                                                <Activity size={32} className="text-muted/20 mb-3" />
+                                                                <p className="text-xs text-muted font-bold uppercase tracking-widest">No recent transactions</p>
+                                                                <p className="text-[10px] text-muted/60 mt-1 max-w-[180px]">Automated and manual liquidations will appear here.</p>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="divide-y divide-border/50">
+                                                                {transactions.map((t, i) => (
+                                                                    <div key={i} className="px-5 py-3 hover:bg-card-hover/20 transition-colors flex items-center justify-between group">
+                                                                        <div className="flex items-center gap-3">
+                                                                            <div className={`h-8 w-8 rounded-lg flex items-center justify-center font-bold text-[10px] ${t.type === 'BUY' ? 'bg-green/10 text-green' : 'bg-red/10 text-red'}`}>
+                                                                                {t.type.slice(0, 1)}
+                                                                            </div>
+                                                                            <div className="flex flex-col">
+                                                                                <span className="text-xs font-bold group-hover:text-accent transition-colors">{t.symbol}</span>
+                                                                                <span className="text-[9px] text-muted font-bold uppercase tracking-tighter">{t.date} • {t.time}</span>
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="text-right flex flex-col">
+                                                                            <span className="text-xs font-mono font-bold">${(t.price * t.shares).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                                                                            <span className="text-[9px] text-muted font-bold tracking-tighter">{t.shares} units @ ${t.price.toFixed(2)}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </>
                         ) : (
@@ -715,7 +841,7 @@ export default function ClientDashboard() {
                     </div>
                 </div>
             </div>
-        </AppLayout>
+        </AppLayout >
     );
 }
 

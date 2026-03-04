@@ -36,7 +36,7 @@ export default function ChatWidget() {
     const [showSessionMenu, setShowSessionMenu] = useState(false);
 
     // Floating icon mechanics
-    const [iconPos, setIconPos] = useState({ x: 40, y: 40 });
+    const [iconPos, setIconPos] = useState({ x: 88, y: 24 });
     const [isDragging, setIsDragging] = useState(false);
     const dragRef = useRef<{ startX: number; startY: number; startPosX: number; startPosY: number; moved: boolean; } | null>(null);
     const inactivityTimer = useRef<NodeJS.Timeout | null>(null);
@@ -79,6 +79,11 @@ export default function ChatWidget() {
             events.forEach(e => document.removeEventListener(e, resetInactivityTimer));
         };
     }, [resetInactivityTimer]);
+
+    // Snap to safe visible position when opening
+    const snapToSafePosition = useCallback(() => {
+        setIconPos({ x: 88, y: 24 });
+    }, []);
 
     // Dragging Logic
     const handleMouseDownIcon = (e: React.MouseEvent) => {
@@ -131,8 +136,9 @@ export default function ChatWidget() {
         const handleMouseUp = () => {
             if (!isDragging) return;
             setIsDragging(false);
-            // If dragging icon, not moved -> open it
+            // If dragging icon, not moved -> open it and snap to safe position
             if (!isOpen && dragRef.current && !dragRef.current.moved) {
+                snapToSafePosition();
                 setIsOpen(true);
             }
             dragRef.current = null;
@@ -220,7 +226,7 @@ export default function ChatWidget() {
             }}
         >
             {isStellarMode ? (
-                <button onClick={() => { setIsStellarMode(false); setIsOpen(true); resetInactivityTimer(); }} className="w-5 h-5 rounded-full relative cursor-pointer group flex items-center justify-center transition-transform hover:scale-125">
+                <button onClick={() => { setIsStellarMode(false); snapToSafePosition(); setIsOpen(true); resetInactivityTimer(); }} className="w-5 h-5 rounded-full relative cursor-pointer group flex items-center justify-center transition-transform hover:scale-125">
                     <div className={`w-3 h-3 rounded-full z-10 animate-stellar shadow-[0_0_20px_2px] ${isDarkMode ? "bg-fuchsia-400 shadow-fuchsia-500/80" : "bg-indigo-600 shadow-indigo-600/60"}`} />
                     <div className={`absolute inset-0 rounded-full animate-shockwave ${isDarkMode ? "bg-fuchsia-500/30" : "bg-indigo-600/30"}`} />
                 </button>

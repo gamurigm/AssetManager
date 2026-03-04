@@ -12,6 +12,7 @@ from ...services.twelve_data_service import twelve_data_service
 from ...services.market_data import market_data_service
 from ...services.openbb_rest_service import openbb_rest
 from ...services.openbb_native_service import openbb_native
+from ...services.openbb_api_catalog import openbb_catalog
 from ...core.container import search_knowledge_base_uc, read_book_section_uc
 from ...core.config import settings
 import asyncio
@@ -97,12 +98,61 @@ async def read_textbook_section(ctx: RunContext[TeamContext], file_path: str, st
     """Read a specific section from a textbook found during search."""
     return read_book_section_uc.execute(file_path, start_line, end_line)
 
+async def discover_openbb_endpoints(ctx: RunContext[TeamContext], query: str) -> str:
+    """
+    Search the OpenBB Platform API for available endpoints matching a keyword.
+    Use this FIRST to discover what data is available before calling query_openbb_api.
+    
+    Examples:
+      - discover_openbb_endpoints(query="equity price") → finds stock price endpoints  
+      - discover_openbb_endpoints(query="options") → finds options/derivatives endpoints
+      - discover_openbb_endpoints(query="gdp") → finds GDP/economy endpoints
+      - discover_openbb_endpoints(query="treasury") → finds fixed income endpoints
+      - discover_openbb_endpoints(query="crypto") → finds crypto endpoints
+      - discover_openbb_endpoints(query="technical") → finds all technical indicators
+      - discover_openbb_endpoints(query="futures") → finds futures endpoints
+    """
+    await openbb_catalog.load()
+    
+    if query.lower() in ("categories", "all", "list", "help"):
+        cats = openbb_catalog.list_categories()
+        return f"Available OpenBB API categories: {', '.join(cats)}\nUse a category name or keyword to search for specific endpoints."
+    
+    results = openbb_catalog.search(query, limit=12)
+    if not results:
+        cats = openbb_catalog.list_categories()
+        return f"No endpoints found for '{query}'. Try broader terms.\nAvailable categories: {', '.join(cats)}"
+    
+    lines = [f"Found {len(results)} OpenBB endpoints matching '{query}':"]
+    for ep in results:
+        lines.append(ep.to_compact_str())
+    return "\n".join(lines)
+
+
+async def get_openbb_endpoint_details(ctx: RunContext[TeamContext], endpoint_path: str) -> str:
+    """
+    Get full parameter details for a specific OpenBB API endpoint.
+    Use the exact path from discover_openbb_endpoints.
+    Example: get_openbb_endpoint_details(endpoint_path="/api/v1/equity/price/historical")
+    """
+    await openbb_catalog.load()
+    ep = openbb_catalog.get_endpoint(endpoint_path)
+    if not ep:
+        return f"Endpoint '{endpoint_path}' not found. Use discover_openbb_endpoints to search first."
+    return ep.to_detailed_str()
+
+
 async def query_openbb_api(ctx: RunContext[TeamContext], endpoint: str, params: dict = None) -> str:
     """
-    GENERIC tool to fetch data from the local OpenBB REST API.
-    Use this if you know the OpenAPI endpoint (e.g. `/api/v1/equity/price/quote`).
-    Always start your endpoint with `/api/v1/`.
-    Pass parameters as a standard JSON dictionary.
+    Fetch data from the OpenBB REST API (HTTP GET).
+    The endpoint MUST start with `/api/v1/`. Parameters are query params.
+    
+    Examples:
+      query_openbb_api(endpoint="/api/v1/equity/price/historical", params={"symbol": "AAPL", "provider": "yfinance"})
+      query_openbb_api(endpoint="/api/v1/equity/fundamental/income", params={"symbol": "AAPL", "provider": "fmp", "limit": 4})
+      query_openbb_api(endpoint="/api/v1/economy/fred_series", params={"symbol": "GDP"})
+      query_openbb_api(endpoint="/api/v1/derivatives/options/chains", params={"symbol": "AAPL", "provider": "cboe"})
+      query_openbb_api(endpoint="/api/v1/crypto/price/historical", params={"symbol": "BTCUSD", "provider": "yfinance"})
     """
     if params is None:
         params = {}
@@ -110,19 +160,45 @@ async def query_openbb_api(ctx: RunContext[TeamContext], endpoint: str, params: 
     result = await openbb_rest.fetch(endpoint, params)
     
     if "error" in result:
-         return f"OpenBB API Error on {endpoint}: {result.get('error')} - {result.get('detail', '')}\nEnsure uvicorn is running OpenBB on port 8000."
+         return f"OpenBB API Error on {endpoint}: {result.get('error')} - {result.get('detail', '')}\nEnsure OpenBB is running on port 6900."
          
-    # OpenBB wrapping standard: results are inside the 'results' key
-    # Cap output length so the LLM context doesn't explode
     import json
     res_str = json.dumps(result, indent=2)
-    return res_str[:4000] + ("...\n[Truncated]" if len(res_str) > 4000 else "")
+    return res_str[:5000] + ("...\n[Truncated]" if len(res_str) > 5000 else "")
 
-async def execute_openbb_terminal_command(ctx: RunContext[TeamContext], command_path: str, symbol: str = None, chart: bool = False, limit: int = 10) -> str:
+
+async def query_openbb_api_post(ctx: RunContext[TeamContext], endpoint: str, payload: dict) -> str:
     """
-    Execute a native OpenBB Platform command via the terminal.
-    Example command_path: 'equity.price.quote', 'equity.fundamental.income', 'crypto.price.historical'.
-    If 'chart' is True, a native window will open on the system.
+    Send data to OpenBB REST API via HTTP POST. Required for econometrics endpoints.
+    
+    Examples:
+      query_openbb_api_post(endpoint="/api/v1/econometrics/correlation_matrix", payload=[{"date": "...", "open": ..., "close": ...}])
+      query_openbb_api_post(endpoint="/api/v1/econometrics/ols_regression", payload={"data": [...], "y_column": "close", "x_columns": ["open", "high"]})
+    """
+    result = await openbb_rest.post(endpoint, payload)
+    
+    if "error" in result:
+        return f"OpenBB POST Error on {endpoint}: {result.get('error')} - {result.get('detail', '')}"
+    
+    import json
+    res_str = json.dumps(result, indent=2)
+    return res_str[:5000] + ("...\n[Truncated]" if len(res_str) > 5000 else "")
+
+
+async def execute_openbb_terminal_command(ctx: RunContext[TeamContext], command_path: str, symbol: str = None, chart: bool = False, limit: int = 10, **extra_kwargs) -> str:
+    """
+    Execute a native OpenBB Platform command via the persistent worker process.
+    This supports ANY OpenBB command path and returns formatted text or opens charts.
+    
+    Examples:
+      execute_openbb_terminal_command(command_path="equity.price.quote", symbol="AAPL")
+      execute_openbb_terminal_command(command_path="equity.fundamental.income", symbol="AAPL")
+      execute_openbb_terminal_command(command_path="technical.rsi", symbol="AAPL", chart=True)
+      execute_openbb_terminal_command(command_path="economy.fred_series", symbol="GDP", chart=True)
+      execute_openbb_terminal_command(command_path="derivatives.options.chains", symbol="AAPL")
+      execute_openbb_terminal_command(command_path="crypto.price.historical", symbol="BTCUSD")
+      execute_openbb_terminal_command(command_path="currency.price.historical", symbol="EURUSD")
+      execute_openbb_terminal_command(command_path="fixedincome.government.treasury_rates", chart=True)
     """
     kwargs = {}
     if symbol:
@@ -131,8 +207,8 @@ async def execute_openbb_terminal_command(ctx: RunContext[TeamContext], command_
         kwargs["chart"] = True
     if limit:
         kwargs["limit"] = limit
+    kwargs.update(extra_kwargs)
         
-    # Standardize path
     command_path = command_path.replace("/", ".")
     
     result = await openbb_native.execute(command_path, kwargs)
@@ -256,20 +332,162 @@ async def place_order(ctx: RunContext[TeamContext], symbol: str, quantity: int, 
 
 import time
 
+# ─── OpenBB API Master Reference (injected into agent system prompts) ───
+
+OPENBB_API_REFERENCE = """
+## OPENBB PLATFORM API — FULL REFERENCE (http://localhost:6900)
+You have COMPLETE access to ALL OpenBB Platform API endpoints via your tools.
+Use `discover_openbb_endpoints(query)` to search for ANY endpoint, then call it.
+
+### HOW TO USE:
+1. DISCOVER: `discover_openbb_endpoints(query="keyword")` → find the right endpoint
+2. DETAILS: `get_openbb_endpoint_details(endpoint_path="/api/v1/...")` → see exact parameters  
+3. EXECUTE GET: `query_openbb_api(endpoint="/api/v1/...", params={...})` → fetch data
+4. EXECUTE POST: `query_openbb_api_post(endpoint="/api/v1/...", payload={...})` → for econometrics
+5. TERMINAL: `execute_openbb_terminal_command(command_path="...", symbol="...", chart=True)` → charts
+
+### AVAILABLE CATEGORIES & KEY ENDPOINTS:
+
+★ EQUITY (stocks):
+  GET /api/v1/equity/price/historical — Historical OHLCV data (provider: yfinance/fmp/polygon)
+  GET /api/v1/equity/price/quote — Real-time quotes
+  GET /api/v1/equity/fundamental/income — Income statements
+  GET /api/v1/equity/fundamental/balance — Balance sheets  
+  GET /api/v1/equity/fundamental/cash — Cash flow statements
+  GET /api/v1/equity/fundamental/ratios — Financial ratios
+  GET /api/v1/equity/fundamental/metrics — Key metrics (PE, PB, ROE, etc.)
+  GET /api/v1/equity/fundamental/dividends — Dividend history
+  GET /api/v1/equity/fundamental/revenue_per_geography — Revenue by geography
+  GET /api/v1/equity/fundamental/revenue_per_segment — Revenue by segment
+  GET /api/v1/equity/estimates/consensus — Analyst consensus estimates
+  GET /api/v1/equity/ownership/institutional — Institutional ownership
+  GET /api/v1/equity/calendar/earnings — Earnings calendar
+  GET /api/v1/equity/screener — Stock screener
+  GET /api/v1/equity/search — Search for stocks
+  GET /api/v1/equity/shorts/fails_to_deliver — FTD data
+  GET /api/v1/equity/discovery/active — Most active stocks
+  GET /api/v1/equity/discovery/gainers — Top gainers
+  GET /api/v1/equity/discovery/losers — Top losers
+
+★ CRYPTO:
+  GET /api/v1/crypto/price/historical — Crypto OHLCV data (BTCUSD, ETHUSD, etc.)
+  GET /api/v1/crypto/search — Search crypto pairs
+
+★ CURRENCY (Forex):
+  GET /api/v1/currency/price/historical — Forex historical data (EURUSD, etc.)
+  GET /api/v1/currency/search — Search currency pairs
+  GET /api/v1/currency/reference_rates — ECB reference rates
+  GET /api/v1/currency/snapshots — FX market snapshots
+
+★ DERIVATIVES (Options & Futures):
+  GET /api/v1/derivatives/options/chains — Full options chains (provider: cboe/yfinance)
+  GET /api/v1/derivatives/options/unusual — Unusual options activity
+  GET /api/v1/derivatives/options/snapshots — Options market overview
+  POST /api/v1/derivatives/options/surface — Volatility surface (3D)
+  GET /api/v1/derivatives/futures/historical — Futures prices (ES, NQ, etc.)
+  GET /api/v1/derivatives/futures/curve — Futures term structure / curve
+
+★ ECONOMY & MACRO:
+  GET /api/v1/economy/fred_series — ANY FRED data series (GDP, CPI, UNRATE, DFF, M2, etc.)
+  GET /api/v1/economy/calendar — Economic calendar / events
+  GET /api/v1/economy/gdp/nominal — World GDP nominal
+  GET /api/v1/economy/gdp/real — World GDP real
+  GET /api/v1/economy/cpi — Consumer Price Index
+  GET /api/v1/economy/indicators — Key economic indicators
+  GET /api/v1/economy/risk_premium — Equity risk premium
+  GET /api/v1/economy/survey/economic_conditions — Federal Reserve economic conditions
+  GET /api/v1/economy/share_price_index — OECD share price index
+  GET /api/v1/economy/house_price_index — OECD house price index
+
+★ FIXED INCOME:
+  GET /api/v1/fixedincome/rate/ameribor — AMERIBOR rate
+  GET /api/v1/fixedincome/rate/effr — Effective Federal Funds Rate (daily)
+  GET /api/v1/fixedincome/rate/sofr — SOFR rate
+  GET /api/v1/fixedincome/government/treasury_rates — US Treasury rates
+  GET /api/v1/fixedincome/government/yield_curve — Yield curve (chart supported)
+  GET /api/v1/fixedincome/spreads/treasury — Treasury spreads
+
+★ TECHNICAL ANALYSIS:
+  POST /api/v1/technical/rsi — RSI (chart supported)
+  POST /api/v1/technical/macd — MACD (chart supported)
+  POST /api/v1/technical/bbands — Bollinger Bands (chart supported)
+  POST /api/v1/technical/sma — Simple Moving Average (chart supported)
+  POST /api/v1/technical/ema — Exponential Moving Average (chart supported)
+  POST /api/v1/technical/adx — Average Directional Index
+  POST /api/v1/technical/stoch — Stochastic Oscillator
+  POST /api/v1/technical/aroon — Aroon Indicator
+  POST /api/v1/technical/atr — Average True Range
+  POST /api/v1/technical/obv — On Balance Volume
+  POST /api/v1/technical/ichimoku — Ichimoku Cloud
+  POST /api/v1/technical/cones — Volatility Cones
+  POST /api/v1/technical/relative_rotation — Relative Rotation Graph
+  NOTE: Technical endpoints need OHLCV data. Use execute_openbb_terminal_command for auto data-fetch.
+
+★ ECONOMETRICS:
+  POST /api/v1/econometrics/correlation_matrix — Correlation matrix (chart supported)
+  POST /api/v1/econometrics/ols_regression — OLS regression
+  POST /api/v1/econometrics/ols_regression_summary — OLS full summary
+  POST /api/v1/econometrics/autocorrelation — Durbin-Watson test
+  POST /api/v1/econometrics/residual_autocorrelation — Breusch-Godfrey LM test
+  POST /api/v1/econometrics/cointegration — Engle-Granger cointegration test
+  POST /api/v1/econometrics/causality — Granger causality test
+  POST /api/v1/econometrics/unit_root — ADF stationarity test
+
+★ COMMODITY:
+  GET /api/v1/commodity/price/spot — Commodity spot prices (WTI, Brent, Natural Gas)
+  GET /api/v1/commodity/petroleum_status_report — EIA weekly petroleum report
+  GET /api/v1/commodity/short_term_energy_outlook — EIA STEO model
+
+★ INDEX:
+  GET /api/v1/index/price/historical — Index historical data
+  GET /api/v1/index/market/sp500_multiples — S&P 500 multiples (Shiller PE, etc.)
+
+★ NEWS:
+  GET /api/v1/news/world — World news headlines
+  GET /api/v1/news/company — Company-specific news
+
+★ ETF:
+  GET /api/v1/etf/price/historical — ETF prices
+  GET /api/v1/etf/search — Search ETFs
+  GET /api/v1/etf/info — ETF information
+  GET /api/v1/etf/holdings — ETF holdings breakdown
+  GET /api/v1/etf/sectors — ETF sector allocation
+  GET /api/v1/etf/countries — ETF country allocation
+
+### IMPORTANT RULES:
+- Most GET endpoints require a `provider` parameter (use "yfinance" as default for free data)
+- Use `discover_openbb_endpoints` when unsure about an endpoint
+- For technical analysis charts, prefer `execute_openbb_terminal_command` which auto-fetches data
+- For econometrics (POST endpoints), fetch data first then pass it as payload
+- ALWAYS specify the provider parameter when required
+"""
+
 # --- Initialize Specialist Agents ---
 
 fundamental_analyst = TeamAgent(
     name="Fundamental Analyst",
-    role="Specialist in qualitative analysis, news, company fundamentals, and financial statements (balance sheets)",
+    role="Specialist in qualitative analysis, news, company fundamentals, and financial statements."
+         + OPENBB_API_REFERENCE,
     model_name=NEMOTRON_253B,
-    tools=[get_market_news, get_company_profile, get_balance_sheet, search_knowledge_base, read_textbook_section, general_web_search, query_openbb_api, execute_openbb_terminal_command]
+    tools=[get_market_news, get_company_profile, get_balance_sheet, search_knowledge_base, read_textbook_section,
+           general_web_search, discover_openbb_endpoints, get_openbb_endpoint_details, query_openbb_api, query_openbb_api_post,
+           execute_openbb_terminal_command]
 )
 
 quant_analyst = TeamAgent(
     name="Quantitative Analyst",
-    role="Specialist in technical analysis, price data, and metrics",
-    model_name=NEMOTRON_253B, # Switched from MIXTRAL to avoid tool parsing block
-    tools=[get_price, get_technical_indicator, query_openbb_api, execute_openbb_terminal_command]
+    role="Specialist in technical analysis, price data, metrics, and econometrics. "
+         "You can send commands to the user's terminal by wrapping them in ```openbb code blocks. "
+         "These auto-execute in the user's embedded CLI. ALWAYS use this for visual analysis."
+         + OPENBB_API_REFERENCE
+         + "\n\n### WORKFLOW FOR TECHNICAL ANALYSIS:\n"
+           "1. Use execute_openbb_terminal_command with chart=True for visual charts\n"
+           "2. Combine multiple indicators (RSI + MACD + BBands) for thorough analysis\n"
+           "3. For multi-asset: use correlation_matrix and relative_rotation\n"
+           "4. For econometric tests: fetch data first, then use POST endpoints\n",
+    model_name=NEMOTRON_253B,
+    tools=[get_price, get_technical_indicator, discover_openbb_endpoints, get_openbb_endpoint_details,
+           query_openbb_api, query_openbb_api_post, execute_openbb_terminal_command]
 )
 
 risk_manager = TeamAgent(
@@ -277,23 +495,37 @@ risk_manager = TeamAgent(
     role="Specialist in risk assessment, VaR, and compliance. "
          "When asked for a report, ALWAYS write a deep professional 'analysis_text' "
          "summarizing neural insights, risk outliers, and strategic positioning "
-         "to include in the custom PDF.",
+         "to include in the custom PDF."
+         + OPENBB_API_REFERENCE,
     model_name=MISTRAL_LARGE,
-    tools=[calculate_risk_metrics, generate_detailed_alpha_report, general_web_search]
+    tools=[calculate_risk_metrics, generate_detailed_alpha_report, general_web_search,
+           discover_openbb_endpoints, get_openbb_endpoint_details, query_openbb_api, execute_openbb_terminal_command]
 )
 
 macro_analyst = TeamAgent(
     name="Macro Analyst",
-    role="Specialist in global economics and macro trends",
+    role="Specialist in global economics, macro trends, fixed income, and monetary policy. "
+         "You can send commands to the user's terminal by wrapping them in ```openbb code blocks. "
+         "These auto-execute in the user's embedded CLI. ALWAYS use this for macro visualizations."
+         + OPENBB_API_REFERENCE
+         + "\n\n### WORKFLOW FOR MACRO ANALYSIS:\n"
+           "1. Use FRED series for all major US economic data\n"
+           "2. Use fixedincome endpoints for yield curves and spreads\n"
+           "3. Use economy endpoints for GDP, CPI, calendar events\n"
+           "4. Use commodity endpoints for oil, gas, energy outlook\n"
+           "5. ALWAYS send multiple terminal charts to visually support your narrative\n",
     model_name=NEMOTRON_253B,
-    tools=[get_macro_indicators, general_web_search, query_openbb_api, execute_openbb_terminal_command]
+    tools=[get_macro_indicators, general_web_search, discover_openbb_endpoints, get_openbb_endpoint_details,
+           query_openbb_api, query_openbb_api_post, execute_openbb_terminal_command]
 )
 
 trader = TeamAgent(
     name="Trader",
-    role="Execution specialist using TwelveData for order routing",
+    role="Execution specialist using TwelveData for order routing. "
+         "Can also query real-time market data from OpenBB for trade validation."
+         + OPENBB_API_REFERENCE,
     model_name=MISTRAL_LARGE,
-    tools=[place_order]
+    tools=[place_order, discover_openbb_endpoints, query_openbb_api, execute_openbb_terminal_command]
 )
 
 # --- Tools for Strategy Analyst ---
@@ -373,9 +605,12 @@ async def create_or_edit_strategy_engine(ctx: RunContext[TeamContext], strategy_
 
 strategy_analyst = TeamAgent(
     name="Strategy Analyst",
-    role="Specialist in quantitative trading strategies. Your main job is to read theoretical books, design algorithmic strategies, and WRITE executable Python code for the backtest engine.",
-    model_name=NEMOTRON_253B, # Switched from MIXTRAL to avoid tool parsing block
-    tools=[run_strategy_signal, create_or_edit_strategy_engine, search_knowledge_base, read_textbook_section, general_web_search, query_openbb_api],
+    role="Specialist in quantitative trading strategies. Your main job is to read theoretical books, design algorithmic strategies, and WRITE executable Python code for the backtest engine."
+         + OPENBB_API_REFERENCE,
+    model_name=NEMOTRON_253B,
+    tools=[run_strategy_signal, create_or_edit_strategy_engine, search_knowledge_base, read_textbook_section,
+           general_web_search, discover_openbb_endpoints, get_openbb_endpoint_details, query_openbb_api,
+           query_openbb_api_post, execute_openbb_terminal_command],
 )
 
 # Export map for Orchestrator lookup
