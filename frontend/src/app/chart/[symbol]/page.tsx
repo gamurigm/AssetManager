@@ -3,7 +3,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createChart, ColorType, CandlestickSeries, LineSeries, HistogramSeries, IChartApi } from "lightweight-charts";
-import { TrendingUp, TrendingDown, ChevronDown, ChevronUp, ArrowLeft, BarChart2, X, Plus, Minus } from "lucide-react";
+import { TrendingUp, TrendingDown, ChevronDown, ChevronUp, ArrowLeft, BarChart2, X, Plus, Minus, ZoomIn, ZoomOut } from "lucide-react";
 
 /* ─── Indicator Math ──────────────────────────────────────────────────── */
 
@@ -520,12 +520,29 @@ export default function ChartWindow() {
                     fetch(`http://localhost:8282/api/v1/market/quote/${encodeURIComponent(symbol)}`)
                 ]);
                 const data = await res.json();
-                if (data.historical) {
-                    const mapped = data.historical.map((d: any) => ({
-                        ...d,
-                        date: d.date || d.timestamp || d.time || d.ts || ""
-                    }));
-                    setRawData(mapped.sort((a: any, b: any) => String(a.date).localeCompare(String(b.date))));
+                if (data.historical && Array.isArray(data.historical)) {
+                    const mapped = data.historical
+                        .map((d: any) => {
+                            const dateStr = d.date || d.timestamp || d.time || d.ts || "";
+                            const timeVal = normalizeTime(dateStr);
+                            return {
+                                ...d,
+                                date: dateStr,
+                                time: timeVal,
+                                open: Number(d.open),
+                                high: Number(d.high),
+                                low: Number(d.low),
+                                close: Number(d.close),
+                                volume: Number(d.volume || d.unadjustedVolume || 0)
+                            };
+                        })
+                        .filter((d: any) => d.time !== 0 && !isNaN(d.close))
+                        .sort((a: any, b: any) => {
+                            const ta = typeof a.time === 'number' ? a.time : new Date(a.time).getTime();
+                            const tb = typeof b.time === 'number' ? b.time : new Date(b.time).getTime();
+                            return ta - tb;
+                        });
+                    setRawData(mapped);
                 } else {
                     setRawData([]);
                 }
@@ -567,7 +584,7 @@ export default function ChartWindow() {
             upColor: '#26a69d', downColor: '#ef5350',
             borderVisible: false, wickUpColor: '#26a69d', wickDownColor: '#ef5350',
         });
-        candleSeries.setData(rawData.map(d => ({ time: normalizeTime(d.date) as any, open: d.open, high: d.high, low: d.low, close: d.close })));
+        candleSeries.setData(rawData.map(d => ({ time: d.time as any, open: d.open, high: d.high, low: d.low, close: d.close })));
 
         // Render Volume Profile Price Lines (frontend computed)
         if (showVP && vpData && typeof vpData.poc === 'number') {
@@ -578,16 +595,16 @@ export default function ChartWindow() {
 
         // Render Moving Averages
         const closes = rawData.map(d => d.close);
-        const times = rawData.map(d => normalizeTime(d.date) as any);
+        const times = rawData.map(d => d.time as any);
         const highs = rawData.map(d => d.high);
         const lows = rawData.map(d => d.low);
-        const volumes = rawData.map(d => d.volume ?? 0);
+        const volumes = rawData.map(d => d.volume);
 
         for (const ma of mas) {
             if (!ma.visible) continue;
             const values = calcMA(ma.type, closes, ma.period);
             const series = chart.addSeries(LineSeries, { color: ma.color, lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false });
-            series.setData(values.map((v, i) => ({ time: times[i], value: v })).filter(d => !isNaN(d.value)) as any);
+            series.setData(values.map((v, i) => isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
         }
 
         // Render Fibonacci Retracement
@@ -602,25 +619,25 @@ export default function ChartWindow() {
         if (showBB) {
             const { middle, upper, lower } = calcBollingerBands(closes, bbPeriod, bbMult);
             chart.addSeries(LineSeries, { color: 'rgba(33,150,243,0.5)', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
-                .setData(upper.map((v, i) => ({ time: times[i], value: v })).filter(d => !isNaN(d.value)) as any);
+                .setData(upper.map((v, i) => isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
             chart.addSeries(LineSeries, { color: 'rgba(33,150,243,0.3)', lineWidth: 1, lineStyle: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
-                .setData(middle.map((v, i) => ({ time: times[i], value: v })).filter(d => !isNaN(d.value)) as any);
+                .setData(middle.map((v, i) => isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
             chart.addSeries(LineSeries, { color: 'rgba(33,150,243,0.5)', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
-                .setData(lower.map((v, i) => ({ time: times[i], value: v })).filter(d => !isNaN(d.value)) as any);
+                .setData(lower.map((v, i) => isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
         }
 
         // Parabolic SAR (dotted line)
         if (showPSAR && rawData.length > 5) {
             const sar = calcParabolicSAR(highs, lows);
             chart.addSeries(LineSeries, { color: '#ec4899', lineWidth: 1, lineStyle: 3, pointMarkersVisible: true, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
-                .setData(times.map((t, i) => sar[i] !== null ? { time: t, value: sar[i]! } : null).filter(Boolean) as any);
+                .setData(times.map((t, i) => (sar[i] === null || isNaN(sar[i]!)) ? { time: t } : { time: t, value: sar[i]! }) as any);
         }
 
         // Supertrend overlay
         if (showSupertrend && rawData.length > 20) {
             const { supertrend, dir } = calcSupertrend(highs, lows, closes);
-            const upData = times.map((t, i) => dir[i] === 1 && supertrend[i] !== null ? { time: t, value: supertrend[i]! } : null).filter(Boolean);
-            const downData = times.map((t, i) => dir[i] === -1 && supertrend[i] !== null ? { time: t, value: supertrend[i]! } : null).filter(Boolean);
+            const upData = times.map((t, i) => (dir[i] === 1 && supertrend[i] !== null && !isNaN(supertrend[i]!)) ? { time: t, value: supertrend[i]! } : { time: t });
+            const downData = times.map((t, i) => (dir[i] === -1 && supertrend[i] !== null && !isNaN(supertrend[i]!)) ? { time: t, value: supertrend[i]! } : { time: t });
             chart.addSeries(LineSeries, { color: '#2dd4bf', lineWidth: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
                 .setData(upData as any);
             chart.addSeries(LineSeries, { color: '#ef4444', lineWidth: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
@@ -630,11 +647,24 @@ export default function ChartWindow() {
         chart.timeScale().fitContent();
 
         const handleResize = () => {
-            if (mainChartRef.current) chart.applyOptions({ width: mainChartRef.current.clientWidth });
+            if (mainChartRef.current) chart.applyOptions({ width: mainChartRef.current.clientWidth, height: mainChartRef.current.clientHeight || 400 });
         };
         window.addEventListener('resize', handleResize);
         return () => { window.removeEventListener('resize', handleResize); chart.remove(); mainChartApi.current = null; };
     }, [rawData, chartOpts, mas, showVP, showFib, fibLookback, showBB, bbPeriod, bbMult, showPSAR, showSupertrend]);
+
+    // Resize main chart when indicator panels change its available height (without re-creating the chart)
+    useEffect(() => {
+        if (!mainChartApi.current || !mainChartRef.current) return;
+        const el = mainChartRef.current;
+        const ro = new ResizeObserver(() => {
+            if (mainChartApi.current && el) {
+                mainChartApi.current.applyOptions({ width: el.clientWidth, height: el.clientHeight || 400 });
+            }
+        });
+        ro.observe(el);
+        return () => ro.disconnect();
+    }, [rawData]); // only re-attach when data changes (chart re-created)
 
     // MACD
     useEffect(() => {
@@ -645,30 +675,45 @@ export default function ChartWindow() {
         macdChartApi.current = chart;
 
         const closes = rawData.map(d => d.close);
-        const times = rawData.map(d => normalizeTime(d.date) as any);
+        const times = rawData.map(d => d.time as any);
         const { macdLine, signalLine, histogram } = calcMACD(closes, macdFast, macdSlow, macdSignal);
 
         const histSeries = chart.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: false });
-        histSeries.setData(histogram.map((v, i) => ({ time: times[i], value: v, color: v >= 0 ? 'rgba(38,166,157,0.5)' : 'rgba(239,83,80,0.5)' })));
+        histSeries.setData(histogram.map((v, i) => v === null || isNaN(v) ? { time: times[i] } : { time: times[i], value: v, color: v >= 0 ? '#26a69d' : '#ef5350' }) as any);
 
         const macdSeries = chart.addSeries(LineSeries, { color: '#2962FF', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
-        macdSeries.setData(macdLine.map((v, i) => ({ time: times[i], value: v })));
+        macdSeries.setData(macdLine.map((v, i) => v === null || isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
 
         const signalSeries = chart.addSeries(LineSeries, { color: '#FF6D00', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
-        signalSeries.setData(signalLine.map((v, i) => ({ time: times[i], value: v })));
+        signalSeries.setData(signalLine.map((v, i) => v === null || isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
 
         chart.timeScale().fitContent();
 
         if (mainChartApi.current) {
             const r = mainChartApi.current.timeScale().getVisibleLogicalRange();
             if (r) chart.timeScale().setVisibleLogicalRange(r);
-            mainChartApi.current.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && macdChartApi.current) macdChartApi.current.timeScale().setVisibleLogicalRange(r); });
-            chart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && mainChartApi.current) mainChartApi.current.timeScale().setVisibleLogicalRange(r); });
-        }
 
-        const hr = () => { if (macdChartRef.current) chart.applyOptions({ width: macdChartRef.current.clientWidth }); };
-        window.addEventListener('resize', hr);
-        return () => { window.removeEventListener('resize', hr); chart.remove(); macdChartApi.current = null; };
+            const mainTimeScale = mainChartApi.current.timeScale();
+            const subTimeScale = chart.timeScale();
+
+            const handleMainChange = (range: any) => { if (range) subTimeScale.setVisibleLogicalRange(range); };
+            const handleSubChange = (range: any) => { if (range && mainChartApi.current) mainChartApi.current.timeScale().setVisibleLogicalRange(range); };
+
+            mainTimeScale.subscribeVisibleLogicalRangeChange(handleMainChange);
+            subTimeScale.subscribeVisibleLogicalRangeChange(handleSubChange);
+
+            const hr = () => { if (macdChartRef.current) chart.applyOptions({ width: macdChartRef.current.clientWidth }); };
+            window.addEventListener('resize', hr);
+
+            return () => {
+                mainTimeScale.unsubscribeVisibleLogicalRangeChange(handleMainChange);
+                subTimeScale.unsubscribeVisibleLogicalRangeChange(handleSubChange);
+                window.removeEventListener('resize', hr);
+                chart.remove();
+                macdChartApi.current = null;
+            };
+        }
+        return () => { chart.remove(); macdChartApi.current = null; };
     }, [rawData, showMACD, macdFast, macdSlow, macdSignal, chartOpts]);
 
     // Stochastic
@@ -682,27 +727,41 @@ export default function ChartWindow() {
         const highs = rawData.map(d => d.high);
         const lows = rawData.map(d => d.low);
         const closes = rawData.map(d => d.close);
-        const times = rawData.map(d => normalizeTime(d.date) as any);
+        const times = rawData.map(d => d.time as any);
         const { kLine, dLine } = calcStochastic(highs, lows, closes, stochK, stochD, stochSmooth);
 
         const kSeries = chart.addSeries(LineSeries, { color: '#2962FF', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, title: '%K' });
-        kSeries.setData(kLine.map((v, i) => isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
+        kSeries.setData(kLine.map((v, i) => v === null || isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
 
         const dSeries = chart.addSeries(LineSeries, { color: '#FF6D00', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, title: '%D' });
-        dSeries.setData(dLine.map((v, i) => isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
+        dSeries.setData(dLine.map((v, i) => v === null || isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
 
         chart.timeScale().fitContent();
 
         if (mainChartApi.current) {
             const r = mainChartApi.current.timeScale().getVisibleLogicalRange();
             if (r) chart.timeScale().setVisibleLogicalRange(r);
-            mainChartApi.current.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && stochChartApi.current) stochChartApi.current.timeScale().setVisibleLogicalRange(r); });
-            chart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && mainChartApi.current) mainChartApi.current.timeScale().setVisibleLogicalRange(r); });
-        }
 
-        const hr = () => { if (stochChartRef.current) chart.applyOptions({ width: stochChartRef.current.clientWidth }); };
-        window.addEventListener('resize', hr);
-        return () => { window.removeEventListener('resize', hr); chart.remove(); stochChartApi.current = null; };
+            const mainTimeScale = mainChartApi.current.timeScale();
+            const subTimeScale = chart.timeScale();
+            const handleMainChange = (range: any) => { if (range) subTimeScale.setVisibleLogicalRange(range); };
+            const handleSubChange = (range: any) => { if (range && mainChartApi.current) mainChartApi.current.timeScale().setVisibleLogicalRange(range); };
+
+            mainTimeScale.subscribeVisibleLogicalRangeChange(handleMainChange);
+            subTimeScale.subscribeVisibleLogicalRangeChange(handleSubChange);
+
+            const hr = () => { if (stochChartRef.current) chart.applyOptions({ width: stochChartRef.current.clientWidth }); };
+            window.addEventListener('resize', hr);
+
+            return () => {
+                mainTimeScale.unsubscribeVisibleLogicalRangeChange(handleMainChange);
+                subTimeScale.unsubscribeVisibleLogicalRangeChange(handleSubChange);
+                window.removeEventListener('resize', hr);
+                chart.remove();
+                stochChartApi.current = null;
+            };
+        }
+        return () => { chart.remove(); stochChartApi.current = null; };
     }, [rawData, showStoch, stochK, stochD, stochSmooth, chartOpts]);
 
     // ATR
@@ -716,7 +775,7 @@ export default function ChartWindow() {
         const highs = rawData.map(d => d.high);
         const lows = rawData.map(d => d.low);
         const closes = rawData.map(d => d.close);
-        const times = rawData.map(d => normalizeTime(d.date) as any);
+        const times = rawData.map(d => d.time as any);
         const atrValues = calcATR(highs, lows, closes, atrPeriod);
 
         const atrSeries = chart.addSeries(LineSeries, { color: '#e040fb', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: 'ATR' });
@@ -727,13 +786,27 @@ export default function ChartWindow() {
         if (mainChartApi.current) {
             const r = mainChartApi.current.timeScale().getVisibleLogicalRange();
             if (r) chart.timeScale().setVisibleLogicalRange(r);
-            mainChartApi.current.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && atrChartApi.current) atrChartApi.current.timeScale().setVisibleLogicalRange(r); });
-            chart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && mainChartApi.current) mainChartApi.current.timeScale().setVisibleLogicalRange(r); });
-        }
 
-        const hr = () => { if (atrChartRef.current) chart.applyOptions({ width: atrChartRef.current.clientWidth }); };
-        window.addEventListener('resize', hr);
-        return () => { window.removeEventListener('resize', hr); chart.remove(); atrChartApi.current = null; };
+            const mainTimeScale = mainChartApi.current.timeScale();
+            const subTimeScale = chart.timeScale();
+            const handleMainChange = (range: any) => { if (range) subTimeScale.setVisibleLogicalRange(range); };
+            const handleSubChange = (range: any) => { if (range && mainChartApi.current) mainChartApi.current.timeScale().setVisibleLogicalRange(range); };
+
+            mainTimeScale.subscribeVisibleLogicalRangeChange(handleMainChange);
+            subTimeScale.subscribeVisibleLogicalRangeChange(handleSubChange);
+
+            const hr = () => { if (atrChartRef.current) chart.applyOptions({ width: atrChartRef.current.clientWidth }); };
+            window.addEventListener('resize', hr);
+
+            return () => {
+                mainTimeScale.unsubscribeVisibleLogicalRangeChange(handleMainChange);
+                subTimeScale.unsubscribeVisibleLogicalRangeChange(handleSubChange);
+                window.removeEventListener('resize', hr);
+                chart.remove();
+                atrChartApi.current = null;
+            };
+        }
+        return () => { chart.remove(); atrChartApi.current = null; };
     }, [rawData, showATR, atrPeriod, chartOpts]);
 
     // Williams %R
@@ -742,24 +815,42 @@ export default function ChartWindow() {
         if (williamsChartApi.current) { williamsChartApi.current.remove(); williamsChartApi.current = null; }
         const chart = createChart(williamsChartRef.current, { ...chartOpts(146), width: williamsChartRef.current.clientWidth });
         williamsChartApi.current = chart;
-        const highs = rawData.map(d => d.high), lows = rawData.map(d => d.low), closes = rawData.map(d => d.close), times = rawData.map(d => normalizeTime(d.date) as any);
+        const highs = rawData.map(d => d.high), lows = rawData.map(d => d.low), closes = rawData.map(d => d.close), times = rawData.map(d => d.time as any);
         const w = calcWilliamsR(highs, lows, closes, 14);
-        chart.addSeries(LineSeries, { color: '#22d3ee', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: '%R' })
+
+        chart.addSeries(LineSeries, { color: '#0ea5e9', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: 'Williams %R' })
             .setData(w.map((v, i) => v === null || isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
+
         chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
             .setData(times.map(t => ({ time: t, value: -20 })));
         chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
             .setData(times.map(t => ({ time: t, value: -80 })));
+
         chart.timeScale().fitContent();
         if (mainChartApi.current) {
             const r = mainChartApi.current.timeScale().getVisibleLogicalRange();
             if (r) chart.timeScale().setVisibleLogicalRange(r);
-            mainChartApi.current.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && williamsChartApi.current) williamsChartApi.current.timeScale().setVisibleLogicalRange(r); });
-            chart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && mainChartApi.current) mainChartApi.current.timeScale().setVisibleLogicalRange(r); });
+
+            const mainTimeScale = mainChartApi.current.timeScale();
+            const subTimeScale = chart.timeScale();
+            const handleMainChange = (range: any) => { if (range) subTimeScale.setVisibleLogicalRange(range); };
+            const handleSubChange = (range: any) => { if (range && mainChartApi.current) mainChartApi.current.timeScale().setVisibleLogicalRange(range); };
+
+            mainTimeScale.subscribeVisibleLogicalRangeChange(handleMainChange);
+            subTimeScale.subscribeVisibleLogicalRangeChange(handleSubChange);
+
+            const hr = () => { if (williamsChartRef.current) chart.applyOptions({ width: williamsChartRef.current.clientWidth }); };
+            window.addEventListener('resize', hr);
+
+            return () => {
+                mainTimeScale.unsubscribeVisibleLogicalRangeChange(handleMainChange);
+                subTimeScale.unsubscribeVisibleLogicalRangeChange(handleSubChange);
+                window.removeEventListener('resize', hr);
+                chart.remove();
+                williamsChartApi.current = null;
+            };
         }
-        const hr = () => { if (williamsChartRef.current) chart.applyOptions({ width: williamsChartRef.current.clientWidth }); };
-        window.addEventListener('resize', hr);
-        return () => { window.removeEventListener('resize', hr); chart.remove(); williamsChartApi.current = null; };
+        return () => { chart.remove(); williamsChartApi.current = null; };
     }, [rawData, showWilliams, chartOpts]);
 
     // MFI
@@ -768,24 +859,42 @@ export default function ChartWindow() {
         if (mfiChartApi.current) { mfiChartApi.current.remove(); mfiChartApi.current = null; }
         const chart = createChart(mfiChartRef.current, { ...chartOpts(146), width: mfiChartRef.current.clientWidth });
         mfiChartApi.current = chart;
-        const highs = rawData.map(d => d.high), lows = rawData.map(d => d.low), closes = rawData.map(d => d.close), volumes = rawData.map(d => d.volume ?? 0), times = rawData.map(d => normalizeTime(d.date) as any);
+        const highs = rawData.map(d => d.high), lows = rawData.map(d => d.low), closes = rawData.map(d => d.close), volumes = rawData.map(d => d.volume ?? 0), times = rawData.map(d => d.time as any);
         const mfi = calcMFI(highs, lows, closes, volumes, 14);
+
         chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: 'MFI' })
             .setData(mfi.map((v, i) => v === null || isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
+
         chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
             .setData(times.map(t => ({ time: t, value: 80 })));
         chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
             .setData(times.map(t => ({ time: t, value: 20 })));
+
         chart.timeScale().fitContent();
         if (mainChartApi.current) {
             const r = mainChartApi.current.timeScale().getVisibleLogicalRange();
             if (r) chart.timeScale().setVisibleLogicalRange(r);
-            mainChartApi.current.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && mfiChartApi.current) mfiChartApi.current.timeScale().setVisibleLogicalRange(r); });
-            chart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && mainChartApi.current) mainChartApi.current.timeScale().setVisibleLogicalRange(r); });
+
+            const mainTimeScale = mainChartApi.current.timeScale();
+            const subTimeScale = chart.timeScale();
+            const handleMainChange = (range: any) => { if (range) subTimeScale.setVisibleLogicalRange(range); };
+            const handleSubChange = (range: any) => { if (range && mainChartApi.current) mainChartApi.current.timeScale().setVisibleLogicalRange(range); };
+
+            mainTimeScale.subscribeVisibleLogicalRangeChange(handleMainChange);
+            subTimeScale.subscribeVisibleLogicalRangeChange(handleSubChange);
+
+            const hr = () => { if (mfiChartRef.current) chart.applyOptions({ width: mfiChartRef.current.clientWidth }); };
+            window.addEventListener('resize', hr);
+
+            return () => {
+                mainTimeScale.unsubscribeVisibleLogicalRangeChange(handleMainChange);
+                subTimeScale.unsubscribeVisibleLogicalRangeChange(handleSubChange);
+                window.removeEventListener('resize', hr);
+                chart.remove();
+                mfiChartApi.current = null;
+            };
         }
-        const hr = () => { if (mfiChartRef.current) chart.applyOptions({ width: mfiChartRef.current.clientWidth }); };
-        window.addEventListener('resize', hr);
-        return () => { window.removeEventListener('resize', hr); chart.remove(); mfiChartApi.current = null; };
+        return () => { chart.remove(); mfiChartApi.current = null; };
     }, [rawData, showMFI, chartOpts]);
 
     // CMF
@@ -794,20 +903,40 @@ export default function ChartWindow() {
         if (cmfChartApi.current) { cmfChartApi.current.remove(); cmfChartApi.current = null; }
         const chart = createChart(cmfChartRef.current, { ...chartOpts(146), width: cmfChartRef.current.clientWidth });
         cmfChartApi.current = chart;
-        const highs = rawData.map(d => d.high), lows = rawData.map(d => d.low), closes = rawData.map(d => d.close), volumes = rawData.map(d => d.volume ?? 0), times = rawData.map(d => normalizeTime(d.date) as any);
+        const highs = rawData.map(d => d.high), lows = rawData.map(d => d.low), closes = rawData.map(d => d.close), volumes = rawData.map(d => d.volume), times = rawData.map(d => d.time as any);
         const cmf = calcCMF(highs, lows, closes, volumes, 20);
-        chart.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: true })
-            .setData(cmf.map((v, i) => v === null || isNaN(v) ? { time: times[i] } : { time: times[i], value: v, color: v > 0 ? 'rgba(38,166,157,0.5)' : 'rgba(239,83,80,0.5)' }) as any);
-        chart.timeScale().fitContent();
+
+        const cmfSeries = chart.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: true });
+        cmfSeries.setData(cmf.map((v, i) => v === null || isNaN(v) ? { time: times[i] } : { time: times[i], value: v, color: v > 0 ? 'rgba(38,166,157,0.7)' : 'rgba(239,83,80,0.7)' }) as any);
+
+        // Add 0-line for CMF
+        chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
+            .setData(times.map(t => ({ time: t, value: 0 })));
+
         if (mainChartApi.current) {
             const r = mainChartApi.current.timeScale().getVisibleLogicalRange();
             if (r) chart.timeScale().setVisibleLogicalRange(r);
-            mainChartApi.current.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && cmfChartApi.current) cmfChartApi.current.timeScale().setVisibleLogicalRange(r); });
-            chart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && mainChartApi.current) mainChartApi.current.timeScale().setVisibleLogicalRange(r); });
+
+            const mainTimeScale = mainChartApi.current.timeScale();
+            const subTimeScale = chart.timeScale();
+            const handleMainChange = (range: any) => { if (range) subTimeScale.setVisibleLogicalRange(range); };
+            const handleSubChange = (range: any) => { if (range && mainChartApi.current) mainChartApi.current.timeScale().setVisibleLogicalRange(range); };
+
+            mainTimeScale.subscribeVisibleLogicalRangeChange(handleMainChange);
+            subTimeScale.subscribeVisibleLogicalRangeChange(handleSubChange);
+
+            const hr = () => { if (cmfChartRef.current) chart.applyOptions({ width: cmfChartRef.current.clientWidth }); };
+            window.addEventListener('resize', hr);
+
+            return () => {
+                mainTimeScale.unsubscribeVisibleLogicalRangeChange(handleMainChange);
+                subTimeScale.unsubscribeVisibleLogicalRangeChange(handleSubChange);
+                window.removeEventListener('resize', hr);
+                chart.remove();
+                cmfChartApi.current = null;
+            };
         }
-        const hr = () => { if (cmfChartRef.current) chart.applyOptions({ width: cmfChartRef.current.clientWidth }); };
-        window.addEventListener('resize', hr);
-        return () => { window.removeEventListener('resize', hr); chart.remove(); cmfChartApi.current = null; };
+        return () => { chart.remove(); cmfChartApi.current = null; };
     }, [rawData, showCMF, chartOpts]);
 
     const updateMA = (id: string, updated: MAConfig) => setMas(prev => prev.map(m => m.id === id ? updated : m));
@@ -819,6 +948,27 @@ export default function ChartWindow() {
             color: colors[prev.length % colors.length], visible: true
         }]);
     };
+
+    // Zoom helpers (zoom the main chart time scale)
+    const zoomIn = useCallback(() => {
+        if (!mainChartApi.current) return;
+        const ts = mainChartApi.current.timeScale();
+        const range = ts.getVisibleLogicalRange();
+        if (!range) return;
+        const center = (range.from + range.to) / 2;
+        const halfSpan = (range.to - range.from) / 2 * 0.7; // 30% zoom in
+        ts.setVisibleLogicalRange({ from: center - halfSpan, to: center + halfSpan });
+    }, []);
+
+    const zoomOut = useCallback(() => {
+        if (!mainChartApi.current) return;
+        const ts = mainChartApi.current.timeScale();
+        const range = ts.getVisibleLogicalRange();
+        if (!range) return;
+        const center = (range.from + range.to) / 2;
+        const halfSpan = (range.to - range.from) / 2 * 1.4; // 40% zoom out
+        ts.setVisibleLogicalRange({ from: center - halfSpan, to: center + halfSpan });
+    }, []);
 
     const oscillatorPanelH = (showMACD ? 170 : 24) + (showStoch ? 170 : 24) + (showATR ? 170 : 24) + (showWilliams ? 170 : 0) + (showMFI ? 170 : 0) + (showCMF ? 170 : 0);
     const mainH = `calc(100vh - 48px - 38px - ${oscillatorPanelH}px)`;
@@ -862,6 +1012,14 @@ export default function ChartWindow() {
 
                 <div className="flex items-center gap-3">
                     {loading && <span className="text-[10px] animate-pulse font-mono font-bold text-accent uppercase tracking-widest">Syncing...</span>}
+                    <div className="flex items-center gap-0.5 bg-white/5 rounded-lg border border-white/10 p-0.5">
+                        <button onClick={zoomIn} className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-white/10 text-white/50 hover:text-white transition-all" title="Zoom In">
+                            <ZoomIn size={14} />
+                        </button>
+                        <button onClick={zoomOut} className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-white/10 text-white/50 hover:text-white transition-all" title="Zoom Out">
+                            <ZoomOut size={14} />
+                        </button>
+                    </div>
                     <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white/5 rounded-md border border-white/5">
                         <div className="h-1.5 w-1.5 rounded-full bg-green animate-pulse" />
                         <span className="text-[9px] font-black text-green uppercase tracking-[0.2em]">Liquid</span>
