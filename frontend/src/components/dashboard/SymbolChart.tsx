@@ -5,7 +5,7 @@ import { TrendingUp, TrendingDown, ChevronDown, ChevronUp, Activity } from "luci
 import { createChart, ColorType, CandlestickSeries, LineSeries, HistogramSeries, createSeriesMarkers } from "lightweight-charts";
 import { usePortfolio } from "@/context/PortfolioContext";
 import { useChartData } from "@/hooks/useChartData";
-import { calcEMA, calcMACD, calcStochastic, FIBONACCI_LEVELS, calcBollingerBands, calcIchimoku, calcRSI, calcVWAP, calcATR, calcKeltner, calcOBV, calcADX } from "@/lib/indicators";
+import { calcEMA, calcMACD, calcStochastic, FIBONACCI_LEVELS, calcBollingerBands, calcIchimoku, calcRSI, calcVWAP, calcATR, calcKeltner, calcCCI, calcADX } from "@/lib/indicators";
 
 // ─── Props ──────────────────────────────────────────────────────────
 interface SymbolChartProps {
@@ -17,12 +17,12 @@ interface SymbolChartProps {
     showRsi?: boolean;
     showAtr?: boolean;
     showKeltner?: boolean;
-    showObv?: boolean;
+    showCci?: boolean;
     showAdx?: boolean;
 }
 
 // ─── Component ──────────────────────────────────────────────────────
-export default function SymbolChart({ symbol, showFib: propShowFib, showBollinger = false, showIchimoku = false, showVwap = false, showRsi = false, showAtr = false, showKeltner = false, showObv = false, showAdx = false }: SymbolChartProps) {
+export default function SymbolChart({ symbol, showFib: propShowFib, showBollinger = false, showIchimoku = false, showVwap = false, showRsi = false, showAtr = false, showKeltner = false, showCci = false, showAdx = false }: SymbolChartProps) {
     const { holdings, closePosition, openTrade } = usePortfolio();
     const { candles, quote, loading, theme, isLight } = useChartData(symbol);
 
@@ -41,7 +41,7 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
     const stochRef = useRef<HTMLDivElement>(null);
     const rsiRef = useRef<HTMLDivElement>(null);
     const atrRef = useRef<HTMLDivElement>(null);
-    const obvRef = useRef<HTMLDivElement>(null);
+    const cciRef = useRef<HTMLDivElement>(null);
     const adxRef = useRef<HTMLDivElement>(null);
 
     // Dynamic Fib State
@@ -364,22 +364,28 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
         return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
     }, [candles, theme, showAtr]);
 
-    // ─── OBV Effect ──────────────────────────────────────────────
+    // ─── CCI Effect ──────────────────────────────────────────────
     useEffect(() => {
-        if (!obvRef.current || candles.length === 0 || !showObv) return;
-        const el = obvRef.current;
+        if (!cciRef.current || candles.length === 0 || !showCci) return;
+        const el = cciRef.current;
         const chart = createChart(el, { ...chartOpts(100), width: el.clientWidth });
+        const highs = candles.map(d => d.high);
+        const lows = candles.map(d => d.low);
         const closes = candles.map(d => d.close);
-        const volumes = candles.map(d => (d as any).volume ?? 0) as number[];
         const times = candles.map(d => d.date);
-        const obv = calcOBV(closes, volumes);
+        const cci = calcCCI(highs, lows, closes, 20);
         chart.addSeries(LineSeries, { color: '#8b5cf6', lineWidth: 2, priceLineVisible: false })
-            .setData(times.map((t, i) => obv[i] !== null ? { time: t, value: obv[i]! } : null).filter(Boolean) as any);
+            .setData(times.map((t, i) => cci[i] !== null ? { time: t, value: cci[i]! } : null).filter(Boolean) as any);
+        // Overbought/Oversold lines for CCI (+100, -100)
+        chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
+            .setData(times.map(t => ({ time: t, value: 100 })));
+        chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
+            .setData(times.map(t => ({ time: t, value: -100 })));
         chart.timeScale().fitContent();
         const handleResize = () => chart.applyOptions({ width: el.clientWidth });
         window.addEventListener('resize', handleResize);
         return () => { window.removeEventListener('resize', handleResize); chart.remove(); };
-    }, [candles, theme, showObv]);
+    }, [candles, theme, showCci]);
 
     // ─── ADX Effect ──────────────────────────────────────────────
     useEffect(() => {
@@ -570,16 +576,16 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
                 </div>
             )}
 
-            {/* OBV Panel */}
-            {showObv && (
+            {/* CCI Panel */}
+            {showCci && (
                 <div className="border-t border-border/30 flex-shrink-0">
                     <div className="flex items-center justify-between px-3 py-1.5 bg-card-hover/30">
                         <div className="flex items-center gap-2">
-                            <span className="text-[10px] font-black uppercase tracking-[0.15em] text-violet-400/80">OBV</span>
-                            <span className="text-[8px] text-muted font-bold">Volume Flow</span>
+                            <span className="text-[10px] font-black uppercase tracking-[0.15em] text-violet-400/80">CCI (20)</span>
+                            <span className="text-[8px] text-muted font-bold">+100 / -100</span>
                         </div>
                     </div>
-                    <div ref={obvRef} className="w-full" style={{ height: 100 }} />
+                    <div ref={cciRef} className="w-full" style={{ height: 100 }} />
                 </div>
             )}
 

@@ -33,8 +33,8 @@ interface DashboardSidebarProps {
     setShowAtr: (v: boolean) => void;
     showKeltner: boolean;
     setShowKeltner: (v: boolean) => void;
-    showObv: boolean;
-    setShowObv: (v: boolean) => void;
+    showCci: boolean;
+    setShowCci: (v: boolean) => void;
     showAdx: boolean;
     setShowAdx: (v: boolean) => void;
     transactions: TransactionRecord[];
@@ -46,7 +46,7 @@ export default function DashboardSidebar({
     pinned, setPinned, activeTab, setActiveTab,
     showFib, setShowFib, showBollinger, setShowBollinger, showIchimoku, setShowIchimoku,
     showVwap, setShowVwap, showRsi, setShowRsi, showAtr, setShowAtr,
-    showKeltner, setShowKeltner, showObv, setShowObv, showAdx, setShowAdx,
+    showKeltner, setShowKeltner, showCci, setShowCci, showAdx, setShowAdx,
     transactions, onSelectSymbol,
 }: DashboardSidebarProps) {
     const expanded = pinned;
@@ -98,7 +98,7 @@ export default function DashboardSidebar({
                 <div className="flex-1 bg-card/50 backdrop-blur-3xl border-l border-border/15 flex flex-col h-full shadow-[-25px_0_50px_rgba(0,0,0,0.1)] overflow-hidden animate-in slide-in-from-right duration-500">
                     {activeTab === 'watchlist' && <Watchlist onSelectSymbol={onSelectSymbol} />}
 
-                    {activeTab === 'indicators' && <IndicatorsPanel showFib={showFib} setShowFib={setShowFib} showBollinger={showBollinger} setShowBollinger={setShowBollinger} showIchimoku={showIchimoku} setShowIchimoku={setShowIchimoku} showVwap={showVwap} setShowVwap={setShowVwap} showRsi={showRsi} setShowRsi={setShowRsi} showAtr={showAtr} setShowAtr={setShowAtr} showKeltner={showKeltner} setShowKeltner={setShowKeltner} showObv={showObv} setShowObv={setShowObv} showAdx={showAdx} setShowAdx={setShowAdx} />}
+                    {activeTab === 'indicators' && <IndicatorsPanel showFib={showFib} setShowFib={setShowFib} showBollinger={showBollinger} setShowBollinger={setShowBollinger} showIchimoku={showIchimoku} setShowIchimoku={setShowIchimoku} showVwap={showVwap} setShowVwap={setShowVwap} showRsi={showRsi} setShowRsi={setShowRsi} showAtr={showAtr} setShowAtr={setShowAtr} showKeltner={showKeltner} setShowKeltner={setShowKeltner} showCci={showCci} setShowCci={setShowCci} showAdx={showAdx} setShowAdx={setShowAdx} />}
 
                     {activeTab === 'alerts' && <AlertsPanel />}
 
@@ -123,7 +123,7 @@ function RailButton({ active, onClick, title, children, activeClass, hoverClass 
     );
 }
 
-function IndicatorsPanel({ showFib, setShowFib, showBollinger, setShowBollinger, showIchimoku, setShowIchimoku, showVwap, setShowVwap, showRsi, setShowRsi, showAtr, setShowAtr, showKeltner, setShowKeltner, showObv, setShowObv, showAdx, setShowAdx }: {
+function IndicatorsPanel({ showFib, setShowFib, showBollinger, setShowBollinger, showIchimoku, setShowIchimoku, showVwap, setShowVwap, showRsi, setShowRsi, showAtr, setShowAtr, showKeltner, setShowKeltner, showCci, setShowCci, showAdx, setShowAdx }: {
     showFib: boolean; setShowFib: (v: boolean) => void;
     showBollinger: boolean; setShowBollinger: (v: boolean) => void;
     showIchimoku: boolean; setShowIchimoku: (v: boolean) => void;
@@ -131,7 +131,7 @@ function IndicatorsPanel({ showFib, setShowFib, showBollinger, setShowBollinger,
     showRsi: boolean; setShowRsi: (v: boolean) => void;
     showAtr: boolean; setShowAtr: (v: boolean) => void;
     showKeltner: boolean; setShowKeltner: (v: boolean) => void;
-    showObv: boolean; setShowObv: (v: boolean) => void;
+    showCci: boolean; setShowCci: (v: boolean) => void;
     showAdx: boolean; setShowAdx: (v: boolean) => void;
 }) {
     return (
@@ -159,7 +159,7 @@ function IndicatorsPanel({ showFib, setShowFib, showBollinger, setShowBollinger,
             <div className="space-y-3">
                 <IndicatorToggle active={showRsi} onClick={() => setShowRsi(!showRsi)} name="RSI (14)" desc="Relative Strength Index — Overbought 70 / Oversold 30" activeColor="amber" />
                 <IndicatorToggle active={showAtr} onClick={() => setShowAtr(!showAtr)} name="ATR (14)" desc="Average True Range — Wilder's Volatility Metric" activeColor="teal" />
-                <IndicatorToggle active={showObv} onClick={() => setShowObv(!showObv)} name="OBV" desc="On-Balance Volume — Buying vs Selling Pressure" activeColor="violet" />
+                <IndicatorToggle active={showCci} onClick={() => setShowCci(!showCci)} name="CCI (20)" desc="Commodity Channel Index — Cyclical turns" activeColor="violet" />
                 <IndicatorToggle active={showAdx} onClick={() => setShowAdx(!showAdx)} name="ADX (14)" desc="Average Directional Index — Trend Strength" activeColor="pink" />
             </div>
 

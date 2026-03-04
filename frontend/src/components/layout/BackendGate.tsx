@@ -82,24 +82,29 @@ export default function BackendGate({ children }: BackendGateProps) {
             {/* 3D Background */}
             <GoldenBlackHole />
 
-            {/* Central content - Glassmorphism overlay */}
-            <div className="relative z-10 flex flex-col items-center justify-center p-12 rounded-3xl bg-black/40 backdrop-blur-xl border border-white/10 shadow-[0_0_50px_rgba(212,175,55,0.1)] transition-all duration-700 ease-out transform hover:scale-105">
-                {/* Logo / Brand */}
-                <div className="relative w-24 h-24 mb-6 flex items-center justify-center">
-                    <div className="absolute inset-0 rounded-full border border-white/20 animate-[spin_4s_linear_infinite]" />
-                    <div className="absolute inset-2 rounded-full border border-yellow-500/30 animate-[spin_3s_linear_infinite_reverse]" />
-                    <div className="absolute inset-x-4 inset-y-4 rounded-full bg-gradient-to-tr from-yellow-600 to-orange-400 opacity-20 blur-md animate-pulse" />
-                    <span className="text-4xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white to-yellow-500/50">G</span>
+            {/* Central content - Bottom Glassmorphism Pill */}
+            <div className="absolute bottom-12 z-10 flex items-center justify-between px-8 py-4 w-[600px] max-w-[90vw] rounded-full bg-black/40 backdrop-blur-2xl border border-white/10 shadow-[0_0_50px_rgba(212,175,55,0.15)] transition-all duration-700 ease-out transform hover:scale-105">
+
+                {/* Logo & Brand inline */}
+                <div className="flex items-center gap-4">
+                    <div className="relative w-12 h-12 flex items-center justify-center">
+                        <div className="absolute inset-0 rounded-full border border-white/20 animate-[spin_4s_linear_infinite]" />
+                        <div className="absolute inset-1 rounded-full border border-yellow-500/30 animate-[spin_3s_linear_infinite_reverse]" />
+                        <div className="absolute inset-2 rounded-full bg-gradient-to-tr from-yellow-600 to-orange-400 opacity-20 blur-sm animate-pulse" />
+                        <span className="text-2xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white to-yellow-500/50">G</span>
+                    </div>
+                    <div className="flex flex-col mb-0.5">
+                        <span className="text-lg font-black tracking-[0.2em] uppercase text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">Gravity</span>
+                        <span className="text-[8px] font-bold tracking-[0.3em] uppercase text-yellow-500/80">Asset Manager U</span>
+                    </div>
                 </div>
 
-                {/* Title */}
-                <h1 className="flex flex-col items-center gap-1 mb-8">
-                    <span className="text-3xl font-black tracking-[0.2em] uppercase text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">Gravity</span>
-                    <span className="text-xs font-bold tracking-[0.3em] uppercase text-yellow-500/80">Asset Manager U</span>
-                </h1>
-
-                {/* Progress section */}
-                <div className="w-64 flex flex-col items-center gap-4">
+                {/* Progress section inline */}
+                <div className="w-56 flex flex-col items-end justify-center gap-2">
+                    {/* Status text */}
+                    <p className="text-[9px] font-mono uppercase tracking-widest text-white/60 h-3 text-right animate-pulse" key={status}>
+                        {status}
+                    </p>
                     {/* Progress bar */}
                     <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden relative">
                         <div
@@ -109,11 +114,6 @@ export default function BackendGate({ children }: BackendGateProps) {
                             }}
                         />
                     </div>
-
-                    {/* Status text */}
-                    <p className="text-[10px] font-mono uppercase tracking-widest text-white/50 h-4 text-center animate-pulse" key={status}>
-                        {status}
-                    </p>
                 </div>
             </div>
         </div>

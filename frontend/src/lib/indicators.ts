@@ -309,24 +309,39 @@ export function calcKeltner(
 }
 
 /**
- * OBV (On-Balance Volume)
- * Cumulative measure of buying/selling pressure.
+ * CCI (Commodity Channel Index)
+ * Identifies cyclical turns in commodities, equities, and currencies.
  */
-export function calcOBV(closes: number[], volumes: number[]): (number | null)[] {
-    const obv: (number | null)[] = [];
-    if (closes.length === 0) return obv;
+export function calcCCI(highs: number[], lows: number[], closes: number[], period = 20): (number | null)[] {
+    const cci: (number | null)[] = [];
+    if (closes.length < period) return closes.map(() => null);
 
-    let currentV = 0;
-    obv.push(currentV);
+    const formatTP = (h: number, l: number, c: number) => (h + l + c) / 3;
+    const tpArr = closes.map((c, i) => formatTP(highs[i], lows[i], c));
 
-    for (let i = 1; i < closes.length; i++) {
-        const vol = volumes[i] || 0;
-        if (closes[i] > closes[i - 1]) currentV += vol;
-        else if (closes[i] < closes[i - 1]) currentV -= vol;
-        obv.push(currentV);
+    for (let i = 0; i < closes.length; i++) {
+        if (i < period - 1) {
+            cci.push(null);
+            continue;
+        }
+
+        const slice = tpArr.slice(i - period + 1, i + 1);
+        const smaTP = slice.reduce((a, b) => a + b, 0) / period;
+
+        let meanDeviation = 0;
+        for (const t of slice) {
+            meanDeviation += Math.abs(t - smaTP);
+        }
+        meanDeviation /= period;
+
+        if (meanDeviation === 0) {
+            cci.push(0);
+        } else {
+            cci.push((tpArr[i] - smaTP) / (0.015 * meanDeviation));
+        }
     }
 
-    return obv;
+    return cci;
 }
 
 /**

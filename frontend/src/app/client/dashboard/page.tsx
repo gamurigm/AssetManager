@@ -37,7 +37,7 @@ export default function ClientDashboard() {
     const [globalShowRsi, setGlobalShowRsi] = useState(false);
     const [globalShowAtr, setGlobalShowAtr] = useState(false);
     const [globalShowKeltner, setGlobalShowKeltner] = useState(false);
-    const [globalShowObv, setGlobalShowObv] = useState(false);
+    const [globalShowCci, setGlobalShowCci] = useState(false);
     const [globalShowAdx, setGlobalShowAdx] = useState(false);
 
     // Tab actions
@@ -98,7 +98,7 @@ export default function ClientDashboard() {
                             />
                         ) : (
                             <div className="flex-1 min-h-0 rounded-2xl overflow-hidden border border-border bg-card">
-                                <SymbolChart symbol={activeTab} showFib={globalShowFib} showBollinger={globalShowBollinger} showIchimoku={globalShowIchimoku} showVwap={globalShowVwap} showRsi={globalShowRsi} showAtr={globalShowAtr} showKeltner={globalShowKeltner} showObv={globalShowObv} showAdx={globalShowAdx} />
+                                <SymbolChart symbol={activeTab} showFib={globalShowFib} showBollinger={globalShowBollinger} showIchimoku={globalShowIchimoku} showVwap={globalShowVwap} showRsi={globalShowRsi} showAtr={globalShowAtr} showKeltner={globalShowKeltner} showCci={globalShowCci} showAdx={globalShowAdx} />
                             </div>
                         )}
                     </div>
@@ -123,8 +123,8 @@ export default function ClientDashboard() {
                         setShowAtr={setGlobalShowAtr}
                         showKeltner={globalShowKeltner}
                         setShowKeltner={setGlobalShowKeltner}
-                        showObv={globalShowObv}
-                        setShowObv={setGlobalShowObv}
+                        showCci={globalShowCci}
+                        setShowCci={setGlobalShowCci}
                         showAdx={globalShowAdx}
                         setShowAdx={setGlobalShowAdx}
                         transactions={transactions}
