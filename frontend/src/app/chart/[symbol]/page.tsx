@@ -3,7 +3,7 @@
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useRef, useState, useCallback } from "react";
 import { createChart, ColorType, CandlestickSeries, LineSeries, HistogramSeries, IChartApi } from "lightweight-charts";
-import { TrendingUp, TrendingDown, ChevronDown, ChevronUp, ArrowLeft, BarChart2, X } from "lucide-react";
+import { TrendingUp, TrendingDown, ChevronDown, ChevronUp, ArrowLeft, BarChart2, X, Plus, Minus } from "lucide-react";
 
 /* ─── Indicator Math ──────────────────────────────────────────────────── */
 
@@ -1032,7 +1032,7 @@ export default function ChartWindow() {
                     <div className="flex items-center gap-2">
                         <span className="text-[10px] font-black uppercase tracking-[0.15em] text-white/50">MACD</span>
                         <span className="text-[9px] font-mono text-white/30">({macdFast},{macdSlow},{macdSignal})</span>
-                        {showMACD ? <ChevronUp size={10} className="text-white/30" /> : <ChevronDown size={10} className="text-white/30" />}
+                        {showMACD ? <Minus size={12} strokeWidth={3} className="text-white/60 hover:text-white" /> : <Plus size={12} strokeWidth={3} className="text-white/60 hover:text-white" />}
                     </div>
                     {showMACD && (
                         <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>
@@ -1051,7 +1051,7 @@ export default function ChartWindow() {
                     <div className="flex items-center gap-2">
                         <span className="text-[10px] font-black uppercase tracking-[0.15em] text-white/50">STOCHASTIC</span>
                         <span className="text-[9px] font-mono text-white/30">({stochK},{stochD},{stochSmooth})</span>
-                        {showStoch ? <ChevronUp size={10} className="text-white/30" /> : <ChevronDown size={10} className="text-white/30" />}
+                        {showStoch ? <Minus size={12} strokeWidth={3} className="text-white/60 hover:text-white" /> : <Plus size={12} strokeWidth={3} className="text-white/60 hover:text-white" />}
                     </div>
                     {showStoch && (
                         <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>
@@ -1070,7 +1070,7 @@ export default function ChartWindow() {
                     <div className="flex items-center gap-2">
                         <span className="text-[10px] font-black uppercase tracking-[0.15em] text-purple-400/70">ATR</span>
                         <span className="text-[9px] font-mono text-white/30">({atrPeriod})</span>
-                        {showATR ? <ChevronUp size={10} className="text-white/30" /> : <ChevronDown size={10} className="text-white/30" />}
+                        {showATR ? <Minus size={12} strokeWidth={3} className="text-white/60 hover:text-white" /> : <Plus size={12} strokeWidth={3} className="text-white/60 hover:text-white" />}
                     </div>
                     {showATR && (
                         <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>

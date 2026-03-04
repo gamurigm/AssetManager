@@ -768,3 +768,12 @@ body {
 .animate-gate-reveal {
   animation: gateReveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
+
+/* Hide TradingView watermark/logo in Lightweight Charts */
+#tv-attr-logo,
+.tv-lightweight-charts-watermark,
+a[href*="tradingview.com"] {
+  display: none !important;
+  opacity: 0 !important;
+  visibility: hidden !important;
+}

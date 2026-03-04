@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import {
     TrendingUp, TrendingDown, DollarSign, BarChart3,
@@ -55,6 +55,15 @@ export default function PortfolioView({
     collapsed, togglePanel, onSelectSymbol,
 }: PortfolioViewProps) {
     const { holdings, setHoldings, closePosition, realizedPnL, unrealizedPnL } = usePortfolio();
+    const [isLight, setIsLight] = useState(false);
+
+    useEffect(() => {
+        const check = () => setIsLight(document.documentElement.classList.contains("light"));
+        check();
+        const obs = new MutationObserver(check);
+        obs.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+        return () => obs.disconnect();
+    }, []);
 
     // ── Derived Metrics ─────────────────────────────────────────
     const winners = activeHoldings.filter(h => h.change > 0).length;
@@ -131,7 +140,7 @@ export default function PortfolioView({
                     riskData={riskData} activeHoldings={activeHoldings}
                     sectors={sectors} winRate={winRate}
                     maxConcentration={maxConcentration} topHolding={topHolding}
-                    topWeight={topWeight} avgChange={avgChange}
+                    topWeight={topWeight} avgChange={avgChange} isLight={isLight}
                 />
             </div>
 
@@ -198,56 +207,56 @@ export default function PortfolioView({
 
 // ─── Sub-Components ─────────────────────────────────────────────────
 
-function MetricsRibbon({ accountEquity, totalPnL, pnlPercent, unrealizedPnL, realizedPnL, exposure, leverage, cash, riskData, activeHoldings, sectors, winRate, maxConcentration, topHolding, topWeight, avgChange }: any) {
+function MetricsRibbon({ accountEquity, totalPnL, pnlPercent, unrealizedPnL, realizedPnL, exposure, leverage, cash, riskData, activeHoldings, sectors, winRate, maxConcentration, topHolding, topWeight, avgChange, isLight }: any) {
     return (
         <div className="relative z-10 px-6 py-3 border-t border-border/40 flex items-center gap-2 overflow-x-auto scrollbar-none bg-accent/[0.02]">
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-blue-500/10 border border-blue-500/20 shrink-0">
-                <DollarSign size={14} className="text-blue-400" /><span className="text-[10px] text-blue-400/60 font-black uppercase">Equity</span>
-                <span className="text-lg font-black tracking-tighter text-blue-100">${accountEquity.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl shrink-0 ${isLight ? "bg-blue-100 border border-blue-200" : "bg-blue-500/10 border border-blue-500/20"}`}>
+                <DollarSign size={14} className={isLight ? "text-blue-600" : "text-blue-400"} /><span className={`text-[10px] font-black uppercase ${isLight ? "text-blue-800/80" : "text-blue-400/60"}`}>Equity</span>
+                <span className={`text-lg font-black tracking-tighter ${isLight ? "text-blue-900" : "text-blue-100"}`}>${accountEquity.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
             </div>
-            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl shrink-0 ${totalPnL >= 0 ? 'bg-green/10 border border-green/20' : 'bg-red/10 border border-red/20'}`}>
-                {totalPnL >= 0 ? <TrendingUp size={14} className="text-green/80" /> : <TrendingDown size={14} className="text-red/80" />}
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl shrink-0 ${totalPnL >= 0 ? (isLight ? 'bg-green-100 border border-green-200' : 'bg-green/10 border border-green/20') : (isLight ? 'bg-red-100 border border-red-200' : 'bg-red/10 border border-red/20')}`}>
+                {totalPnL >= 0 ? <TrendingUp size={14} className={isLight ? "text-green-700" : "text-green/80"} /> : <TrendingDown size={14} className={isLight ? "text-red-700" : "text-red/80"} />}
                 <span className="text-[10px] text-muted font-black uppercase tracking-tight">Net P&L</span>
                 <div className="flex flex-col">
-                    <span className={`text-lg font-black tracking-tighter leading-none ${totalPnL >= 0 ? 'text-green' : 'text-red'}`}>{totalPnL >= 0 ? '+' : ''}${Math.abs(totalPnL).toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
-                    <span className={`text-[10px] font-black tracking-tighter ${totalPnL >= 0 ? 'text-green/60' : 'text-red/60'}`}>{pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%</span>
+                    <span className={`text-lg font-black tracking-tighter leading-none ${totalPnL >= 0 ? (isLight ? 'text-green-800' : 'text-green') : (isLight ? 'text-red-800' : 'text-red')}`}>{totalPnL >= 0 ? '+' : ''}${Math.abs(totalPnL).toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
+                    <span className={`text-[10px] font-black tracking-tighter ${totalPnL >= 0 ? (isLight ? 'text-green-700' : 'text-green/60') : (isLight ? 'text-red-700' : 'text-red/60')}`}>{pnlPercent >= 0 ? '+' : ''}{pnlPercent.toFixed(2)}%</span>
                 </div>
             </div>
             <div className="h-8 w-[1px] bg-border/40 mx-1 shrink-0" />
-            <div className="flex flex-col gap-1 px-3 py-1.5 rounded-xl bg-zinc-500/5 border border-border/20 shrink-0">
-                <div className="flex items-center gap-2"><span className="text-[9px] text-muted font-black uppercase w-12">Unreal'd</span><span className={`text-sm font-bold ${unrealizedPnL >= 0 ? 'text-green/80' : 'text-red/80'}`}>${Math.abs(unrealizedPnL).toLocaleString("en-US", { maximumFractionDigits: 0 })}</span></div>
-                <div className="flex items-center gap-2"><span className="text-[9px] text-muted font-black uppercase w-12">Real'd</span><span className={`text-sm font-bold ${realizedPnL >= 0 ? 'text-green/80' : 'text-red/80'}`}>${Math.abs(realizedPnL).toLocaleString("en-US", { maximumFractionDigits: 0 })}</span></div>
+            <div className={`flex flex-col gap-1 px-3 py-1.5 rounded-xl border shrink-0 ${isLight ? "bg-zinc-100 border-zinc-200" : "bg-zinc-500/5 border-border/20"}`}>
+                <div className="flex items-center gap-2"><span className="text-[9px] text-muted font-black uppercase w-12">Unreal'd</span><span className={`text-sm font-bold ${unrealizedPnL >= 0 ? (isLight ? 'text-green-700' : 'text-green/80') : (isLight ? 'text-red-700' : 'text-red/80')}`}>${Math.abs(unrealizedPnL).toLocaleString("en-US", { maximumFractionDigits: 0 })}</span></div>
+                <div className="flex items-center gap-2"><span className="text-[9px] text-muted font-black uppercase w-12">Real'd</span><span className={`text-sm font-bold ${realizedPnL >= 0 ? (isLight ? 'text-green-700' : 'text-green/80') : (isLight ? 'text-red-700' : 'text-red/80')}`}>${Math.abs(realizedPnL).toLocaleString("en-US", { maximumFractionDigits: 0 })}</span></div>
             </div>
-            <div className="flex flex-col gap-1 px-3 py-1.5 rounded-xl bg-orange-500/10 border border-orange-500/20 shrink-0">
-                <div className="flex items-center gap-2"><span className="text-[9px] text-orange-400 font-black uppercase w-12">Exposure</span><span className="text-sm font-bold text-orange-200">${exposure.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span></div>
-                <div className="flex items-center gap-2"><span className="text-[9px] text-orange-400 font-black uppercase w-12">Leverage</span><span className={`text-sm font-bold ${leverage > 1.5 ? 'text-red' : 'text-orange-200'}`}>{leverage.toFixed(2)}x</span></div>
+            <div className={`flex flex-col gap-1 px-3 py-1.5 rounded-xl border shrink-0 ${isLight ? "bg-orange-100 border-orange-200" : "bg-orange-500/10 border-orange-500/20"}`}>
+                <div className="flex items-center gap-2"><span className={`text-[9px] font-black uppercase w-12 ${isLight ? "text-orange-700" : "text-orange-400"}`}>Exposure</span><span className={`text-sm font-bold ${isLight ? "text-orange-900" : "text-orange-200"}`}>${exposure.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span></div>
+                <div className="flex items-center gap-2"><span className={`text-[9px] font-black uppercase w-12 ${isLight ? "text-orange-700" : "text-orange-400"}`}>Leverage</span><span className={`text-sm font-bold ${leverage > 1.5 ? (isLight ? 'text-red-700' : 'text-red') : (isLight ? 'text-orange-900' : 'text-orange-200')}`}>{leverage.toFixed(2)}x</span></div>
             </div>
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-cyan-500/10 border border-cyan-500/20 shrink-0">
-                <DollarSign size={14} className="text-cyan-400" /><span className="text-[10px] text-cyan-400/60 font-black uppercase">Liquidity</span>
-                <span className="text-lg font-black tracking-tighter text-cyan-100">${cash.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
+            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border shrink-0 ${isLight ? "bg-cyan-100 border-cyan-200" : "bg-cyan-500/10 border-cyan-500/20"}`}>
+                <DollarSign size={14} className={isLight ? "text-cyan-600" : "text-cyan-400"} /><span className={`text-[10px] font-black uppercase ${isLight ? "text-cyan-800/80" : "text-cyan-400/60"}`}>Liquidity</span>
+                <span className={`text-lg font-black tracking-tighter ${isLight ? "text-cyan-900" : "text-cyan-100"}`}>${cash.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>
             </div>
-            <div className="flex flex-col gap-1 px-3 py-1.5 rounded-xl bg-purple-500/10 border border-purple-500/20 shrink-0">
+            <div className={`flex flex-col gap-1 px-3 py-1.5 rounded-xl border shrink-0 ${isLight ? "bg-purple-100 border-purple-200" : "bg-purple-500/10 border-purple-500/20"}`}>
                 <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-2"><span className="text-[9px] text-purple-400 font-black uppercase w-8">mVaR</span><span className="text-sm font-bold text-purple-200">{riskData ? `${riskData.mvar_95_percent ?? riskData.var_95_percent ?? '—'}%` : '…'}</span></div>
-                    <div className="flex items-center gap-2"><span className="text-[9px] text-purple-400 font-black uppercase w-8">Vol(σ)</span><span className="text-sm font-bold text-purple-200">{riskData ? `${riskData.annualized_volatility ?? '—'}%` : '…'}</span></div>
+                    <div className="flex items-center gap-2"><span className={`text-[9px] font-black uppercase w-8 ${isLight ? "text-purple-700" : "text-purple-400"}`}>mVaR</span><span className={`text-sm font-bold ${isLight ? "text-purple-900" : "text-purple-200"}`}>{riskData ? `${riskData.mvar_95_percent ?? riskData.var_95_percent ?? '—'}%` : '…'}</span></div>
+                    <div className="flex items-center gap-2"><span className={`text-[9px] font-black uppercase w-8 ${isLight ? "text-purple-700" : "text-purple-400"}`}>Vol(σ)</span><span className={`text-sm font-bold ${isLight ? "text-purple-900" : "text-purple-200"}`}>{riskData ? `${riskData.annualized_volatility ?? '—'}%` : '…'}</span></div>
                 </div>
-                <div className="flex items-center gap-2"><span className="text-[9px] text-purple-400 font-black uppercase w-8">Sharpe</span><span className={`text-sm font-bold ${riskData && riskData.sharpe_ratio > 1 ? 'text-green' : riskData && riskData.sharpe_ratio > 0 ? 'text-purple-200' : 'text-red/80'}`}>{riskData ? (riskData.sharpe_ratio ?? '—') : '…'}</span></div>
+                <div className="flex items-center gap-2"><span className={`text-[9px] font-black uppercase w-8 ${isLight ? "text-purple-700" : "text-purple-400"}`}>Sharpe</span><span className={`text-sm font-bold ${riskData && riskData.sharpe_ratio > 1 ? (isLight ? 'text-green-700' : 'text-green') : riskData && riskData.sharpe_ratio > 0 ? (isLight ? 'text-purple-900' : 'text-purple-200') : (isLight ? 'text-red-700' : 'text-red/80')}`}>{riskData ? (riskData.sharpe_ratio ?? '—') : '…'}</span></div>
             </div>
-            <div className="flex flex-col gap-1 px-3 py-1.5 rounded-xl bg-indigo-500/10 border border-border/30 shrink-0">
+            <div className={`flex flex-col gap-1 px-3 py-1.5 rounded-xl border shrink-0 ${isLight ? "bg-indigo-100 border-indigo-200" : "bg-indigo-500/10 border-border/30"}`}>
                 <div className="flex items-center gap-3">
-                    <div className="flex items-center gap-1"><span className="text-[9px] text-muted font-black uppercase">Holdings:</span><span className="text-sm font-bold text-indigo-100">{activeHoldings.length}</span></div>
-                    <div className="flex items-center gap-1"><span className="text-[9px] text-muted font-black uppercase">Sectors:</span><span className="text-sm font-bold text-indigo-100">{sectors}</span></div>
+                    <div className="flex items-center gap-1"><span className="text-[9px] text-muted font-black uppercase">Holdings:</span><span className={`text-sm font-bold ${isLight ? "text-indigo-900" : "text-indigo-100"}`}>{activeHoldings.length}</span></div>
+                    <div className="flex items-center gap-1"><span className="text-[9px] text-muted font-black uppercase">Sectors:</span><span className={`text-sm font-bold ${isLight ? "text-indigo-900" : "text-indigo-100"}`}>{sectors}</span></div>
                 </div>
-                <div className="flex items-center gap-1"><span className="text-[9px] text-muted font-black uppercase">Win Rate:</span><span className={`text-sm font-bold ${winRate >= 50 ? 'text-green' : 'text-amber-400'}`}>{winRate.toFixed(0)}%</span></div>
+                <div className="flex items-center gap-1"><span className="text-[9px] text-muted font-black uppercase">Win Rate:</span><span className={`text-sm font-bold ${winRate >= 50 ? (isLight ? 'text-green-700' : 'text-green') : (isLight ? 'text-amber-600' : 'text-amber-400')}`}>{winRate.toFixed(0)}%</span></div>
             </div>
-            <div className="flex flex-col gap-1 px-3 py-1.5 rounded-xl bg-pink-500/10 border border-pink-500/20 shrink-0">
-                <div className="flex items-center gap-2"><span className="text-[9px] text-pink-400 font-black uppercase w-10">Concen.</span><span className="text-sm font-bold text-pink-100">{maxConcentration.toFixed(1)}%</span></div>
-                <div className="flex items-center gap-2"><span className="text-[9px] text-pink-400 font-black uppercase w-10">Drawdn</span><span className={`text-sm font-bold ${riskData && riskData.max_drawdown > 10 ? 'text-red' : 'text-pink-100'}`}>{riskData ? `-${riskData.max_drawdown}%` : '—'}</span></div>
+            <div className={`flex flex-col gap-1 px-3 py-1.5 rounded-xl border shrink-0 ${isLight ? "bg-pink-100 border-pink-200" : "bg-pink-500/10 border-pink-500/20"}`}>
+                <div className="flex items-center gap-2"><span className={`text-[9px] font-black uppercase w-10 ${isLight ? "text-pink-700" : "text-pink-400"}`}>Concen.</span><span className={`text-sm font-bold ${isLight ? "text-pink-900" : "text-pink-100"}`}>{maxConcentration.toFixed(1)}%</span></div>
+                <div className="flex items-center gap-2"><span className={`text-[9px] font-black uppercase w-10 ${isLight ? "text-pink-700" : "text-pink-400"}`}>Drawdn</span><span className={`text-sm font-bold ${riskData && riskData.max_drawdown > 10 ? (isLight ? 'text-red-700' : 'text-red') : (isLight ? 'text-pink-900' : 'text-pink-100')}`}>{riskData ? `-${riskData.max_drawdown}%` : '—'}</span></div>
             </div>
             {topHolding && (
-                <div className="flex items-center gap-3 px-4 py-1.5 rounded-xl bg-accent/10 border border-accent/30 shrink-0 shadow-lg shadow-accent/5">
-                    <div className="flex flex-col"><span className="text-[9px] text-accent font-black uppercase tracking-tighter">Top Focus Asset</span><span className="text-lg font-black tracking-tighter text-white">{topHolding.symbol}</span></div>
-                    <div className="flex flex-col items-end"><span className="text-[10px] font-bold text-accent/60">{topWeight.toFixed(1)}% Weight</span><span className={`text-xs font-black ${avgChange >= 0 ? 'text-green' : 'text-red'}`}>Avg Δ {avgChange >= 0 ? '+' : ''}{avgChange.toFixed(2)}%</span></div>
+                <div className={`flex items-center gap-3 px-4 py-1.5 rounded-xl border shrink-0 shadow-lg ${isLight ? "bg-blue-50 border-blue-200 shadow-blue-500/10" : "bg-accent/10 border-accent/30 shadow-accent/5"}`}>
+                    <div className="flex flex-col"><span className={`text-[9px] font-black uppercase tracking-tighter ${isLight ? "text-blue-700" : "text-accent"}`}>Top Focus Asset</span><span className={`text-lg font-black tracking-tighter ${isLight ? "text-zinc-900" : "text-white"}`}>{topHolding.symbol}</span></div>
+                    <div className="flex flex-col items-end"><span className={`text-[10px] font-bold ${isLight ? "text-blue-600" : "text-accent/60"}`}>{topWeight.toFixed(1)}% Weight</span><span className={`text-xs font-black ${avgChange >= 0 ? (isLight ? 'text-green-700' : 'text-green') : (isLight ? 'text-red-700' : 'text-red')}`}>Avg Δ {avgChange >= 0 ? '+' : ''}{avgChange.toFixed(2)}%</span></div>
                 </div>
             )}
         </div>

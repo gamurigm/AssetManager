@@ -212,7 +212,7 @@ export default function GlobalSearch() {
         return (
             <button
                 onClick={() => setIsOpen(true)}
-                className={`fixed top-3 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 px-4 py-2 
+                className={`fixed top-1.5 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2.5 px-4 py-2 
                     backdrop-blur-xl border transition-all duration-200 cursor-pointer group
                     shadow-[0_2px_20px_-4px_rgba(0,0,0,0.5)] rounded-xl
                     ${isLight

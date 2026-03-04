@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
     X, Sparkles, BrainCircuit, Maximize2, Minimize2,
-    Trash2, Menu, Plus
+    Trash2, Menu, Plus, Minus
 } from "lucide-react";
 
 import { usePortfolio } from "@/context/PortfolioContext";
@@ -280,7 +280,7 @@ export default function ChatWidget() {
 
                             <button onClick={() => setIsMaximized(!isMaximized)}
                                 className={`h-8 w-8 flex items-center justify-center rounded-lg transition-all ${isDarkMode ? "bg-white/5 text-zinc-400 hover:bg-white/10" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}>
-                                {isMaximized ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+                                {isMaximized ? <Minus size={13} strokeWidth={3} /> : <Plus size={13} strokeWidth={3} />}
                             </button>
                             <button onClick={() => setIsOpen(false)}
                                 className={`h-8 w-8 flex items-center justify-center rounded-lg transition-all ${isDarkMode ? "bg-white/5 text-zinc-400 hover:bg-white/10" : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"}`}>
