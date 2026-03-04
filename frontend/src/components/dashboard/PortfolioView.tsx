@@ -320,7 +320,7 @@ function PositionsTable({ activeHoldings, holdings, collapsed, togglePanel, onSe
                                         </td>
                                         <td className="px-4 py-4 text-right font-mono text-xs font-bold">${(h.shares * h.price).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                                         <td className="px-4 py-4 text-right text-xs text-muted font-bold">{h.purchaseDate || 'N/A'}</td>
-                                        <td className="px-4 py-4 pr-6 flex justify-end"><AssetSparkline symbol={h.symbol} color={badgeColor} /></td>
+                                        <td className="px-4 py-4 pr-6 flex justify-end"><AssetSparkline symbol={h.symbol} color={badgeColor} entryPrice={h.entryPrice} /></td>
                                         <td className="px-6 py-4 text-right">
                                             <button onClick={(e) => { e.stopPropagation(); closePosition(h.symbol); }} className="opacity-0 group-hover:opacity-100 transition-all px-3 py-1.5 rounded-lg border border-red/20 text-[10px] font-black uppercase tracking-tighter text-red hover:bg-red/10 hover:border-red/40 hover:shadow-[0_0_12px_rgba(239,68,68,0.2)]">Liquidate</button>
                                         </td>
