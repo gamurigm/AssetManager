@@ -200,7 +200,7 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
         let savedRange: any = null;
         if (mainChartApi.current) {
             savedRange = mainChartApi.current.timeScale().getVisibleLogicalRange();
-            mainChartApi.current.remove();
+            setTimeout(() => { try { mainChartApi.current?.remove(); } catch(e){} }, 10);
             mainChartApi.current = null;
         }
 
@@ -331,7 +331,7 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
             if (el) chart.applyOptions({ width: el.clientWidth, height: el.clientHeight || 400 });
         });
         ro.observe(el);
-        return () => { ro.disconnect(); chart.remove(); mainChartApi.current = null; };
+        return () => { ro.disconnect(); setTimeout(() => { try { chart.remove(); } catch(e){} }, 10); mainChartApi.current = null; };
     }, [candles, chartOpts, showEmas, showFib, showBollinger, showIchimoku, showVwap, showKeltner, showPsar, showSupertrend, ema1, ema2, ema3, holdings, transactions]);
 
     // ─── Sub-chart builder helper ─────────────────────────────────
@@ -349,7 +349,7 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
 
             const ro = new ResizeObserver(() => { if (el) chart.applyOptions({ width: el.clientWidth }); });
             ro.observe(el);
-            return () => { unsync?.(); ro.disconnect(); chart.remove(); };
+            return () => { unsync?.(); ro.disconnect(); setTimeout(() => { try { chart.remove(); } catch(e){} }, 10); };
         }, [candles, chartOpts, ...deps]);
     };
 

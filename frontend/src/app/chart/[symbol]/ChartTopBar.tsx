@@ -1,5 +1,5 @@
 import React from "react";
-import { ArrowLeft, ZoomIn, ZoomOut, TrendingUp, TrendingDown } from "lucide-react";
+import { ArrowLeft, ZoomIn, ZoomOut, TrendingUp, TrendingDown, Crosshair } from "lucide-react";
 
 export const TIMEFRAMES = [
     { label: "5m", value: "5m" },
@@ -20,6 +20,9 @@ interface ChartTopBarProps {
     loading: boolean;
     zoomIn: () => void;
     zoomOut: () => void;
+    measureActive: boolean;
+    setMeasureActive: (v: boolean) => void;
+    clearMeasurement: () => void;
     // Trading Props
     holding: any;
     openTrade: any;
@@ -37,6 +40,7 @@ import { X } from "lucide-react";
 
 export function ChartTopBar({
     router, symbol, timeframe, setTimeframe, quote, loading, zoomIn, zoomOut,
+    measureActive, setMeasureActive, clearMeasurement,
     holding, openTrade, closePosition, updatePositionLevels,
     tradeQty, setTradeQty, slPrice, setSlPrice, tpPrice, setTpPrice
 }: ChartTopBarProps) {
@@ -140,6 +144,20 @@ export function ChartTopBar({
                     </button>
                     <button onClick={zoomOut} className="h-7 w-7 flex items-center justify-center rounded-md hover:bg-white/10 text-white/50 hover:text-white transition-all" title="Zoom Out">
                         <ZoomOut size={14} />
+                    </button>
+                    <div className="w-px h-4 bg-white/10" />
+                    <button
+                        onClick={() => {
+                            if (measureActive) { clearMeasurement(); }
+                            setMeasureActive(!measureActive);
+                        }}
+                        className={`h-7 w-7 flex items-center justify-center rounded-md transition-all ${measureActive
+                                ? 'bg-amber-500/20 text-amber-400 ring-1 ring-amber-500/40'
+                                : 'hover:bg-white/10 text-white/50 hover:text-white'
+                            }`}
+                        title={measureActive ? 'Disable Measure Tool (Esc)' : 'Measure Price Change'}
+                    >
+                        <Crosshair size={14} />
                     </button>
                 </div>
                 <div className="flex items-center gap-1.5 px-2.5 py-1 bg-white/5 rounded-md border border-white/5">

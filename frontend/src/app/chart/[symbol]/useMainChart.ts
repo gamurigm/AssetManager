@@ -47,6 +47,7 @@ export function useMainChart(
             height: mainChartRef.current.clientHeight || 400,
         });
         mainChartApi.current = chart;
+        window.dispatchEvent(new CustomEvent('mainChartReady'));
 
         const candleSeries = chart.addSeries(CandlestickSeries, {
             upColor: '#26a69d', downColor: '#ef5350',

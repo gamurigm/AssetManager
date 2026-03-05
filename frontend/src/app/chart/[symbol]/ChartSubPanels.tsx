@@ -56,7 +56,7 @@ export function ChartSubPanels({
     // MACD
     useEffect(() => {
         if (!macdChartRef.current || rawData.length === 0 || !showMACD) return;
-        if (macdChartApi.current) { setTimeout(() => { try { macdChartApi.current?.remove(); } catch(e){} }, 10); macdChartApi.current = null; }
+        if (macdChartApi.current) { setTimeout(() => { try { macdChartApi.current?.remove(); } catch (e) { } }, 10); macdChartApi.current = null; }
 
         const chart = createChart(macdChartRef.current, { ...chartOpts(146), width: macdChartRef.current.clientWidth });
         macdChartApi.current = chart;
@@ -75,38 +75,15 @@ export function ChartSubPanels({
         signalSeries.setData(signalLine.map((v, i) => v === null || isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
 
         chart.timeScale().fitContent();
-
-        if (mainChartApi.current) {
-            const r = mainChartApi.current.timeScale().getVisibleLogicalRange();
-            if (r) chart.timeScale().setVisibleLogicalRange(r);
-
-            const mainTimeScale = mainChartApi.current.timeScale();
-            const subTimeScale = chart.timeScale();
-
-            const handleMainChange = (range: any) => { if (range) subTimeScale.setVisibleLogicalRange(range); };
-            const handleSubChange = (range: any) => { if (range && mainChartApi.current) mainChartApi.current.timeScale().setVisibleLogicalRange(range); };
-
-            mainTimeScale.subscribeVisibleLogicalRangeChange(handleMainChange);
-            subTimeScale.subscribeVisibleLogicalRangeChange(handleSubChange);
-
-            const hr = () => { if (macdChartRef.current) chart.applyOptions({ width: macdChartRef.current.clientWidth }); };
-            window.addEventListener('resize', hr);
-
-            return () => {
-                mainTimeScale.unsubscribeVisibleLogicalRangeChange(handleMainChange);
-                subTimeScale.unsubscribeVisibleLogicalRangeChange(handleSubChange);
-                window.removeEventListener('resize', hr);
-                setTimeout(() => { try { chart.remove(); } catch(e){} }, 10);
-                macdChartApi.current = null;
-            };
-        }
-        return () => { setTimeout(() => { try { chart.remove(); } catch(e){} }, 10); macdChartApi.current = null; };
+        const ro = new ResizeObserver(() => { if (macdChartRef.current) chart.applyOptions({ width: macdChartRef.current.clientWidth }); });
+        ro.observe(macdChartRef.current);
+        return () => { ro.disconnect(); setTimeout(() => { try { chart.remove(); } catch (e) { } }, 10); macdChartApi.current = null; };
     }, [rawData, showMACD, macdFast, macdSlow, macdSignal, chartOpts]);
 
     // Stochastic
     useEffect(() => {
         if (!stochChartRef.current || rawData.length === 0 || !showStoch) return;
-        if (stochChartApi.current) { setTimeout(() => { try { stochChartApi.current?.remove(); } catch(e){} }, 10); stochChartApi.current = null; }
+        if (stochChartApi.current) { setTimeout(() => { try { stochChartApi.current?.remove(); } catch (e) { } }, 10); stochChartApi.current = null; }
 
         const chart = createChart(stochChartRef.current, { ...chartOpts(146), width: stochChartRef.current.clientWidth });
         stochChartApi.current = chart;
@@ -124,37 +101,15 @@ export function ChartSubPanels({
         dSeries.setData(dLine.map((v, i) => v === null || isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
 
         chart.timeScale().fitContent();
-
-        if (mainChartApi.current) {
-            const r = mainChartApi.current.timeScale().getVisibleLogicalRange();
-            if (r) chart.timeScale().setVisibleLogicalRange(r);
-
-            const mainTimeScale = mainChartApi.current.timeScale();
-            const subTimeScale = chart.timeScale();
-            const handleMainChange = (range: any) => { if (range) subTimeScale.setVisibleLogicalRange(range); };
-            const handleSubChange = (range: any) => { if (range && mainChartApi.current) mainChartApi.current.timeScale().setVisibleLogicalRange(range); };
-
-            mainTimeScale.subscribeVisibleLogicalRangeChange(handleMainChange);
-            subTimeScale.subscribeVisibleLogicalRangeChange(handleSubChange);
-
-            const hr = () => { if (stochChartRef.current) chart.applyOptions({ width: stochChartRef.current.clientWidth }); };
-            window.addEventListener('resize', hr);
-
-            return () => {
-                mainTimeScale.unsubscribeVisibleLogicalRangeChange(handleMainChange);
-                subTimeScale.unsubscribeVisibleLogicalRangeChange(handleSubChange);
-                window.removeEventListener('resize', hr);
-                setTimeout(() => { try { chart.remove(); } catch(e){} }, 10);
-                stochChartApi.current = null;
-            };
-        }
-        return () => { setTimeout(() => { try { chart.remove(); } catch(e){} }, 10); stochChartApi.current = null; };
+        const ro = new ResizeObserver(() => { if (stochChartRef.current) chart.applyOptions({ width: stochChartRef.current.clientWidth }); });
+        ro.observe(stochChartRef.current);
+        return () => { ro.disconnect(); setTimeout(() => { try { chart.remove(); } catch (e) { } }, 10); stochChartApi.current = null; };
     }, [rawData, showStoch, stochK, stochD, stochSmooth, chartOpts]);
 
     // ATR
     useEffect(() => {
         if (!atrChartRef.current || rawData.length === 0 || !showATR) return;
-        if (atrChartApi.current) { setTimeout(() => { try { atrChartApi.current?.remove(); } catch(e){} }, 10); atrChartApi.current = null; }
+        if (atrChartApi.current) { setTimeout(() => { try { atrChartApi.current?.remove(); } catch (e) { } }, 10); atrChartApi.current = null; }
 
         const chart = createChart(atrChartRef.current, { ...chartOpts(146), width: atrChartRef.current.clientWidth });
         atrChartApi.current = chart;
@@ -169,37 +124,15 @@ export function ChartSubPanels({
         atrSeries.setData(atrValues.map((v, i) => v === null || isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
 
         chart.timeScale().fitContent();
-
-        if (mainChartApi.current) {
-            const r = mainChartApi.current.timeScale().getVisibleLogicalRange();
-            if (r) chart.timeScale().setVisibleLogicalRange(r);
-
-            const mainTimeScale = mainChartApi.current.timeScale();
-            const subTimeScale = chart.timeScale();
-            const handleMainChange = (range: any) => { if (range) subTimeScale.setVisibleLogicalRange(range); };
-            const handleSubChange = (range: any) => { if (range && mainChartApi.current) mainChartApi.current.timeScale().setVisibleLogicalRange(range); };
-
-            mainTimeScale.subscribeVisibleLogicalRangeChange(handleMainChange);
-            subTimeScale.subscribeVisibleLogicalRangeChange(handleSubChange);
-
-            const hr = () => { if (atrChartRef.current) chart.applyOptions({ width: atrChartRef.current.clientWidth }); };
-            window.addEventListener('resize', hr);
-
-            return () => {
-                mainTimeScale.unsubscribeVisibleLogicalRangeChange(handleMainChange);
-                subTimeScale.unsubscribeVisibleLogicalRangeChange(handleSubChange);
-                window.removeEventListener('resize', hr);
-                setTimeout(() => { try { chart.remove(); } catch(e){} }, 10);
-                atrChartApi.current = null;
-            };
-        }
-        return () => { setTimeout(() => { try { chart.remove(); } catch(e){} }, 10); atrChartApi.current = null; };
+        const ro = new ResizeObserver(() => { if (atrChartRef.current) chart.applyOptions({ width: atrChartRef.current.clientWidth }); });
+        ro.observe(atrChartRef.current);
+        return () => { ro.disconnect(); setTimeout(() => { try { chart.remove(); } catch (e) { } }, 10); atrChartApi.current = null; };
     }, [rawData, showATR, atrPeriod, chartOpts]);
 
     // Williams %R
     useEffect(() => {
         if (!williamsChartRef.current || rawData.length === 0 || !showWilliams) return;
-        if (williamsChartApi.current) { setTimeout(() => { try { williamsChartApi.current?.remove(); } catch(e){} }, 10); williamsChartApi.current = null; }
+        if (williamsChartApi.current) { setTimeout(() => { try { williamsChartApi.current?.remove(); } catch (e) { } }, 10); williamsChartApi.current = null; }
         const chart = createChart(williamsChartRef.current, { ...chartOpts(146), width: williamsChartRef.current.clientWidth });
         williamsChartApi.current = chart;
         const highs = rawData.map(d => d.high), lows = rawData.map(d => d.low), closes = rawData.map(d => d.close), times = rawData.map(d => d.time as any);
@@ -214,36 +147,15 @@ export function ChartSubPanels({
             .setData(times.map(t => ({ time: t, value: -80 })));
 
         chart.timeScale().fitContent();
-        if (mainChartApi.current) {
-            const r = mainChartApi.current.timeScale().getVisibleLogicalRange();
-            if (r) chart.timeScale().setVisibleLogicalRange(r);
-
-            const mainTimeScale = mainChartApi.current.timeScale();
-            const subTimeScale = chart.timeScale();
-            const handleMainChange = (range: any) => { if (range) subTimeScale.setVisibleLogicalRange(range); };
-            const handleSubChange = (range: any) => { if (range && mainChartApi.current) mainChartApi.current.timeScale().setVisibleLogicalRange(range); };
-
-            mainTimeScale.subscribeVisibleLogicalRangeChange(handleMainChange);
-            subTimeScale.subscribeVisibleLogicalRangeChange(handleSubChange);
-
-            const hr = () => { if (williamsChartRef.current) chart.applyOptions({ width: williamsChartRef.current.clientWidth }); };
-            window.addEventListener('resize', hr);
-
-            return () => {
-                mainTimeScale.unsubscribeVisibleLogicalRangeChange(handleMainChange);
-                subTimeScale.unsubscribeVisibleLogicalRangeChange(handleSubChange);
-                window.removeEventListener('resize', hr);
-                setTimeout(() => { try { chart.remove(); } catch(e){} }, 10);
-                williamsChartApi.current = null;
-            };
-        }
-        return () => { setTimeout(() => { try { chart.remove(); } catch(e){} }, 10); williamsChartApi.current = null; };
+        const ro = new ResizeObserver(() => { if (williamsChartRef.current) chart.applyOptions({ width: williamsChartRef.current.clientWidth }); });
+        ro.observe(williamsChartRef.current);
+        return () => { ro.disconnect(); setTimeout(() => { try { chart.remove(); } catch (e) { } }, 10); williamsChartApi.current = null; };
     }, [rawData, showWilliams, chartOpts]);
 
     // MFI
     useEffect(() => {
         if (!mfiChartRef.current || rawData.length === 0 || !showMFI) return;
-        if (mfiChartApi.current) { setTimeout(() => { try { mfiChartApi.current?.remove(); } catch(e){} }, 10); mfiChartApi.current = null; }
+        if (mfiChartApi.current) { setTimeout(() => { try { mfiChartApi.current?.remove(); } catch (e) { } }, 10); mfiChartApi.current = null; }
         const chart = createChart(mfiChartRef.current, { ...chartOpts(146), width: mfiChartRef.current.clientWidth });
         mfiChartApi.current = chart;
         const highs = rawData.map(d => d.high), lows = rawData.map(d => d.low), closes = rawData.map(d => d.close), volumes = rawData.map(d => d.volume ?? 0), times = rawData.map(d => d.time as any);
@@ -258,36 +170,15 @@ export function ChartSubPanels({
             .setData(times.map(t => ({ time: t, value: 20 })));
 
         chart.timeScale().fitContent();
-        if (mainChartApi.current) {
-            const r = mainChartApi.current.timeScale().getVisibleLogicalRange();
-            if (r) chart.timeScale().setVisibleLogicalRange(r);
-
-            const mainTimeScale = mainChartApi.current.timeScale();
-            const subTimeScale = chart.timeScale();
-            const handleMainChange = (range: any) => { if (range) subTimeScale.setVisibleLogicalRange(range); };
-            const handleSubChange = (range: any) => { if (range && mainChartApi.current) mainChartApi.current.timeScale().setVisibleLogicalRange(range); };
-
-            mainTimeScale.subscribeVisibleLogicalRangeChange(handleMainChange);
-            subTimeScale.subscribeVisibleLogicalRangeChange(handleSubChange);
-
-            const hr = () => { if (mfiChartRef.current) chart.applyOptions({ width: mfiChartRef.current.clientWidth }); };
-            window.addEventListener('resize', hr);
-
-            return () => {
-                mainTimeScale.unsubscribeVisibleLogicalRangeChange(handleMainChange);
-                subTimeScale.unsubscribeVisibleLogicalRangeChange(handleSubChange);
-                window.removeEventListener('resize', hr);
-                setTimeout(() => { try { chart.remove(); } catch(e){} }, 10);
-                mfiChartApi.current = null;
-            };
-        }
-        return () => { setTimeout(() => { try { chart.remove(); } catch(e){} }, 10); mfiChartApi.current = null; };
+        const ro = new ResizeObserver(() => { if (mfiChartRef.current) chart.applyOptions({ width: mfiChartRef.current.clientWidth }); });
+        ro.observe(mfiChartRef.current);
+        return () => { ro.disconnect(); setTimeout(() => { try { chart.remove(); } catch (e) { } }, 10); mfiChartApi.current = null; };
     }, [rawData, showMFI, chartOpts]);
 
     // CMF
     useEffect(() => {
         if (!cmfChartRef.current || rawData.length === 0 || !showCMF) return;
-        if (cmfChartApi.current) { setTimeout(() => { try { cmfChartApi.current?.remove(); } catch(e){} }, 10); cmfChartApi.current = null; }
+        if (cmfChartApi.current) { setTimeout(() => { try { cmfChartApi.current?.remove(); } catch (e) { } }, 10); cmfChartApi.current = null; }
         const chart = createChart(cmfChartRef.current, { ...chartOpts(146), width: cmfChartRef.current.clientWidth });
         cmfChartApi.current = chart;
         const highs = rawData.map(d => d.high), lows = rawData.map(d => d.low), closes = rawData.map(d => d.close), volumes = rawData.map(d => d.volume), times = rawData.map(d => d.time as any);
@@ -299,32 +190,87 @@ export function ChartSubPanels({
         // Add 0-line for CMF
         chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
             .setData(times.map(t => ({ time: t, value: 0 })));
-
-        if (mainChartApi.current) {
-            const r = mainChartApi.current.timeScale().getVisibleLogicalRange();
-            if (r) chart.timeScale().setVisibleLogicalRange(r);
-
-            const mainTimeScale = mainChartApi.current.timeScale();
-            const subTimeScale = chart.timeScale();
-            const handleMainChange = (range: any) => { if (range) subTimeScale.setVisibleLogicalRange(range); };
-            const handleSubChange = (range: any) => { if (range && mainChartApi.current) mainChartApi.current.timeScale().setVisibleLogicalRange(range); };
-
-            mainTimeScale.subscribeVisibleLogicalRangeChange(handleMainChange);
-            subTimeScale.subscribeVisibleLogicalRangeChange(handleSubChange);
-
-            const hr = () => { if (cmfChartRef.current) chart.applyOptions({ width: cmfChartRef.current.clientWidth }); };
-            window.addEventListener('resize', hr);
-
-            return () => {
-                mainTimeScale.unsubscribeVisibleLogicalRangeChange(handleMainChange);
-                subTimeScale.unsubscribeVisibleLogicalRangeChange(handleSubChange);
-                window.removeEventListener('resize', hr);
-                setTimeout(() => { try { chart.remove(); } catch(e){} }, 10);
-                cmfChartApi.current = null;
-            };
-        }
-        return () => { setTimeout(() => { try { chart.remove(); } catch(e){} }, 10); cmfChartApi.current = null; };
+        const ro = new ResizeObserver(() => { if (cmfChartRef.current) chart.applyOptions({ width: cmfChartRef.current.clientWidth }); });
+        ro.observe(cmfChartRef.current);
+        return () => { ro.disconnect(); setTimeout(() => { try { chart.remove(); } catch (e) { } }, 10); cmfChartApi.current = null; };
     }, [rawData, showCMF, chartOpts]);
+
+    // ─── Unified Chart Syncing ─────────────────────────────────────────────
+    useEffect(() => {
+        let cleanups: (() => void)[] = [];
+
+        const doSync = () => {
+            // clean up old unsubs
+            cleanups.forEach(c => c());
+            cleanups = [];
+
+            if (!mainChartApi.current) return;
+            const main = mainChartApi.current;
+            const subApis = [
+                macdChartApi.current, stochChartApi.current, atrChartApi.current,
+                williamsChartApi.current, mfiChartApi.current, cmfChartApi.current
+            ].filter(Boolean) as IChartApi[];
+
+            if (subApis.length === 0) return;
+
+            subApis.forEach(sub => {
+                try {
+                    const mainTS = main.timeScale();
+                    const subTS = sub.timeScale();
+                    const r = mainTS.getVisibleLogicalRange();
+                    if (r) subTS.setVisibleLogicalRange(r);
+
+                    const onMain = (range: any) => { if (range) subTS.setVisibleLogicalRange(range); };
+                    const onSub = (range: any) => { if (range) mainTS.setVisibleLogicalRange(range); };
+
+                    mainTS.subscribeVisibleLogicalRangeChange(onMain);
+                    subTS.subscribeVisibleLogicalRangeChange(onSub);
+
+                    cleanups.push(() => {
+                        mainTS.unsubscribeVisibleLogicalRangeChange(onMain);
+                        subTS.unsubscribeVisibleLogicalRangeChange(onSub);
+                    });
+                } catch (e) { }
+            });
+
+            // Sync crosshairs
+            let isSyncing = false;
+            const charts = [main, ...subApis];
+            charts.forEach((chart, idx) => {
+                const onCrosshair = (param: any) => {
+                    if (isSyncing) return;
+                    isSyncing = true;
+                    charts.forEach((otherChart, otherIdx) => {
+                        if (idx === otherIdx) return;
+                        if (param.time === undefined || param.point === undefined || param.point.x < 0 || param.point.y < 0) {
+                            otherChart.clearCrosshairPosition();
+                        } else {
+                            // Horizontal panning is synced, crosshair moves with cursor.
+                            // setCrosshairPosition can throw if out of bounds, so just clearing is safest fallback,
+                            // but we can try to apply it to match 'time' to snap across charts vertically.
+                            try {
+                                // Lightweight Charts v4 expects crosshair positions. If we just leave it to default 'crosshair: { horzLine: {visible: false}}' in the layout, the vertLine syncs natively via logicalRange mostly, but to force the exact vertical line we can check if it supports it.
+                                // If the user wants precise crosshair sync, we do:
+                                otherChart.setCrosshairPosition(0, param.time, otherChart.timeScale() as any);
+                            } catch (err) {
+                                otherChart.clearCrosshairPosition();
+                            }
+                        }
+                    });
+                    isSyncing = false;
+                };
+                chart.subscribeCrosshairMove(onCrosshair);
+                cleanups.push(() => chart.unsubscribeCrosshairMove(onCrosshair));
+            });
+        };
+
+        doSync();
+        window.addEventListener('mainChartReady', doSync);
+        return () => {
+            window.removeEventListener('mainChartReady', doSync);
+            cleanups.forEach(c => c());
+        };
+    }, [showMACD, showStoch, showATR, showWilliams, showMFI, showCMF]);
 
     return (
         <>

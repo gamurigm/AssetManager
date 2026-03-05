@@ -16,6 +16,7 @@ import { useChartData } from "./useChartData";
 import { useMainChart } from "./useMainChart";
 import { useVolumeProfile } from "./useVolumeProfile";
 import { useTradingLines } from "./useTradingLines";
+import { useMeasureTool } from "./useMeasureTool";
 
 /* ─── Main Component ──────────────────────────────────────────────────── */
 
@@ -30,7 +31,11 @@ export default function ChartWindow() {
     const mainChartRef = useRef<HTMLDivElement>(null);
     const mainChartApi = useRef<any>(null);
     const vpCanvasRef = useRef<HTMLCanvasElement>(null);
+    const measureCanvasRef = useRef<HTMLCanvasElement>(null);
     const candleSeriesRef = useRef<any>(null);
+
+    // Measure tool state
+    const [measureActive, setMeasureActive] = useState(false);
 
     // SL/TP UI State
     const [slPrice, setSlPrice] = useState<string>('');
@@ -72,6 +77,14 @@ export default function ChartWindow() {
         slPrice, setSlPrice, tpPrice, setTpPrice,
         mainChartApi, mainChartRef, candleSeriesRef,
         updatePositionLevels, closePosition
+    );
+
+    const { clearMeasurement } = useMeasureTool(
+        measureActive,
+        mainChartRef,
+        mainChartApi,
+        candleSeriesRef,
+        measureCanvasRef
     );
 
     // Sync SL/TP from persisted backend on initial load
@@ -141,6 +154,9 @@ export default function ChartWindow() {
                 setSlPrice={setSlPrice}
                 tpPrice={tpPrice}
                 setTpPrice={setTpPrice}
+                measureActive={measureActive}
+                setMeasureActive={setMeasureActive}
+                clearMeasurement={clearMeasurement}
             />
 
             <ChartIndicatorsToolbar
@@ -190,11 +206,10 @@ export default function ChartWindow() {
 
 
             {/* ─── Main Chart ─────────────────────────────────────────────── */}
-            <div className="w-full flex-1 relative" style={{ height: mainH }}>
+            <div className={`w-full flex-1 relative ${measureActive ? 'cursor-crosshair' : ''}`} style={{ height: mainH }}>
                 <div ref={mainChartRef} className="absolute inset-0" />
                 {chartState.showVP && <canvas ref={vpCanvasRef} className="absolute inset-0 pointer-events-none z-10" />}
-
-                {/* Chart main container */}
+                <canvas ref={measureCanvasRef} className="absolute inset-0 pointer-events-none z-20" />
             </div>
 
             <ChartSubPanels
