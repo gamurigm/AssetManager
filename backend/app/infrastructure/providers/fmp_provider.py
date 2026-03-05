@@ -11,7 +11,7 @@ from ...core.config import settings
 
 
 class FMPProvider(IMarketDataProvider):
-    BASE_URL = "https://financialmodelingprep.com/stable"
+    BASE_URL = "https://financialmodelingprep.com/api/v3"
     V3_URL = "https://financialmodelingprep.com/api/v3"
     _shared_client: httpx.AsyncClient | None = None
 
@@ -125,5 +125,20 @@ class FMPProvider(IMarketDataProvider):
             )
             resp.raise_for_status()
             return resp.json()
-        except Exception:
+        except Exception as e:
+            print(f"[FMPProvider] search_ticker error for '{query}': {e}")
+            return []
+
+    async def get_stock_list(self) -> list:
+        """Fetch ALL stocks from FMP list."""
+        try:
+            client = self._client()
+            resp = await client.get(
+                f"{self.V3_URL}/stock/list",
+                params={"apikey": settings.FMP_API_KEY},
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            print(f"[FMPProvider] get_stock_list error: {e}")
             return []

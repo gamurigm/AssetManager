@@ -195,6 +195,22 @@ async def openbb_cli(body: dict = Body(...)):
         "sell": "portfolio.sell",
         "modify": "portfolio.modify",
         "positions": "portfolio.positions",
+        "assets": "equity.search_all",
+        "cash": "equity.fundamental.cash",
+        "dividends": "equity.fundamental.dividends",
+        "earnings": "equity.calendar.earnings",
+        "estimates": "equity.estimates.price_target",
+        "insiders": "equity.ownership.insider_trading",
+        "institutional": "equity.ownership.institutional",
+        "short": "equity.short.interest",
+        "yieldcurve": "fixedincome.government.yield_curve",
+        "unemployment": "economy.unemployment",
+        "fedfunds": "economy.fed_funds",
+        "etf_holdings": "etf.holdings",
+        "index_members": "index.constituents",
+        "gainers": "equity.discovery.gainers",
+        "losers": "equity.discovery.losers",
+        "active": "equity.discovery.active",
     }
     # Only apply alias if it's a single-token shortcut OR starts with an alias
     command = aliases.get(raw_cmd, raw_cmd)
@@ -210,7 +226,7 @@ async def openbb_cli(body: dict = Body(...)):
             if base == "ratio" and len(extra_tokens) >= 2:
                 kwargs["symbol1"] = extra_tokens[0].upper()
                 kwargs["symbol2"] = extra_tokens[1].upper()
-            elif base in ("bs", "hmm", "mc", "positions") and len(extra_tokens) >= 1:
+            elif base in ("bs", "hmm", "mc", "positions", "quote", "price", "historical", "history", "profile", "income", "balance", "cash", "dividends", "earnings", "estimates", "insiders", "institutional", "short", "etf_holdings", "index_members", "gainers", "losers", "active") and len(extra_tokens) >= 1:
                 kwargs["symbol"] = extra_tokens[0].upper()
             elif base in ("buy", "sell") and len(extra_tokens) >= 2:
                 kwargs["symbol"] = extra_tokens[0].upper()
@@ -561,10 +577,38 @@ async def openbb_cli(body: dict = Body(...)):
             if command in ("search", "equity.search"):
                 query = kwargs.get("query", kwargs.get("symbol", ""))
                 if not query: return {"output": "Usage: search --query nvidia", "type": "error"}
-                results = await yahoo_provider.search(query)
+                results = await yahoo_provider.search_ticker(query)
                 if not results: return {"output": f"No results for '{query}'."}
                 lines = [f"  {r.get('symbol', '?'):>10}  │  {r.get('name', '?')}" for r in results[:15]]
                 return {"output": f"── Search: \"{query}\" ({len(results)} results) ──\n" + "\n".join(lines)}
+
+            if command == "equity.search_all":
+                query = kwargs.get("query", "")
+                limit = int(kwargs.get("limit", 20))
+                
+                if query:
+                    # Broad search via FMP or Yahoo
+                    results = await fmp_provider.search_ticker(query, limit=limit)
+                    if not results: results = await yahoo_provider.search_ticker(query, limit=limit)
+                    title = f"Search: \"{query}\""
+                else:
+                    # Return global list from FMP
+                    results = await fmp_provider.get_stock_list()
+                    if not results:
+                        # Fallback: A diverse mix of global assets if the list fails
+                        fallback_queries = ["AAPL", "BTC-USD", "EURUSD=X", "^GSPC", "TSLA", "NVDA", "GC=F", "CL=F", "MSFT", "ETH-USD"]
+                        results = []
+                        for sym in fallback_queries[:limit]:
+                            results.append({"symbol": sym, "name": sym, "stockExchange": "GLOBAL", "exchangeShortName": "MKT"})
+                        title = "Global Market Pulse (Mix)"
+                    else:
+                        title = "Global Asset List (First 20)"
+                
+                if not results: return {"output": "No se encontraron activos. Intenta con una búsqueda específica: 'assets --query AAPL'"}
+                
+                lines = [f"  {r.get('symbol', r.get('ticker', '?')):<10} │ {r.get('name', '?')[:40]:<40} │ {r.get('exchangeShortName', r.get('exchange', r.get('stockExchange', 'N/A')))}" for r in results[:limit]]
+                header = f"{'SYMBOL':<10} │ {'NAME':<40} │ {'EXCHANGE'}"
+                return {"output": f"── {title} ──\n{header}\n" + ("─" * 70) + "\n" + "\n".join(lines)}
 
         # 2. OpenBB REST API (primary — fast, no subprocess overhead)
         rest_result = await openbb_rest.execute(command, kwargs)
