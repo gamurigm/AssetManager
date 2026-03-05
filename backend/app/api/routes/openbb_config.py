@@ -9,6 +9,17 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from pathlib import Path
+
+def _load_prompt(filename: str) -> str:
+    """Load Markdown prompt from the prompts directory."""
+    prompt_path = Path(__file__).parent.parent / "agents" / "team" / "prompts" / filename
+    try:
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception as e:
+        print(f"Error loading prompt {filename}: {e}")
+        return ""
+
 from ...core.container import get_quote, get_historical, fmp_provider, yahoo_provider, duckdb_repo, calculate_equity_curve_uc, portfolio_charts, quant_models, ml_models
 from ...services.risk_service import risk_service
 from ...services.standardizer import standardizer
@@ -90,23 +101,9 @@ async def openbb_cli(body: dict = Body(...)):
             "Accept": "application/json"
         }
         
-        system_msg = (
-            "You are Qwen, the expert Terminal Executor for the MMAM investment app. "
-            "Your ONLY job is to translate the user's natural language into STRICT terminal commands. "
-            "These are the exact commands you can output:\n"
-            "1. 'portfolio liquidate --all' (Sells EVERYTHING, no exceptions)\n"
-            "2. 'portfolio liquidate --symbol AAPL' (Sells ONLY AAPL)\n"
-            "3. 'portfolio liquidate --losers' (Sells ONLY losing positions in RED)\n"
-            "4. Basic OpenBB commands like 'equity price quote --symbol TSLA'\n"
-            "5. Portfolio charts: 'portfolio pie' (allocation), 'portfolio risk' (sector), 'portfolio performance' (real-time PnL), 'portfolio equity' (history curve), 'portfolio 3d' (quantitative 3D landscape), 'portfolio distribution' (Return Histogram).\n"
-            "6. Quant 3D Models: 'models options surface --symbol SPY' (Volatility Surface), 'models yield surface' (Yield Curve Evolution), 'models pca clusters --symbols AAPL,MSFT,NVDA' (PCA Clustering), 'models blackscholes --symbol AAPL' (Options Pricing & Greeks), 'models ratio --symbol1 NVDA --symbol2 INTC' (Relative Strength Pair Trading).\n"
-            "7. ML Models: 'ml hmm --symbol SPY' (HMM Regime Detection), 'ml montecarlo --symbol AAPL' (Monte Carlo GBM), 'ml clusters --symbols AAPL,MSFT,NVDA' (K-Means Clustering), 'ml bootstrap --symbol AAPL' (Block Bootstrap Resampling), 'ml intraday --symbol TSLA' (Real-Time Anomaly Detection).\n\n"
-            "CRITICAL: If the user says 'liquidar todo', 'vende todo', 'limpiar portafolio', or 'salir de todo', "
-            "YOU MUST output '<execute>portfolio liquidate --all</execute>'.\n"
-            "If they ask for charts, 3D models, volatility surfaces, yield curves, or PCA analysis, use the appropriate 'portfolio ...' or 'models ...' command inside <execute> tags.\n"
-            "Example: 'vende tesla', output '<execute>portfolio liquidate --symbol TSLA</execute>'. "
-            "If it's a general question, answer briefly, but prioritize the <execute> tag for actions."
-        )
+        system_msg = _load_prompt("terminal_qwen.md")
+        if not system_msg:
+            system_msg = "You are Qwen, the expert Terminal Executor for the MMAM investment app." # Fallback
         
         payload = {
             "model": "qwen/qwen3.5-397b-a17b",
@@ -153,115 +150,7 @@ async def openbb_cli(body: dict = Body(...)):
 
     # ─── Built-in commands ──────────────────────────────────────────
     if low in ("help", "h", "?"):
-        return {"output": (
-            "╔════════════════════════════════════════════════════════════════════════════════════╗\n"
-            "║                      🌌 GRAVITY ASSET MANAGER U · OPENBB PLATFORM                  ║\n"
-            "║                            ADVANCED CLI TERMINAL v3.0.0                            ║\n"
-            "╚════════════════════════════════════════════════════════════════════════════════════╝\n\n"
-            "  SYNTAX:  command --flag value --flag2 value2\n"
-            "           Add  --chart true  to any ★ command to open an interactive Plotly chart.\n\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━ 💼 PORTFOLIO EXECUTION (DANGER)  ━━━━━━━━━━━━━━━━━━━━━━\n"
-            "  portfolio liquidate --all              | Sells entirety of the portfolio at market price.\n"
-            "  portfolio liquidate --symbol AAPL      | Liquidates a specific holding.\n"
-            "  portfolio liquidate --losers           | Sells only positions with negative PnL.\n"
-            "  portfolio pie                          | View current allocation pie chart (interactive).\n"
-            "  portfolio risk                         | View sector exposure risk (interactive).\n"
-            "  portfolio performance                  | View PnL performance per ticker (interactive).\n"
-            "  portfolio equity                       | View historical equity curve vs realized balance.\n"
-            "  portfolio 3d                           | View quantitative 3D risk vs return landscape.\n"
-            "  portfolio distribution                   | View statistical histogram of PnL returns.\n\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━ 🧮 QUANTITATIVE 3D MODELS (Math)       ━━━━━━━━━━━━━━━━━━━━━━\n"
-            "  models options surface                  | 3D Implied Volatility Surface (Strike/DTE/IV).\n"
-            "  models yield surface                    | 3D US Treasury Yield Curve Evolution.\n"
-            "  models pca clusters --symbols A,B,C...  | 3D PCA Factor Loadings Eigenspace.\n"
-            "  models blackscholes --symbol AAPL       | Black-Scholes Options Pricing & 3D Greeks.\n"
-            "  models ratio --symbol1 QQQ --symbol2 SPY| Relative Strength & Z-Score Pair Trading.\n\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━ 🧠 MACHINE LEARNING (AI-Powered)         ━━━━━━━━━━━━━━━━━━━━━━\n"
-            "  ml hmm --symbol SPY                    | HMM 3D Regime Detection (Bull/Bear/Neutral).\n"
-            "  ml montecarlo --symbol AAPL             | Monte Carlo GBM Price Simulation (Fan Chart).\n"
-            "  ml montecarlo --symbol TSLA --days 90   | Custom horizon simulation.\n"
-            "  ml clusters --symbols A,B,C...          | K-Means Unsupervised Asset Clustering (3D).\n"
-            "  ml bootstrap --symbol AAPL              | Block Bootstrap Resampling (multi-panel).\n"
-            "  ml intraday --symbol NVDA               | Real-Time 1m VWAP & Isolation Forest Anomalies.\n\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━ 📊 CORE MARKET DATA (Lightning Fast) ━━━━━━━━━━━━━━━━━━━━━━\n"
-            "  quote          Real-time price quote        | quote --symbol AAPL\n"
-            "  historical     Price history candles        | historical --symbol TSLA --limit 50\n"
-            "  profile        Company overview             | profile --symbol MSFT\n"
-            "  search         Find ticker by name          | search --query \"nvidia\"\n"
-            "  news           Latest market news           | news --limit 10\n\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━ 🏦 FUNDAMENTALS & ECONOMY            ━━━━━━━━━━━━━━━━━━━━━━\n"
-            "  income         Income statement             | income --symbol GOOG\n"
-            "  balance        Balance sheet                | balance --symbol AMZN\n"
-            "  calendar       Economic calendar            | calendar\n"
-            "  cpi            Consumer Price Index         | cpi\n"
-            "  gdp            Nominal GDP                  | gdp\n"
-            "  treasury       Government Treasury Rates    | treasury\n"
-            "  options        Options chains               | options --symbol SPY\n\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━ 📈 CHARTS  (abren en ventana nativa) ━━━━━━━━━━━━━━━━━━━━━━\n"
-            "  Añade --chart true a cualquier comando ★ para abrir gráfico interactivo Plotly.\n\n"
-            "  ★ EQUITY\n"
-            "    equity price historical --symbol AAPL --chart true\n"
-            "    equity price historical --symbol MSFT --start_date 2024-01-01 --chart true\n"
-            "    equity price performance --symbol NVDA --chart true\n"
-            "    equity historical_market_cap --symbol TSLA --chart true\n\n"
-            "  ★ CRYPTO\n"
-            "    crypto price historical --symbol BTC-USD --chart true\n"
-            "    crypto price historical --symbol ETH-USD --start_date 2024-01-01 --chart true\n\n"
-            "  ★ CURRENCY / FOREX\n"
-            "    currency price historical --symbol EURUSD=X --chart true\n"
-            "    currency price historical --symbol GBPUSD=X --chart true\n\n"
-            "  ★ ETF\n"
-            "    etf historical --symbol SPY --chart true\n"
-            "    etf holdings --symbol QQQ --chart true\n"
-            "    etf price_performance --symbol IWM --chart true\n\n"
-            "  ★ DERIVATIVES\n"
-            "    derivatives futures curve --symbol CL --chart true\n"
-            "    derivatives futures historical --symbol CL --chart true\n"
-            "    derivatives options surface --symbol SPY --chart true\n\n"
-            "  ★ FIXED INCOME\n"
-            "    fixedincome government yield_curve --chart true\n"
-            "    fixedincome government yield_curve --date 2024-01-01 --chart true\n\n"
-            "  ★ INDEX\n"
-            "    index price historical --symbol ^GSPC --chart true\n"
-            "    index price historical --symbol ^NDX --chart true\n\n"
-            "  ★ ECONOMY / MACRO\n"
-            "    economy fred_series --symbol GDP --chart true\n"
-            "    economy fred_series --symbol CPIAUCSL --chart true\n"
-            "    economy fred_series --symbol FEDFUNDS --chart true\n"
-            "    economy shipping chokepoint_info --chart true\n"
-            "    economy shipping port_info --chart true\n"
-            "    economy survey bls_series --symbol CES0000000001 --chart true\n\n"
-            "  ★ TECHNICAL INDICATORS  (requieren datos previos cargados)\n"
-            "    technical macd --symbol AAPL --chart true\n"
-            "    technical rsi --symbol AAPL --chart true\n"
-            "    technical ema --symbol AAPL --length 50 --chart true\n"
-            "    technical sma --symbol AAPL --length 200 --chart true\n"
-            "    technical wma --symbol AAPL --chart true\n"
-            "    technical hma --symbol AAPL --chart true\n"
-            "    technical zlma --symbol AAPL --chart true\n"
-            "    technical adx --symbol AAPL --chart true\n"
-            "    technical aroon --symbol AAPL --chart true\n"
-            "    technical cones --symbol AAPL --chart true\n"
-            "    technical relative_rotation --symbol AAPL --benchmark ^GSPC --chart true\n\n"
-            "  ★ ECONOMETRICS\n"
-            "    econometrics correlation_matrix --symbol AAPL,MSFT,NVDA --chart true\n\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━ 🤖 AI AUTOPILOT                      ━━━━━━━━━━━━━━━━━━━━━━\n"
-            "  /qwen, q       Delega ejecución natural a la IA Qwen 3.5.\n"
-            "                 q liquida tesla\n"
-            "                 q vende todas mis posiciones en rojo\n"
-            "                 /qwen What command shows bond yields?\n\n"
-            "  ★ QUICK ANALYTICS (Shortcuts)\n"
-            "    ratio AAPL MSFT --chart true          | Compare relative strength.\n"
-            "    bs AAPL                               | Black-Scholes Dashboard.\n"
-            "    hmm SPY                               | Market Regime Detection.\n"
-            "    mc TSLA --days 90                     | Monte Carlo Simulation.\n\n"
-            "  ★ QUICK KEYS\n"
-            "  ↑ / ↓          Navigate history\n"
-            "  Tab            Autocomplete\n"
-            "  Ctrl+L         Clear screen\n"
-            "  help, h, ?     Show this help\n"
-            "  clear          Clear screen buffer\n"
-        )}
+        return {"output": _load_prompt("terminal_help.md")}
 
     # ─── Parse command + args ───────────────────────────────────────
     parts = cmd_str.split()
@@ -302,6 +191,10 @@ async def openbb_cli(body: dict = Body(...)):
         "bs": "models.blackscholes",
         "hmm": "ml.hmm",
         "mc": "ml.montecarlo",
+        "buy": "portfolio.buy",
+        "sell": "portfolio.sell",
+        "modify": "portfolio.modify",
+        "positions": "portfolio.positions",
     }
     # Only apply alias if it's a single-token shortcut OR starts with an alias
     command = aliases.get(raw_cmd, raw_cmd)
@@ -317,7 +210,16 @@ async def openbb_cli(body: dict = Body(...)):
             if base == "ratio" and len(extra_tokens) >= 2:
                 kwargs["symbol1"] = extra_tokens[0].upper()
                 kwargs["symbol2"] = extra_tokens[1].upper()
-            elif base in ("bs", "hmm", "mc") and len(extra_tokens) >= 1:
+            elif base in ("bs", "hmm", "mc", "positions") and len(extra_tokens) >= 1:
+                kwargs["symbol"] = extra_tokens[0].upper()
+            elif base in ("buy", "sell") and len(extra_tokens) >= 2:
+                kwargs["symbol"] = extra_tokens[0].upper()
+                val = extra_tokens[1].lower()
+                if val.endswith('$') or val.startswith('$'):
+                    kwargs["usd"] = val.replace('$', '')
+                else:
+                    kwargs["shares"] = val
+            elif base == "modify" and len(extra_tokens) >= 1:
                 kwargs["symbol"] = extra_tokens[0].upper()
 
     kwargs.update(_parse_args(rest_tokens))
@@ -399,6 +301,135 @@ async def openbb_cli(body: dict = Body(...)):
             )}
         else:
             return {"output": "Error: Database failed to persist the liquidation.", "type": "error"}
+
+    # ─── New Trading Commands ───────────────────────────────────────
+    if command == "portfolio.buy":
+        symbol = kwargs.get("symbol")
+        shares = float(kwargs.get("shares", 0))
+        usd_val = str(kwargs.get("usd", "0")).lower()
+        if not symbol or (shares <= 0 and usd_val == "0"):
+            return {"output": "Usage: buy --symbol AAPL --shares 10 (OR --usd 5000) [--price 150] [--sl 140] [--tp 180]", "type": "error"}
+        
+        symbol = symbol.upper()
+        price_str = str(kwargs.get("price", "0")).lower()
+        # Simple handling for 'k' notation
+        if price_str.endswith('k'): price = float(price_str[:-1]) * 1000
+        else:
+            try: price = float(price_str)
+            except ValueError: price = 0
+        
+        if price <= 0:
+            quote = await get_quote.execute(symbol)
+            if "error" in quote: return {"output": f"Error fetching price: {quote['error']}", "type": "error"}
+            price = float(quote.get("price", 0))
+
+        # Calculate shares from USD if provided
+        if usd_val != "0":
+            total_usd = float(usd_val[:-1]) * 1000 if usd_val.endswith('k') else float(usd_val)
+            shares = total_usd / price
+
+        # Add Transaction
+        duckdb_repo.add_transaction("BUY", symbol, shares, price)
+        
+        # Reconcile Portfolio
+        holdings = duckdb_repo.get_portfolio()
+        existing = next((h for h in holdings if h['symbol'] == symbol), None)
+        
+        if existing:
+            # Weighted average entry
+            old_total = existing['shares'] * existing['entryPrice']
+            new_total = shares * price
+            existing['shares'] += shares
+            existing['entryPrice'] = (old_total + new_total) / existing['shares']
+            if kwargs.get("sl"): existing['sl'] = float(kwargs.get("sl"))
+            if kwargs.get("tp"): existing['tp'] = float(kwargs.get("tp"))
+        else:
+            holdings.append({
+                "symbol": symbol,
+                "name": symbol,
+                "shares": shares,
+                "entryPrice": price,
+                "factor": 1.0,
+                "sector": "Other",
+                "type": "stock",
+                "purchaseDate": datetime.now().strftime("%Y-%m-%d"),
+                "sl": float(kwargs.get("sl")) if kwargs.get("sl") else None,
+                "tp": float(kwargs.get("tp")) if kwargs.get("tp") else None
+            })
+        
+        duckdb_repo.save_portfolio(holdings)
+        return {"output": f"✅ BUY ORDER EXECUTED\nSymbol: {symbol}\nShares: {shares}\nPrice:  ${price:,.4f}\nTotal:  ${(shares*price):,.2f}\nSL:     {kwargs.get('sl') or 'None'} | TP: {kwargs.get('tp') or 'None'}"}
+
+    if command == "portfolio.sell":
+        symbol = kwargs.get("symbol")
+        shares = float(kwargs.get("shares", 0))
+        usd_val = str(kwargs.get("usd", "0")).lower()
+        if not symbol or (shares <= 0 and usd_val == "0"):
+            return {"output": "Usage: sell --symbol AAPL --shares 5 (OR --usd 1000) [--price 160]", "type": "error"}
+        
+        symbol = symbol.upper()
+        holdings = duckdb_repo.get_portfolio()
+        existing = next((h for h in holdings if h['symbol'] == symbol), None)
+        if not existing:
+            return {"output": f"❌ No position found for {symbol}", "type": "error"}
+
+        price_str = str(kwargs.get("price", "0")).lower()
+        if price_str.endswith('k'): price = float(price_str[:-1]) * 1000
+        else:
+            try: price = float(price_str)
+            except ValueError: price = 0
+
+        if price <= 0:
+            quote = await get_quote.execute(symbol)
+            price = float(quote.get("price", existing['entryPrice']))
+
+        # Calculate shares from USD if provided
+        if usd_val != "0":
+            total_usd = float(usd_val[:-1]) * 1000 if usd_val.endswith('k') else float(usd_val)
+            shares = total_usd / price
+
+        if existing['shares'] < shares:
+            return {"output": f"❌ Insufficient shares for {symbol}. Available: {existing['shares']:.4f} ($ {existing['shares']*price:,.2f})", "type": "error"}
+
+        # Calculate PnL
+        pnl = (price - existing['entryPrice']) * shares
+        duckdb_repo.add_transaction("SELL", symbol, shares, price, realized_pnl=pnl)
+
+        # Update Portfolio
+        existing['shares'] -= shares
+        if existing['shares'] <= 0.0001: # handle floating point
+            holdings = [h for h in holdings if h['symbol'] != symbol]
+        
+        duckdb_repo.save_portfolio(holdings)
+        return {"output": f"✅ SELL ORDER EXECUTED\nSymbol: {symbol}\nShares: {shares}\nPrice:  ${price:,.4f}\nTotal:  ${(shares*price):,.2f}\nRealized PnL: {'+' if pnl >= 0 else ''}${pnl:,.2f}"}
+
+    if command == "portfolio.modify":
+        symbol = kwargs.get("symbol")
+        if not symbol: return {"output": "Usage: modify --symbol AAPL --sl 140 --tp 180", "type": "error"}
+        symbol = symbol.upper()
+        holdings = duckdb_repo.get_portfolio()
+        existing = next((h for h in holdings if h['symbol'] == symbol), None)
+        if not existing: return {"output": f"❌ No position found for {symbol}", "type": "error"}
+
+        if kwargs.get("sl"): existing['sl'] = float(kwargs.get("sl"))
+        if kwargs.get("tp"): existing['tp'] = float(kwargs.get("tp"))
+        
+        duckdb_repo.save_portfolio(holdings)
+        return {"output": f"✅ POSITION MODIFIED: {symbol}\nStop Loss:  {existing.get('sl', 'None')}\nTake Profit: {existing.get('tp', 'None')}"}
+
+    if command == "portfolio.positions":
+        holdings = duckdb_repo.get_portfolio()
+        if not holdings:
+            return {"output": "No open positions."}
+        
+        lines = [f"{'SYMBOL':<8} │ {'SHARES':>10} │ {'ENTRY':>10} │ {'S/L':>10} │ {'T/P':>10}"]
+        lines.append("─" * 60)
+        for h in holdings:
+            sl = f"{h.get('sl'):.2f}" if h.get('sl') else "n/a"
+            tp = f"{h.get('tp'):.2f}" if h.get('tp') else "n/a"
+            lines.append(f"{h['symbol']:<8} │ {h['shares']:>10.4f} │ {h['entryPrice']:>10.2f} │ {sl:>10} │ {tp:>10}")
+        
+        return {"output": "── Open Positions ──\n" + "\n".join(lines)}
 
     # ─── Portfolio Dynamic Charts ───────────────────────────────────
     if command == "portfolio.pie":

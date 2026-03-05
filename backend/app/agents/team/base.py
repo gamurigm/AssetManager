@@ -8,6 +8,18 @@ from ...core.config import settings
 from openai import AsyncOpenAI
 import json
 from datetime import datetime
+from pathlib import Path
+import os
+
+def _load_prompt(filename: str) -> str:
+    """Load Markdown prompt from the prompts directory."""
+    prompt_dir = Path(__file__).parent / "prompts"
+    filepath = prompt_dir / filename
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception as e:
+        return f"Error loading {filename}: {str(e)}"
 
 class TeamAgent:
     def __init__(self, name: str, role: str, model_name: str, tools: List[callable] = []):
@@ -48,30 +60,9 @@ class TeamAgent:
                     r = ctx.deps.scratchpad["market_regime"]
                     realtime_info += f"\n\n[MARKET REGIME DATA]\nSymbol: {r.get('symbol')}\nAnalysis: {json.dumps(r.get('regime_analysis'))}"
 
-            return (
-                f"You are the {name}, a {role} in an Asset Management Team. "
-                f"Current Time: {now}. "
-                "You are part of the MMAM Alpha Core Institutional Team. "
-                "Your expertise is STRICTLY LIMITED to financial markets, investments, trading, economics, and asset management. "
-                "You have access to advanced quantitative metrics: \n"
-                "- Expected Value ($E[x]$) of trades.\n"
-                "- Risk Adjusted Returns.\n"
-                "- Momentum via Gradient Descent / Linear Regression.\n"
-                "- Algorithmic Hedging Strategies.\n"
-                "If a user asks about a non-financial topic, you must politely decline. "
-                "You collaborate with other agents via a shared context. "
-                "\n\n[FORMATTING DIRECTIVE]:\n"
-                "- Use LaTeX for ALL mathematical formulas and complex expressions.\n"
-                "- Use block math with '$$' for significant calculations or derivations.\n"
-                "- Use inline math with '$' for simple numbers or variables within text.\n"
-                "- Format calculations step-by-step to show your logic, using LaTeX alignment if possible.\n"
-                "- Ensure your output is highly professional and aesthetically structured.\n"
-                "\nIMPORTANT: If the information requested (like prices or values) is already available in the [REAL-TIME] blocks provided below, use it directly instead of calling tools."
-                "\n\n[AUTO-CORRECTION DIRECTIVE - CRITICAL]:\n"
-                "If the user message begins with '[SYSTEM: Auto-Correction]', it means your previous OpenBB Terminal command failed. "
-                "You must analyze the error provided, fix your command syntax, and reply with ONLY the corrected ```openbb block. Do not apologize, analyze the problem silently, and output the correct block."
-                f"{realtime_info}"
-            )
+            template = _load_prompt("agent_base.md")
+            base_prompt = template.format(name=name, role=role)
+            return f"{base_prompt}\n\nCurrent Time: {now}\n{realtime_info}"
         for tool in tools:
             self.agent.tool(tool)
 
