@@ -73,7 +73,7 @@ def _sync_portfolio_entry(symbol: str):
         # Update existing entry
         existing['shares'] = total_shares
         existing['entryPrice'] = avg_entry
-        # Preserve other metadata (name, sector, factor)
+        # Preserve other metadata (name, sector, factor, sl, tp)
         duckdb_repo.save_portfolio(current_portfolio)
     else:
         # New entry - need some metadata. Try to find in Initial holdings or use placeholders
@@ -88,7 +88,9 @@ def _sync_portfolio_entry(symbol: str):
             "factor": match["factor"] if match else 1.0,
             "sector": match["sector"] if match else "Other",
             "type": match["type"] if match else "stock",
-            "purchaseDate": datetime.now().strftime("%Y-%m-%d")
+            "purchaseDate": datetime.now().strftime("%Y-%m-%d"),
+            "sl": None,
+            "tp": None
         }
         current_portfolio.append(new_entry)
         duckdb_repo.save_portfolio(current_portfolio)

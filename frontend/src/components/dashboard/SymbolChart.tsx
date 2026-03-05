@@ -196,7 +196,13 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
     useEffect(() => {
         if (!chartContainerRef.current || candles.length === 0) return;
         const el = chartContainerRef.current;
-        if (mainChartApi.current) { mainChartApi.current.remove(); mainChartApi.current = null; }
+
+        let savedRange: any = null;
+        if (mainChartApi.current) {
+            savedRange = mainChartApi.current.timeScale().getVisibleLogicalRange();
+            mainChartApi.current.remove();
+            mainChartApi.current = null;
+        }
 
         const chart = createChart(el, { ...chartOpts(el.clientHeight), width: el.clientWidth });
         mainChartApi.current = chart;
@@ -314,7 +320,11 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
             return timeA.localeCompare(timeB);
         }));
 
-        chart.timeScale().fitContent();
+        if (savedRange) {
+            chart.timeScale().setVisibleLogicalRange(savedRange);
+        } else {
+            chart.timeScale().fitContent();
+        }
 
         // ResizeObserver for smooth resize
         const ro = new ResizeObserver(() => {

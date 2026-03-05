@@ -46,7 +46,7 @@ except ImportError:
 
 # App setup
 from .core.config import settings
-from .api.routes import auth, clients, portfolios, trading, agents, market_data, openbb_config, watchlist, analytics, simulation, bybit, finviz
+from .api.routes import auth, clients, portfolios, trading, agents, market_data, openbb_config, watchlist, analytics, simulation, bybit, finviz, fmp, openbb_widgets, macro_economy
 
 # Socket.IO setup
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
@@ -79,7 +79,7 @@ app.add_middleware(
         "http://localhost:8282", # For self-referencing if needed
         "*" # Temporary for debugging if necessary, but we'll stick to specific ones + regex below
     ],
-    allow_origin_regex="http://(localhost|127\.0\.0\.1):[0-9]+",
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):[0-9]+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -105,8 +105,11 @@ app.include_router(watchlist.router, prefix=f"{settings.API_V1_STR}/watchlist", 
 app.include_router(analytics.router, prefix=f"{settings.API_V1_STR}/analytics", tags=["analytics"])
 app.include_router(simulation.router, prefix=f"{settings.API_V1_STR}/simulation", tags=["simulation"])
 app.include_router(openbb_config.router, prefix="", tags=["openbb"])
+app.include_router(openbb_widgets.router, prefix="", tags=["openbb", "widgets"])
+app.include_router(macro_economy.router, prefix="", tags=["macro_economy"])
 app.include_router(bybit.router, prefix=f"{settings.API_V1_STR}/bybit", tags=["bybit"])
 app.include_router(finviz.router, prefix=f"{settings.API_V1_STR}/finviz", tags=["finviz"])
+app.include_router(fmp.router, prefix=f"{settings.API_V1_STR}/fmp", tags=["fmp"])
 
 @app.get("/")
 async def root():

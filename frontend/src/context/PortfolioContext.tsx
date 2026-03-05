@@ -15,6 +15,8 @@ interface Holding {
     sector: string;
     type: string;
     purchaseDate: string;
+    sl?: number;
+    tp?: number;
 }
 
 interface PortfolioContextType {
@@ -27,7 +29,8 @@ interface PortfolioContextType {
     unrealizedPnL: number;
     setHoldings: (holdings: Holding[]) => void;
     closePosition: (symbol: string) => void;
-    openTrade: (symbol: string, name: string, shares: number, price: number, factor: number, sector: string, type: string) => Promise<void>;
+    openTrade: (symbol: string, name: string, shares: number, price: number, factor: number, sector: string, type: string, sl?: number, tp?: number) => Promise<void>;
+    updatePositionLevels: (symbol: string, sl?: number, tp?: number) => void;
     refreshPortfolio: () => Promise<void>;
 }
 
@@ -132,7 +135,11 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
         setHoldings(newHoldings);
     }, []);
 
-    const openTrade = async (symbol: string, name: string, shares: number, price: number, factor: number, sector: string, type: string) => {
+    const updatePositionLevels = useCallback((symbol: string, sl?: number, tp?: number) => {
+        setHoldings(prev => prev.map(h => h.symbol === symbol ? { ...h, sl, tp } : h));
+    }, []);
+
+    const openTrade = async (symbol: string, name: string, shares: number, price: number, factor: number, sector: string, type: string, sl?: number, tp?: number) => {
         const today = new Date().toISOString().split("T")[0];
         const newHolding: Holding = {
             symbol,
@@ -146,7 +153,9 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
             source: "Terminal",
             sector,
             type,
-            purchaseDate: today
+            purchaseDate: today,
+            sl,
+            tp
         };
 
         try {
@@ -205,6 +214,7 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
             setHoldings: updateHoldings,
             closePosition,
             openTrade,
+            updatePositionLevels,
             refreshPortfolio
         }}>
             {children}

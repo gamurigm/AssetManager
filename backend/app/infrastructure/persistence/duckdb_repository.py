@@ -74,8 +74,13 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
             """)
             # Migration: Add purchase_date if missing
             cols = conn.execute("PRAGMA table_info('portfolio')").fetchall()
-            if not any(c[1] == 'purchase_date' for c in cols):
+            col_names = [c[1] for c in cols]
+            if 'purchase_date' not in col_names:
                 conn.execute("ALTER TABLE portfolio ADD COLUMN purchase_date VARCHAR DEFAULT '2024-01-01'")
+            if 'sl' not in col_names:
+                conn.execute("ALTER TABLE portfolio ADD COLUMN sl DOUBLE")
+            if 'tp' not in col_names:
+                conn.execute("ALTER TABLE portfolio ADD COLUMN tp DOUBLE")
 
             # Transactions History Table
             conn.execute("""
@@ -247,12 +252,12 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
                 conn.execute("DELETE FROM portfolio")
                 if holdings:
                     data = [
-                        (h['symbol'], h['name'], h['shares'], h['entryPrice'], h['factor'], h['sector'], h['type'], h.get('purchaseDate', '2024-01-01'))
+                        (h['symbol'], h['name'], h['shares'], h['entryPrice'], h['factor'], h['sector'], h['type'], h.get('purchaseDate', '2024-01-01'), h.get('sl'), h.get('tp'))
                         for h in holdings
                     ]
                     conn.executemany("""
-                        INSERT INTO portfolio (symbol, name, shares, entry_price, factor, sector, asset_type, purchase_date)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO portfolio (symbol, name, shares, entry_price, factor, sector, asset_type, purchase_date, sl, tp)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, data)
                 return True
             except Exception as e:
@@ -266,14 +271,15 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
         conn = self._connect(read_only=True)
         try:
             rows = conn.execute("""
-                SELECT symbol, name, shares, entry_price, factor, sector, asset_type, purchase_date
+                SELECT symbol, name, shares, entry_price, factor, sector, asset_type, purchase_date, sl, tp
                 FROM portfolio
             """).fetchall()
             return [
                 {
                     "symbol": r[0], "name": r[1], "shares": r[2], 
                     "entryPrice": r[3], "factor": r[4], "sector": r[5], 
-                    "type": r[6], "purchaseDate": r[7]
+                    "type": r[6], "purchaseDate": r[7],
+                    "sl": r[8], "tp": r[9]
                 }
                 for r in rows
             ]

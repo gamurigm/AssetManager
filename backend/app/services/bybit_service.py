@@ -215,5 +215,85 @@ class BybitService:
         except Exception as e:
             return {"error": f"Bybit instruments error: {e}"}
 
+    @staticmethod
+    async def get_funding_rate(symbol: str, limit: int = 50) -> Dict[str, Any]:
+        """Get funding rate history for a perpetual contract."""
+        normalized = BybitService._normalize_symbol(symbol)
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(
+                    f"{BybitService.BASE_URL}/v5/market/funding/history",
+                    params={"category": "linear", "symbol": normalized, "limit": min(limit, 200)},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            if data.get("retCode") != 0:
+                return {"error": f"Bybit funding API: {data.get('retMsg')}"}
+            items = data.get("result", {}).get("list", [])
+            return {
+                "symbol": normalized,
+                "funding_rates": [
+                    {"timestamp": int(i["fundingRateTimestamp"]), "rate": float(i["fundingRate"])}
+                    for i in items
+                ],
+                "source": "Bybit (Funding Rate)",
+            }
+        except Exception as e:
+            return {"error": f"Bybit funding rate error: {e}"}
+
+    @staticmethod
+    async def get_open_interest(symbol: str, interval: str = "1h", limit: int = 50) -> Dict[str, Any]:
+        """Get open interest history."""
+        normalized = BybitService._normalize_symbol(symbol)
+        interval_map = {"5m": "5min", "15m": "15min", "30m": "30min", "1h": "1h", "4h": "4h", "1d": "1d"}
+        bybit_interval = interval_map.get(interval, interval)
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(
+                    f"{BybitService.BASE_URL}/v5/market/open-interest",
+                    params={"category": "linear", "symbol": normalized, "intervalTime": bybit_interval, "limit": min(limit, 200)},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            if data.get("retCode") != 0:
+                return {"error": f"Bybit OI API: {data.get('retMsg')}"}
+            items = data.get("result", {}).get("list", [])
+            return {
+                "symbol": normalized,
+                "open_interest": [
+                    {"timestamp": int(i["timestamp"]), "value": float(i["openInterest"])}
+                    for i in items
+                ],
+                "source": "Bybit (Open Interest)",
+            }
+        except Exception as e:
+            return {"error": f"Bybit open interest error: {e}"}
+
+    @staticmethod
+    async def get_long_short_ratio(symbol: str, period: str = "1h", limit: int = 50) -> Dict[str, Any]:
+        """Get long/short ratio history."""
+        normalized = BybitService._normalize_symbol(symbol)
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(
+                    f"{BybitService.BASE_URL}/v5/market/account-ratio",
+                    params={"category": "linear", "symbol": normalized, "period": period, "limit": min(limit, 500)},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            if data.get("retCode") != 0:
+                return {"error": f"Bybit ratio API: {data.get('retMsg')}"}
+            items = data.get("result", {}).get("list", [])
+            return {
+                "symbol": normalized,
+                "ratios": [
+                    {"timestamp": int(i["timestamp"]), "buyRatio": float(i["buyRatio"]), "sellRatio": float(i["sellRatio"])}
+                    for i in items
+                ],
+                "source": "Bybit (Long/Short Ratio)",
+            }
+        except Exception as e:
+            return {"error": f"Bybit long/short ratio error: {e}"}
+
 
 bybit_service = BybitService()

@@ -53,3 +53,41 @@ async def get_instruments(
     if not data or "error" in data:
         raise HTTPException(status_code=500, detail=data.get("error", "Failed to fetch instruments"))
     return data
+
+
+@router.get("/funding-rate/{symbol}")
+async def get_funding_rate(
+    symbol: str,
+    limit: int = Query(50, description="Number of funding rate records (max 200)"),
+):
+    """Get funding rate history for a perpetual contract on Bybit."""
+    data = await bybit_service.get_funding_rate(symbol, limit)
+    if not data or "error" in data:
+        raise HTTPException(status_code=404, detail=data.get("error", "Funding rate not found"))
+    return data
+
+
+@router.get("/open-interest/{symbol}")
+async def get_open_interest(
+    symbol: str,
+    interval: str = Query("1h", description="5m,15m,30m,1h,4h,1d"),
+    limit: int = Query(50, description="Number of records (max 200)"),
+):
+    """Get open interest history from Bybit."""
+    data = await bybit_service.get_open_interest(symbol, interval, limit)
+    if not data or "error" in data:
+        raise HTTPException(status_code=404, detail=data.get("error", "Open interest not found"))
+    return data
+
+
+@router.get("/long-short-ratio/{symbol}")
+async def get_long_short_ratio(
+    symbol: str,
+    period: str = Query("1h", description="5min,15min,30min,1h,4h,1d"),
+    limit: int = Query(50, description="Number of records (max 500)"),
+):
+    """Get long/short ratio history from Bybit."""
+    data = await bybit_service.get_long_short_ratio(symbol, period, limit)
+    if not data or "error" in data:
+        raise HTTPException(status_code=404, detail=data.get("error", "Ratio not found"))
+    return data

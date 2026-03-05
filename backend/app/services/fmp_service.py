@@ -128,4 +128,44 @@ class FMPService:
             logger.debug(f"[FMP] search/{query}: {e}")
             return []
 
+    @staticmethod
+    async def _fetch_stable(endpoint: str, symbol: str, period: str = "annual", limit: int = 5) -> List[Dict[str, Any]]:
+        """Generic fetcher for FMP stable-API list endpoints."""
+        url = f"{FMPService.BASE_URL}/{endpoint}"
+        params = {"symbol": symbol, "period": period, "limit": limit, "apikey": settings.FMP_API_KEY}
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(url, params=params)
+                if response.status_code in (402, 403, 429):
+                    logger.warning(f"[FMP] {response.status_code} on {endpoint}/{symbol}")
+                    return []
+                response.raise_for_status()
+                data = response.json()
+                if _fmp_error(data):
+                    return []
+                return data if isinstance(data, list) else []
+        except Exception as e:
+            logger.debug(f"[FMP] {endpoint}/{symbol}: {e}")
+            return []
+
+    @staticmethod
+    async def get_income_statement(symbol: str, period: str = "annual", limit: int = 5) -> List[Dict[str, Any]]:
+        """Get income statements (annual or quarter)."""
+        return await FMPService._fetch_stable("income-statement", symbol, period, limit)
+
+    @staticmethod
+    async def get_balance_sheet(symbol: str, period: str = "annual", limit: int = 5) -> List[Dict[str, Any]]:
+        """Get balance sheet statements."""
+        return await FMPService._fetch_stable("balance-sheet-statement", symbol, period, limit)
+
+    @staticmethod
+    async def get_key_metrics(symbol: str, period: str = "annual", limit: int = 5) -> List[Dict[str, Any]]:
+        """Get key metrics (PE, EV/EBITDA, ROE, etc.)."""
+        return await FMPService._fetch_stable("key-metrics", symbol, period, limit)
+
+    @staticmethod
+    async def get_financial_ratios(symbol: str, period: str = "annual", limit: int = 5) -> List[Dict[str, Any]]:
+        """Get financial ratios (profitability, liquidity, solvency)."""
+        return await FMPService._fetch_stable("ratios", symbol, period, limit)
+
 fmp_service = FMPService()

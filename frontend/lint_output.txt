@@ -1,0 +1,447 @@
+
+> frontend@0.1.0 lint
+> eslint
+
+
+C:\AssetManager\frontend\electron\main.js
+  1:41  error  A `require()` style import is forbidden  @typescript-eslint/no-require-imports
+  2:14  error  A `require()` style import is forbidden  @typescript-eslint/no-require-imports
+  3:15  error  A `require()` style import is forbidden  @typescript-eslint/no-require-imports
+
+C:\AssetManager\frontend\electron\preload.js
+  1:40  error  A `require()` style import is forbidden  @typescript-eslint/no-require-imports
+
+C:\AssetManager\frontend\src\app\(client)\dashboard\page.tsx
+  36:63  error  `'` can be escaped with `&apos;`, `&lsquo;`, `&#39;`, `&rsquo;`  react/no-unescaped-entities
+
+C:\AssetManager\frontend\src\app\chart\[symbol]\ChartTopBar.tsx
+  15:13  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\AssetManager\frontend\src\app\chart\[symbol]\page.tsx
+    6:10   warning  'TrendingUp' is defined but never used                                                                                     @typescript-eslint/no-unused-vars
+    6:22   warning  'TrendingDown' is defined but never used                                                                                   @typescript-eslint/no-unused-vars
+    6:36   warning  'ChevronDown' is defined but never used                                                                                    @typescript-eslint/no-unused-vars
+    6:49   warning  'ChevronUp' is defined but never used                                                                                      @typescript-eslint/no-unused-vars
+    6:60   warning  'ArrowLeft' is defined but never used                                                                                      @typescript-eslint/no-unused-vars
+    6:71   warning  'BarChart2' is defined but never used                                                                                      @typescript-eslint/no-unused-vars
+    6:98   warning  'ZoomIn' is defined but never used                                                                                         @typescript-eslint/no-unused-vars
+    6:106  warning  'ZoomOut' is defined but never used                                                                                        @typescript-eslint/no-unused-vars
+    6:115  warning  'Crosshair' is defined but never used                                                                                      @typescript-eslint/no-unused-vars
+   10:5    warning  'calcEMA' is defined but never used                                                                                        @typescript-eslint/no-unused-vars
+   10:14   warning  'calcSMA' is defined but never used                                                                                        @typescript-eslint/no-unused-vars
+   10:23   warning  'calcLWMA' is defined but never used                                                                                       @typescript-eslint/no-unused-vars
+   10:74   warning  'FIB_LEVELS' is defined but never used                                                                                     @typescript-eslint/no-unused-vars
+   13:5    warning  'MAType' is defined but never used                                                                                         @typescript-eslint/no-unused-vars
+   15:10   warning  'MAChip' is defined but never used                                                                                         @typescript-eslint/no-unused-vars
+   16:23   warning  'TIMEFRAMES' is defined but never used                                                                                     @typescript-eslint/no-unused-vars
+   36:36   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+   37:31   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+   38:30   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+   39:30   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+   66:44   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  189:34   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  203:37   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  204:35   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  204:43   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  237:22   warning  'err' is defined but never used                                                                                            @typescript-eslint/no-unused-vars
+  244:39   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  245:38   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  246:41   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  286:57   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  311:8    warning  React Hook useEffect has a missing dependency: 'updatePositionLevels'. Either include it or remove the dependency array    react-hooks/exhaustive-deps
+  394:25   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  418:66   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  442:23   warning  'priceScale' is assigned a value but never used                                                                            @typescript-eslint/no-unused-vars
+  509:50   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  512:15   warning  'volumes' is assigned a value but never used                                                                               @typescript-eslint/no-unused-vars
+  518:114  error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  533:111  error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  535:112  error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  537:111  error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  544:130  error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  553:36   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  555:38   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  569:8    warning  React Hook useEffect has missing dependencies: 'isLight' and 'vpData'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+  593:50   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  597:170  error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  600:130  error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  603:134  error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  614:46   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  615:45   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  645:50   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  649:124  error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  652:124  error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  662:46   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  663:45   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  693:50   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  697:130  error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  707:46   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  708:45   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  733:152  error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  737:117  error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  751:46   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  752:45   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  777:195  error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  781:119  error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  795:46   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  796:45   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  821:190  error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  825:187  error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  837:46   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+  838:45   error    Unexpected any. Specify a different type                                                                                   @typescript-eslint/no-explicit-any
+
+C:\AssetManager\frontend\src\app\client\dashboard\page.tsx
+  17:9   warning  'closePosition' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  17:24  warning  'loading' is assigned a value but never used        @typescript-eslint/no-unused-vars
+
+C:\AssetManager\frontend\src\app\client\trading\page.tsx
+   5:10  warning  'ArrowUpRight' is defined but never used    @typescript-eslint/no-unused-vars
+   5:24  warning  'ArrowDownRight' is defined but never used  @typescript-eslint/no-unused-vars
+   5:40  warning  'Search' is defined but never used          @typescript-eslint/no-unused-vars
+  16:42  error    Unexpected any. Specify a different type    @typescript-eslint/no-explicit-any
+
+C:\AssetManager\frontend\src\app\loading.tsx
+  17:11  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element  @next/next/no-img-element
+
+C:\AssetManager\frontend\src\app\manager\dashboard\page.tsx
+   4:32  warning  'DollarSign' is defined but never used    @typescript-eslint/no-unused-vars
+  10:29  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  84:63  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  85:66  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\AssetManager\frontend\src\components\ai\ChatPane.tsx
+   24:15   error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  197:120  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  444:59   warning  'node' is defined but never used          @typescript-eslint/no-unused-vars
+  445:62   warning  'node' is defined but never used          @typescript-eslint/no-unused-vars
+
+C:\AssetManager\frontend\src\components\ai\ChatWidget.tsx
+    5:32  warning  'Maximize2' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         @typescript-eslint/no-unused-vars
+    5:43  warning  'Minimize2' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         @typescript-eslint/no-unused-vars
+   52:29  error    Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\AssetManager\frontend\src\components\ai\ChatWidget.tsx:52:29
+  50 |         try {
+  51 |             const savedModel = localStorage.getItem("mmam_chat_model");
+> 52 |             if (savedModel) setSelectedModel(savedModel as Model);
+     |                             ^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  53 |         } catch { }
+  54 |     }, []);
+  55 |  react-hooks/set-state-in-effect
+  154:8   warning  React Hook useEffect has a missing dependency: 'snapToSafePosition'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         react-hooks/exhaustive-deps
+
+C:\AssetManager\frontend\src\components\charts\AllocationDonut.tsx
+  13:45  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  59:55  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\AssetManager\frontend\src\components\charts\AssetTreemap.tsx
+  11:20  error    Unexpected any. Specify a different type    @typescript-eslint/no-explicit-any
+  14:35  error    Unexpected any. Specify a different type    @typescript-eslint/no-explicit-any
+  15:34  warning  'index' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  15:49  warning  'value' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  73:45  error    Unexpected any. Specify a different type    @typescript-eslint/no-explicit-any
+
+C:\AssetManager\frontend\src\components\charts\PortfolioEquityChart.tsx
+   50:51  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+   67:56  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  208:72  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\AssetManager\frontend\src\components\charts\SectorPieChart.tsx
+  13:7   warning  'SECTOR_COLORS' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  25:45  error    Unexpected any. Specify a different type            @typescript-eslint/no-explicit-any
+  37:39  error    Unexpected any. Specify a different type            @typescript-eslint/no-explicit-any
+  38:31  warning  'innerRadius' is assigned a value but never used    @typescript-eslint/no-unused-vars
+
+C:\AssetManager\frontend\src\components\dashboard\AssetSparkline.tsx
+   6:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  15:38  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  26:35  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  26:43  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  27:34  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\AssetManager\frontend\src\components\dashboard\DashboardSidebar.tsx
+  201:99  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\AssetManager\frontend\src\components\dashboard\PortfolioView.tsx
+    6:43   warning  'BarChart3' is defined but never used                            @typescript-eslint/no-unused-vars
+   42:15   error    Unexpected any. Specify a different type                         @typescript-eslint/no-explicit-any
+  117:85   error    Unexpected any. Specify a different type                         @typescript-eslint/no-explicit-any
+  126:385  error    Unexpected any. Specify a different type                         @typescript-eslint/no-explicit-any
+  210:224  error    Unexpected any. Specify a different type                         @typescript-eslint/no-explicit-any
+  227:130  error    `'` can be escaped with `&apos;`, `&lsquo;`, `&#39;`, `&rsquo;`  react/no-unescaped-entities
+  228:128  error    `'` can be escaped with `&apos;`, `&lsquo;`, `&#39;`, `&rsquo;`  react/no-unescaped-entities
+  266:123  error    Unexpected any. Specify a different type                         @typescript-eslint/no-explicit-any
+  308:54   error    Unexpected any. Specify a different type                         @typescript-eslint/no-explicit-any
+  308:62   error    Unexpected any. Specify a different type                         @typescript-eslint/no-explicit-any
+  308:123  error    Unexpected any. Specify a different type                         @typescript-eslint/no-explicit-any
+
+C:\AssetManager\frontend\src\components\dashboard\StatCard.tsx
+  23:72  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\AssetManager\frontend\src\components\dashboard\SymbolChart.tsx
+   36:28   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+   37:27   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+   47:64   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+   57:38   warning  'theme' is assigned a value but never used                                                                                                                                                                                                            @typescript-eslint/no-unused-vars
+   60:54   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+   84:34   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+   86:36   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+   91:77   warning  'e' is defined but never used                                                                                                                                                                                                                         @typescript-eslint/no-unused-vars
+  103:77   warning  'e' is defined but never used                                                                                                                                                                                                                         @typescript-eslint/no-unused-vars
+  122:68   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  134:68   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  200:25   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  230:58   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  251:52   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  253:53   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  255:52   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  262:53   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  264:52   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  266:54   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  268:54   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  273:52   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  276:51   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  283:52   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  285:53   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  287:52   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  294:50   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  303:36   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  305:38   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  310:24   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  335:8    warning  React Hook useEffect has missing dependencies: 'drawFibLines' and 'symbol'. Either include them or remove the dependency array                                                                                                                        react-hooks/exhaustive-deps
+  338:149  error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  339:9    error    React Hook "useEffect" is called in function "buildSubChart" that is neither a React function component nor a custom React Hook function. React component names must start with an uppercase letter. React Hook names must start with the word "use"  react-hooks/rules-of-hooks
+  353:12   warning  React Hook useEffect has missing dependencies: 'builder', 'height', and 'ref'. Either include them or remove the dependency array. Outer scope values like 'candles' aren't valid dependencies because mutating them doesn't re-render the component  react-hooks/exhaustive-deps
+  353:33   warning  React Hook useEffect has a spread element in its dependency array. This means we can't statically verify whether you've passed the correct dependencies                                                                                               react-hooks/exhaustive-deps
+  362:196  error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  364:51   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  366:53   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  377:48   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  379:48   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  388:46   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  403:46   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  412:46   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  425:46   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  427:46   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  429:46   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  440:51   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  451:48   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  454:46   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  465:48   error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  468:174  error    Unexpected any. Specify a different type                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+
+C:\AssetManager\frontend\src\components\layout\AppLayout.tsx
+  21:9  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\AssetManager\frontend\src\components\layout\AppLayout.tsx:21:9
+  19 |
+  20 |     useEffect(() => {
+> 21 |         setMounted(true);
+     |         ^^^^^^^^^^ Avoid calling setState() directly within an effect
+  22 |     }, []);
+  23 |
+  24 |     // Listen for terminal open/close/resize events  react-hooks/set-state-in-effect
+
+C:\AssetManager\frontend\src\components\layout\BackendGate.tsx
+  48:13  error  'timer' is never reassigned. Use 'const' instead  prefer-const
+
+C:\AssetManager\frontend\src\components\layout\GlobalSearch.tsx
+  49:44  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  54:50  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\AssetManager\frontend\src\components\layout\OpenBBTerminal.tsx
+   82:8   warning  React Hook useEffect has missing dependencies: 'resetInactivity' and 'snapToSafePosition'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+  219:25  error    Unexpected any. Specify a different type                                                                                                       @typescript-eslint/no-explicit-any
+  225:8   warning  React Hook useCallback has a missing dependency: 'refreshPortfolio'. Either include it or remove the dependency array                          react-hooks/exhaustive-deps
+
+C:\AssetManager\frontend\src\components\layout\Sidebar.tsx
+  29:13  error    Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\AssetManager\frontend\src\components\layout\Sidebar.tsx:29:13
+  27 |         const savedTheme = localStorage.getItem("mmam_theme");
+  28 |         if (savedTheme === "light") {
+> 29 |             setIsDarkMode(false);
+     |             ^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  30 |         }
+  31 |     }, []);
+  32 |  react-hooks/set-state-in-effect
+  59:21  warning  Using `<img>` could result in slower LCP and higher bandwidth. Consider using `<Image />` from `next/image` or a custom image loader to automatically optimize images. This may incur additional usage or cost from your provider. See: https://nextjs.org/docs/messages/no-img-element                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         @next/next/no-img-element
+
+C:\AssetManager\frontend\src\components\ui\GoldenBlackHole.tsx
+  136:28  error    Error: Cannot call impure function during render
+
+`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+C:\AssetManager\frontend\src\components\ui\GoldenBlackHole.tsx:136:28
+  134 |
+  135 |         for (let i = 0; i < COUNT; i++) {
+> 136 |             const r = 40 + Math.random() * 40;
+      |                            ^^^^^^^^^^^^^ Cannot call impure function
+  137 |             const theta = Math.random() * Math.PI * 2;
+  138 |             const phi = Math.acos(2 * Math.random() - 1);
+  139 |             pos[i * 3] = r * Math.sin(phi) * Math.cos(theta);                                                                                                                      react-hooks/purity
+  137:27  error    Error: Cannot call impure function during render
+
+`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+C:\AssetManager\frontend\src\components\ui\GoldenBlackHole.tsx:137:27
+  135 |         for (let i = 0; i < COUNT; i++) {
+  136 |             const r = 40 + Math.random() * 40;
+> 137 |             const theta = Math.random() * Math.PI * 2;
+      |                           ^^^^^^^^^^^^^ Cannot call impure function
+  138 |             const phi = Math.acos(2 * Math.random() - 1);
+  139 |             pos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+  140 |             pos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);                                                     react-hooks/purity
+  138:39  error    Error: Cannot call impure function during render
+
+`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+C:\AssetManager\frontend\src\components\ui\GoldenBlackHole.tsx:138:39
+  136 |             const r = 40 + Math.random() * 40;
+  137 |             const theta = Math.random() * Math.PI * 2;
+> 138 |             const phi = Math.acos(2 * Math.random() - 1);
+      |                                       ^^^^^^^^^^^^^ Cannot call impure function
+  139 |             pos[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+  140 |             pos[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+  141 |             pos[i * 3 + 2] = r * Math.cos(phi);                                   react-hooks/purity
+  143:25  error    Error: Cannot call impure function during render
+
+`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+C:\AssetManager\frontend\src\components\ui\GoldenBlackHole.tsx:143:25
+  141 |             pos[i * 3 + 2] = r * Math.cos(phi);
+  142 |
+> 143 |             const rnd = Math.random();
+      |                         ^^^^^^^^^^^^^ Cannot call impure function
+  144 |             if (rnd > 0.85) c.set('#aaddff');
+  145 |             else if (rnd > 0.5) c.set('#ffffff');
+  146 |             else if (rnd > 0.2) c.set('#ffe8c0');                                                                                                                                                        react-hooks/purity
+  199:55  error    Error: Cannot call impure function during render
+
+`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+C:\AssetManager\frontend\src\components\ui\GoldenBlackHole.tsx:199:55
+  197 |         for (let i = 0; i < count; i++) {
+  198 |             // Spiral-ish distribution
+> 199 |             const angle = (i / count) * Math.PI * 4 + Math.random() * 0.5;
+      |                                                       ^^^^^^^^^^^^^ Cannot call impure function
+  200 |             const r = Math.random() * spread;
+  201 |             const height = (Math.random() - 0.5) * spread * 0.2;
+  202 |             pos[i * 3] = Math.cos(angle) * r + (Math.random() - 0.5) * 0.5;            react-hooks/purity
+  200:23  error    Error: Cannot call impure function during render
+
+`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+C:\AssetManager\frontend\src\components\ui\GoldenBlackHole.tsx:200:23
+  198 |             // Spiral-ish distribution
+  199 |             const angle = (i / count) * Math.PI * 4 + Math.random() * 0.5;
+> 200 |             const r = Math.random() * spread;
+      |                       ^^^^^^^^^^^^^ Cannot call impure function
+  201 |             const height = (Math.random() - 0.5) * spread * 0.2;
+  202 |             pos[i * 3] = Math.cos(angle) * r + (Math.random() - 0.5) * 0.5;
+  203 |             pos[i * 3 + 1] = height;                                                 react-hooks/purity
+  201:29  error    Error: Cannot call impure function during render
+
+`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+C:\AssetManager\frontend\src\components\ui\GoldenBlackHole.tsx:201:29
+  199 |             const angle = (i / count) * Math.PI * 4 + Math.random() * 0.5;
+  200 |             const r = Math.random() * spread;
+> 201 |             const height = (Math.random() - 0.5) * spread * 0.2;
+      |                             ^^^^^^^^^^^^^ Cannot call impure function
+  202 |             pos[i * 3] = Math.cos(angle) * r + (Math.random() - 0.5) * 0.5;
+  203 |             pos[i * 3 + 1] = height;
+  204 |             pos[i * 3 + 2] = Math.sin(angle) * r + (Math.random() - 0.5) * 0.5;  react-hooks/purity
+  202:49  error    Error: Cannot call impure function during render
+
+`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+C:\AssetManager\frontend\src\components\ui\GoldenBlackHole.tsx:202:49
+  200 |             const r = Math.random() * spread;
+  201 |             const height = (Math.random() - 0.5) * spread * 0.2;
+> 202 |             pos[i * 3] = Math.cos(angle) * r + (Math.random() - 0.5) * 0.5;
+      |                                                 ^^^^^^^^^^^^^ Cannot call impure function
+  203 |             pos[i * 3 + 1] = height;
+  204 |             pos[i * 3 + 2] = Math.sin(angle) * r + (Math.random() - 0.5) * 0.5;
+  205 |         }                                               react-hooks/purity
+  204:53  error    Error: Cannot call impure function during render
+
+`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+C:\AssetManager\frontend\src\components\ui\GoldenBlackHole.tsx:204:53
+  202 |             pos[i * 3] = Math.cos(angle) * r + (Math.random() - 0.5) * 0.5;
+  203 |             pos[i * 3 + 1] = height;
+> 204 |             pos[i * 3 + 2] = Math.sin(angle) * r + (Math.random() - 0.5) * 0.5;
+      |                                                     ^^^^^^^^^^^^^ Cannot call impure function
+  205 |         }
+  206 |         return pos;
+  207 |     }, [count, spread]);                                                                                                             react-hooks/purity
+  235:10  warning  'PhotonRings' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           @typescript-eslint/no-unused-vars
+
+C:\AssetManager\frontend\src\context\PortfolioContext.tsx
+  74:62  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\AssetManager\frontend\src\hooks\useChartData.ts
+  38:61  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  38:69  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+C:\AssetManager\frontend\src\hooks\useDashboardData.ts
+   20:46   error    Unexpected any. Specify a different type                                                                                         @typescript-eslint/no-explicit-any
+   63:17   error    'newHoldings' is never reassigned. Use 'const' instead                                                                           prefer-const
+   74:67   error    Unexpected any. Specify a different type                                                                                         @typescript-eslint/no-explicit-any
+   74:103  error    Unexpected any. Specify a different type                                                                                         @typescript-eslint/no-explicit-any
+   75:53   error    Unexpected any. Specify a different type                                                                                         @typescript-eslint/no-explicit-any
+   76:54   error    Unexpected any. Specify a different type                                                                                         @typescript-eslint/no-explicit-any
+   76:79   error    Unexpected any. Specify a different type                                                                                         @typescript-eslint/no-explicit-any
+   92:8    warning  React Hook useEffect has missing dependencies: 'holdings' and 'setHoldings'. Either include them or remove the dependency array  react-hooks/exhaustive-deps
+  104:31   error    Unexpected any. Specify a different type                                                                                         @typescript-eslint/no-explicit-any
+  105:48   error    Unexpected any. Specify a different type                                                                                         @typescript-eslint/no-explicit-any
+  113:34   error    Unexpected any. Specify a different type                                                                                         @typescript-eslint/no-explicit-any
+  119:23   warning  '_' is defined but never used                                                                                                    @typescript-eslint/no-unused-vars
+
+C:\AssetManager\frontend\src\hooks\useSocket.ts
+  23:9  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\AssetManager\frontend\src\hooks\useSocket.ts:23:9
+  21 |         });
+  22 |
+> 23 |         setSocket(socketInstance);
+     |         ^^^^^^^^^ Avoid calling setState() directly within an effect
+  24 |
+  25 |         return () => {
+  26 |             socketInstance.disconnect();  react-hooks/set-state-in-effect
+
+C:\AssetManager\frontend\src\lib\logger.ts
+   1:6   warning  'LogLevel' is defined but never used      @typescript-eslint/no-unused-vars
+  11:50  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  15:53  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  19:50  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  23:51  error    Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+Γ£û 218 problems (167 errors, 51 warnings)
+  1 error and 0 warnings potentially fixable with the `--fix` option.
+

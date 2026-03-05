@@ -236,13 +236,82 @@ function IndicatorToggle({ active, onClick, name, desc, activeColor, Icon }: {
 
 
 function AlertsPanel() {
+    const alerts = [
+        {
+            id: 1,
+            symbol: "VVIX",
+            name: "CBOE VIX VOLATILITY INDEX",
+            condition: "Crosses Above",
+            value: 139.00,
+            current: 116.02,
+            action: "Monitor Volatility Risk",
+            active: true,
+            highPriority: true
+        },
+        {
+            id: 2,
+            symbol: "SPX",
+            name: "S&P 500 INDEX",
+            condition: "Crosses Below",
+            value: 5000.00,
+            action: "Hedge Portfolio",
+            active: false,
+            highPriority: false
+        }
+    ];
+
     return (
-        <div className="flex-1 p-10 flex flex-col items-center justify-center text-center">
-            <div className="h-16 w-16 rounded-full bg-yellow-400/5 border border-yellow-400/10 flex items-center justify-center mb-6">
-                <Bell size={24} className="text-yellow-400/40" />
+        <div className="flex-1 overflow-hidden flex flex-col items-center">
+            <div className="w-full px-6 py-4 border-b border-white/5 bg-white/5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <Bell size={16} className="text-yellow-400" />
+                    <h3 className="text-xs font-black uppercase tracking-widest text-white">Active Alerts</h3>
+                </div>
+                <span className="text-[9px] bg-yellow-500/20 text-yellow-400 px-2 py-0.5 rounded border border-yellow-500/30 font-black uppercase">Live</span>
             </div>
-            <h3 className="text-xs font-black uppercase tracking-widest text-muted">Price Alerts</h3>
-            <p className="text-[10px] font-bold text-muted/60 mt-4 max-w-[180px]">Real-time volatility and threshold triggers are under development.</p>
+
+            <div className="w-full flex-1 overflow-y-auto p-4 space-y-3">
+                {alerts.map(alert => (
+                    <div key={alert.id} className={`p-4 rounded-xl border relative overflow-hidden backdrop-blur-sm ${alert.active ? 'bg-white/5 border-white/10' : 'bg-transparent border-white/5 opacity-50'}`}>
+                        {alert.active && alert.highPriority && (
+                            <div className="absolute top-0 left-0 w-1 h-full bg-red shadow-[0_0_10px_#ef4444]" />
+                        )}
+                        {!alert.highPriority && alert.active && (
+                            <div className="absolute top-0 left-0 w-1 h-full bg-accent" />
+                        )}
+
+                        <div className="flex justify-between items-start mb-2 pl-2">
+                            <div>
+                                <span className="text-xs font-black uppercase tracking-wider text-white">{alert.symbol}</span>
+                                <p className="text-[9px] font-bold text-muted mt-0.5">{alert.name}</p>
+                            </div>
+                            <div className={`px-2 py-1 rounded text-[9px] font-black tracking-widest uppercase ${alert.active ? 'bg-red/10 text-red border border-red/20' : 'bg-white/5 text-muted'}`}>
+                                {alert.condition}
+                            </div>
+                        </div>
+
+                        <div className="flex items-baseline gap-2 mt-3 pl-2">
+                            <span className="text-lg font-mono font-black text-white">{alert.value.toFixed(2)}</span>
+                            {alert.current && (
+                                <span className="text-[10px] font-mono font-bold text-muted/60">
+                                    (Cur: {alert.current.toFixed(2)})
+                                </span>
+                            )}
+                        </div>
+
+                        <div className="mt-3 pl-2 pt-3 border-t border-white/5 flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-muted/80">{alert.action}</span>
+                            <div className={`h-2 w-2 rounded-full ${alert.active ? 'bg-red animate-pulse shadow-[0_0_8px_#ef4444]' : 'bg-muted'}`} />
+                        </div>
+                    </div>
+                ))}
+            </div>
+
+            <div className="w-full p-4 border-t border-white/5 bg-white/5 flex-shrink-0">
+                <button className="w-full py-2.5 bg-accent/10 hover:bg-accent/20 text-accent font-black uppercase tracking-widest text-[10px] rounded-lg transition-all border border-accent/20 shadow-[0_0_15px_rgba(59,130,246,0.1)]">
+                    + Create Alert
+                </button>
+            </div>
         </div>
     );
 }
