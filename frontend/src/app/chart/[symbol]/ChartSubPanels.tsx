@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from "react";
 import { createChart, IChartApi, HistogramSeries, LineSeries } from "lightweight-charts";
 import { Plus, Minus } from "lucide-react";
 import { ParamInput } from "./ChartUIComponents";
-import { calcMACD, calcStochastic, calcATR, calcWilliamsR, calcMFI, calcCMF } from "./chartMath";
+import { calcMACD, calcStochastic, calcATR, calcWilliamsR, calcMFI, calcCMF, calcRSI, calcCCI, calcADX } from "./chartMath";
 
 export interface ChartSubPanelsProps {
     rawData: any[];
@@ -23,8 +23,17 @@ export interface ChartSubPanelsProps {
     atrPeriod: number; setAtrPeriod: (v: number) => void;
 
     showWilliams: boolean;
+    williamsPeriod: number;
     showMFI: boolean;
+    mfiPeriod: number;
     showCMF: boolean;
+    cmfPeriod: number;
+    showRSI: boolean;
+    rsiPeriod: number;
+    showCCI: boolean;
+    cciPeriod: number;
+    showADX: boolean;
+    adxPeriod: number;
 }
 
 export function ChartSubPanels({
@@ -32,7 +41,8 @@ export function ChartSubPanels({
     showMACD, setShowMACD, macdFast, setMacdFast, macdSlow, setMacdSlow, macdSignal, setMacdSignal,
     showStoch, setShowStoch, stochK, setStochK, stochD, setStochD, stochSmooth, setStochSmooth,
     showATR, setShowATR, atrPeriod, setAtrPeriod,
-    showWilliams, showMFI, showCMF
+    showWilliams, williamsPeriod, showMFI, mfiPeriod, showCMF, cmfPeriod,
+    showRSI, rsiPeriod, showCCI, cciPeriod, showADX, adxPeriod
 }: ChartSubPanelsProps) {
 
     const macdChartRef = useRef<HTMLDivElement>(null);
@@ -52,6 +62,15 @@ export function ChartSubPanels({
 
     const cmfChartRef = useRef<HTMLDivElement>(null);
     const cmfChartApi = useRef<IChartApi | null>(null);
+
+    const rsiChartRef = useRef<HTMLDivElement>(null);
+    const rsiChartApi = useRef<IChartApi | null>(null);
+
+    const cciChartRef = useRef<HTMLDivElement>(null);
+    const cciChartApi = useRef<IChartApi | null>(null);
+
+    const adxChartRef = useRef<HTMLDivElement>(null);
+    const adxChartApi = useRef<IChartApi | null>(null);
 
     // MACD
     useEffect(() => {
@@ -77,7 +96,7 @@ export function ChartSubPanels({
         chart.timeScale().fitContent();
         const ro = new ResizeObserver(() => { if (macdChartRef.current) chart.applyOptions({ width: macdChartRef.current.clientWidth }); });
         ro.observe(macdChartRef.current);
-        return () => { ro.disconnect(); setTimeout(() => { try { chart.remove(); } catch (e) { } }, 10); macdChartApi.current = null; };
+        return () => { ro.disconnect(); try { chart.remove(); } catch (e) { } macdChartApi.current = null; };
     }, [rawData, showMACD, macdFast, macdSlow, macdSignal, chartOpts]);
 
     // Stochastic
@@ -103,7 +122,7 @@ export function ChartSubPanels({
         chart.timeScale().fitContent();
         const ro = new ResizeObserver(() => { if (stochChartRef.current) chart.applyOptions({ width: stochChartRef.current.clientWidth }); });
         ro.observe(stochChartRef.current);
-        return () => { ro.disconnect(); setTimeout(() => { try { chart.remove(); } catch (e) { } }, 10); stochChartApi.current = null; };
+        return () => { ro.disconnect(); try { chart.remove(); } catch (e) { } stochChartApi.current = null; };
     }, [rawData, showStoch, stochK, stochD, stochSmooth, chartOpts]);
 
     // ATR
@@ -126,7 +145,7 @@ export function ChartSubPanels({
         chart.timeScale().fitContent();
         const ro = new ResizeObserver(() => { if (atrChartRef.current) chart.applyOptions({ width: atrChartRef.current.clientWidth }); });
         ro.observe(atrChartRef.current);
-        return () => { ro.disconnect(); setTimeout(() => { try { chart.remove(); } catch (e) { } }, 10); atrChartApi.current = null; };
+        return () => { ro.disconnect(); try { chart.remove(); } catch (e) { } atrChartApi.current = null; };
     }, [rawData, showATR, atrPeriod, chartOpts]);
 
     // Williams %R
@@ -136,7 +155,7 @@ export function ChartSubPanels({
         const chart = createChart(williamsChartRef.current, { ...chartOpts(146), width: williamsChartRef.current.clientWidth });
         williamsChartApi.current = chart;
         const highs = rawData.map(d => d.high), lows = rawData.map(d => d.low), closes = rawData.map(d => d.close), times = rawData.map(d => d.time as any);
-        const w = calcWilliamsR(highs, lows, closes, 14);
+        const w = calcWilliamsR(highs, lows, closes, williamsPeriod);
 
         chart.addSeries(LineSeries, { color: '#0ea5e9', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: 'Williams %R' })
             .setData(w.map((v, i) => v === null || isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
@@ -149,7 +168,7 @@ export function ChartSubPanels({
         chart.timeScale().fitContent();
         const ro = new ResizeObserver(() => { if (williamsChartRef.current) chart.applyOptions({ width: williamsChartRef.current.clientWidth }); });
         ro.observe(williamsChartRef.current);
-        return () => { ro.disconnect(); setTimeout(() => { try { chart.remove(); } catch (e) { } }, 10); williamsChartApi.current = null; };
+        return () => { ro.disconnect(); try { chart.remove(); } catch (e) { } williamsChartApi.current = null; };
     }, [rawData, showWilliams, chartOpts]);
 
     // MFI
@@ -159,7 +178,7 @@ export function ChartSubPanels({
         const chart = createChart(mfiChartRef.current, { ...chartOpts(146), width: mfiChartRef.current.clientWidth });
         mfiChartApi.current = chart;
         const highs = rawData.map(d => d.high), lows = rawData.map(d => d.low), closes = rawData.map(d => d.close), volumes = rawData.map(d => d.volume ?? 0), times = rawData.map(d => d.time as any);
-        const mfi = calcMFI(highs, lows, closes, volumes, 14);
+        const mfi = calcMFI(highs, lows, closes, volumes, mfiPeriod);
 
         chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: 'MFI' })
             .setData(mfi.map((v, i) => v === null || isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
@@ -172,7 +191,7 @@ export function ChartSubPanels({
         chart.timeScale().fitContent();
         const ro = new ResizeObserver(() => { if (mfiChartRef.current) chart.applyOptions({ width: mfiChartRef.current.clientWidth }); });
         ro.observe(mfiChartRef.current);
-        return () => { ro.disconnect(); setTimeout(() => { try { chart.remove(); } catch (e) { } }, 10); mfiChartApi.current = null; };
+        return () => { ro.disconnect(); try { chart.remove(); } catch (e) { } mfiChartApi.current = null; };
     }, [rawData, showMFI, chartOpts]);
 
     // CMF
@@ -182,7 +201,7 @@ export function ChartSubPanels({
         const chart = createChart(cmfChartRef.current, { ...chartOpts(146), width: cmfChartRef.current.clientWidth });
         cmfChartApi.current = chart;
         const highs = rawData.map(d => d.high), lows = rawData.map(d => d.low), closes = rawData.map(d => d.close), volumes = rawData.map(d => d.volume), times = rawData.map(d => d.time as any);
-        const cmf = calcCMF(highs, lows, closes, volumes, 20);
+        const cmf = calcCMF(highs, lows, closes, volumes, cmfPeriod);
 
         const cmfSeries = chart.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: true });
         cmfSeries.setData(cmf.map((v, i) => v === null || isNaN(v) ? { time: times[i] } : { time: times[i], value: v, color: v > 0 ? 'rgba(38,166,157,0.7)' : 'rgba(239,83,80,0.7)' }) as any);
@@ -192,8 +211,79 @@ export function ChartSubPanels({
             .setData(times.map(t => ({ time: t, value: 0 })));
         const ro = new ResizeObserver(() => { if (cmfChartRef.current) chart.applyOptions({ width: cmfChartRef.current.clientWidth }); });
         ro.observe(cmfChartRef.current);
-        return () => { ro.disconnect(); setTimeout(() => { try { chart.remove(); } catch (e) { } }, 10); cmfChartApi.current = null; };
+        return () => { ro.disconnect(); try { chart.remove(); } catch (e) { } cmfChartApi.current = null; };
     }, [rawData, showCMF, chartOpts]);
+
+    // RSI
+    useEffect(() => {
+        if (!rsiChartRef.current || rawData.length === 0 || !showRSI) return;
+        if (rsiChartApi.current) { setTimeout(() => { try { rsiChartApi.current?.remove(); } catch (e) { } }, 10); rsiChartApi.current = null; }
+        const chart = createChart(rsiChartRef.current, { ...chartOpts(146), width: rsiChartRef.current.clientWidth });
+        rsiChartApi.current = chart;
+        const closes = rawData.map(d => d.close), times = rawData.map(d => d.time as any);
+        const rsi = calcRSI(closes, rsiPeriod);
+
+        chart.addSeries(LineSeries, { color: '#f43f5e', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: 'RSI' })
+            .setData(rsi.map((v, i) => v === null || isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
+
+        chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
+            .setData(times.map(t => ({ time: t, value: 70 })));
+        chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
+            .setData(times.map(t => ({ time: t, value: 30 })));
+
+        chart.timeScale().fitContent();
+        const ro = new ResizeObserver(() => { if (rsiChartRef.current) chart.applyOptions({ width: rsiChartRef.current.clientWidth }); });
+        ro.observe(rsiChartRef.current);
+        return () => { ro.disconnect(); try { chart.remove(); } catch (e) { } rsiChartApi.current = null; };
+    }, [rawData, showRSI, chartOpts]);
+
+    // CCI
+    useEffect(() => {
+        if (!cciChartRef.current || rawData.length === 0 || !showCCI) return;
+        if (cciChartApi.current) { setTimeout(() => { try { cciChartApi.current?.remove(); } catch (e) { } }, 10); cciChartApi.current = null; }
+        const chart = createChart(cciChartRef.current, { ...chartOpts(146), width: cciChartRef.current.clientWidth });
+        cciChartApi.current = chart;
+        const highs = rawData.map(d => d.high), lows = rawData.map(d => d.low), closes = rawData.map(d => d.close), times = rawData.map(d => d.time as any);
+        const cci = calcCCI(highs, lows, closes, cciPeriod);
+
+        chart.addSeries(LineSeries, { color: '#84cc16', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: 'CCI' })
+            .setData(cci.map((v, i) => v === null || isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
+
+        chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
+            .setData(times.map(t => ({ time: t, value: 100 })));
+        chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
+            .setData(times.map(t => ({ time: t, value: -100 })));
+
+        chart.timeScale().fitContent();
+        const ro = new ResizeObserver(() => { if (cciChartRef.current) chart.applyOptions({ width: cciChartRef.current.clientWidth }); });
+        ro.observe(cciChartRef.current);
+        return () => { ro.disconnect(); try { chart.remove(); } catch (e) { } cciChartApi.current = null; };
+    }, [rawData, showCCI, chartOpts]);
+
+    // ADX
+    useEffect(() => {
+        if (!adxChartRef.current || rawData.length === 0 || !showADX) return;
+        if (adxChartApi.current) { setTimeout(() => { try { adxChartApi.current?.remove(); } catch (e) { } }, 10); adxChartApi.current = null; }
+        const chart = createChart(adxChartRef.current, { ...chartOpts(146), width: adxChartRef.current.clientWidth });
+        adxChartApi.current = chart;
+        const highs = rawData.map(d => d.high), lows = rawData.map(d => d.low), closes = rawData.map(d => d.close), times = rawData.map(d => d.time as any);
+        const { adx, pdi, ndi } = calcADX(highs, lows, closes, adxPeriod);
+
+        chart.addSeries(LineSeries, { color: '#d946ef', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: 'ADX' })
+            .setData(adx.map((v, i) => v === null || isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
+        chart.addSeries(LineSeries, { color: '#22c55e', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, title: '+DI' })
+            .setData(pdi.map((v, i) => v === null || isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
+        chart.addSeries(LineSeries, { color: '#ef4444', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, title: '-DI' })
+            .setData(ndi.map((v, i) => v === null || isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
+
+        chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
+            .setData(times.map(t => ({ time: t, value: 25 })));
+
+        chart.timeScale().fitContent();
+        const ro = new ResizeObserver(() => { if (adxChartRef.current) chart.applyOptions({ width: adxChartRef.current.clientWidth }); });
+        ro.observe(adxChartRef.current);
+        return () => { ro.disconnect(); try { chart.remove(); } catch (e) { } adxChartApi.current = null; };
+    }, [rawData, showADX, chartOpts]);
 
     // ─── Unified Chart Syncing ─────────────────────────────────────────────
     useEffect(() => {
@@ -208,7 +298,8 @@ export function ChartSubPanels({
             const main = mainChartApi.current;
             const subApis = [
                 macdChartApi.current, stochChartApi.current, atrChartApi.current,
-                williamsChartApi.current, mfiChartApi.current, cmfChartApi.current
+                williamsChartApi.current, mfiChartApi.current, cmfChartApi.current,
+                rsiChartApi.current, cciChartApi.current, adxChartApi.current
             ].filter(Boolean) as IChartApi[];
 
             if (subApis.length === 0) return;
@@ -270,7 +361,7 @@ export function ChartSubPanels({
             window.removeEventListener('mainChartReady', doSync);
             cleanups.forEach(c => c());
         };
-    }, [showMACD, showStoch, showATR, showWilliams, showMFI, showCMF]);
+    }, [showMACD, showStoch, showATR, showWilliams, williamsPeriod, showMFI, mfiPeriod, showCMF, cmfPeriod, showRSI, rsiPeriod, showCCI, cciPeriod, showADX, adxPeriod]);
 
     return (
         <>
@@ -335,7 +426,7 @@ export function ChartSubPanels({
                     <div className="flex items-center justify-between px-3 bg-[#0c0c0c] select-none" style={{ height: 24 }}>
                         <div className="flex items-center gap-2">
                             <span className="text-[10px] font-black uppercase tracking-[0.15em] text-cyan-400/70">Williams %R</span>
-                            <span className="text-[9px] font-mono text-white/30">(14)</span>
+                            <span className="text-[9px] font-mono text-white/30">({williamsPeriod})</span>
                         </div>
                     </div>
                     <div ref={williamsChartRef} style={{ width: '100%', height: 146 }} />
@@ -348,23 +439,62 @@ export function ChartSubPanels({
                     <div className="flex items-center justify-between px-3 bg-[#0c0c0c] select-none" style={{ height: 24 }}>
                         <div className="flex items-center gap-2">
                             <span className="text-[10px] font-black uppercase tracking-[0.15em] text-violet-400/70">MFI</span>
-                            <span className="text-[9px] font-mono text-white/30">(14)</span>
+                            <span className="text-[9px] font-mono text-white/30">({mfiPeriod})</span>
                         </div>
                     </div>
                     <div ref={mfiChartRef} style={{ width: '100%', height: 146 }} />
                 </div>
             )}
 
-            {/* ─── CMF Panel ──────────────────────────────────────────────── */}
+            {/* CMF Panel */}
             {showCMF && (
                 <div className="flex-shrink-0 border-t border-white/5" style={{ height: 170 }}>
                     <div className="flex items-center justify-between px-3 bg-[#0c0c0c] select-none" style={{ height: 24 }}>
                         <div className="flex items-center gap-2">
                             <span className="text-[10px] font-black uppercase tracking-[0.15em] text-blue-400/70">CMF</span>
-                            <span className="text-[9px] font-mono text-white/30">(20)</span>
+                            <span className="text-[9px] font-mono text-white/30">({cmfPeriod})</span>
                         </div>
                     </div>
                     <div ref={cmfChartRef} style={{ width: '100%', height: 146 }} />
+                </div>
+            )}
+
+            {/* RSI Panel */}
+            {showRSI && (
+                <div className="flex-shrink-0 border-t border-white/5" style={{ height: 170 }}>
+                    <div className="flex items-center justify-between px-3 bg-[#0c0c0c] select-none" style={{ height: 24 }}>
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black uppercase tracking-[0.15em] text-rose-400/70">RSI</span>
+                            <span className="text-[9px] font-mono text-white/30">({rsiPeriod})</span>
+                        </div>
+                    </div>
+                    <div ref={rsiChartRef} style={{ width: '100%', height: 146 }} />
+                </div>
+            )}
+
+            {/* CCI Panel */}
+            {showCCI && (
+                <div className="flex-shrink-0 border-t border-white/5" style={{ height: 170 }}>
+                    <div className="flex items-center justify-between px-3 bg-[#0c0c0c] select-none" style={{ height: 24 }}>
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black uppercase tracking-[0.15em] text-lime-400/70">CCI</span>
+                            <span className="text-[9px] font-mono text-white/30">({cciPeriod})</span>
+                        </div>
+                    </div>
+                    <div ref={cciChartRef} style={{ width: '100%', height: 146 }} />
+                </div>
+            )}
+
+            {/* ADX Panel */}
+            {showADX && (
+                <div className="flex-shrink-0 border-t border-white/5" style={{ height: 170 }}>
+                    <div className="flex items-center justify-between px-3 bg-[#0c0c0c] select-none" style={{ height: 24 }}>
+                        <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-black uppercase tracking-[0.15em] text-fuchsia-400/70">ADX</span>
+                            <span className="text-[9px] font-mono text-white/30">({adxPeriod})</span>
+                        </div>
+                    </div>
+                    <div ref={adxChartRef} style={{ width: '100%', height: 146 }} />
                 </div>
             )}
         </>

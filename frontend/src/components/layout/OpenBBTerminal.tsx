@@ -223,7 +223,7 @@ export default function OpenBBTerminal() {
 
     const containerBase = isFullscreen
         ? `fixed inset-0 z-[200] ${t.bg} ${t.panelBlur} flex flex-col p-6 transition-all duration-500`
-        : `fixed bottom-0 left-[68px] right-0 z-[150] flex flex-col transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${t.bg} ${t.panelBlur} border-t ${t.border}`;
+        : `relative w-full z-[150] flex flex-col transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${t.bg} ${t.panelBlur} border-t ${t.border}`;
 
     return (
         <div className={containerBase} style={!isFullscreen ? { height: `${panelHeight}px` } : {}}>

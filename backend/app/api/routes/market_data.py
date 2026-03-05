@@ -14,6 +14,18 @@ router = APIRouter()
 # Track symbols currently being prefetched to avoid duplicate work
 _prefetching: set[str] = set()
 
+def _normalize_symbol(symbol: str) -> str:
+    """Auto-correct common typos or missing extensions for Forex."""
+    s = symbol.upper()
+    # Correct typos first
+    if s == "EURSUD":
+        s = "EURUSD"
+        
+    fx_pairs = ["EURUSD", "GBPUSD", "USDJPY", "USDCAD", "AUDUSD", "NZDUSD", "USDCHF", "EURGBP", "EURJPY"]
+    if s in fx_pairs:
+        return f"{s}=X"
+    return s
+
 
 async def _background_prefetch(symbol: str):
     """Background task: fetch + persist historical data into DuckDB."""
@@ -43,6 +55,7 @@ async def system_status():
 @router.get("/quote/{symbol:path}")
 async def get_quote_endpoint(symbol: str):
     """Get real-time quote using the provider cascade."""
+    symbol = _normalize_symbol(symbol)
     data = await get_quote.execute(symbol)
     if not data or "error" in data:
         raise HTTPException(status_code=404, detail=data.get("error", "Data not found"))
@@ -52,9 +65,11 @@ async def get_quote_endpoint(symbol: str):
 @router.get("/historical/{symbol:path}")
 async def get_historical_endpoint(symbol: str, limit: int = 300):
     """Get historical OHLCV data (DuckDB-first, then API fallback)."""
+    symbol = _normalize_symbol(symbol)
     data = await get_historical.execute(symbol, limit)
     if not data or "error" in data:
-        raise HTTPException(status_code=404, detail=data.get("error", "Not found"))
+        # Return empty historical instead of 404 — frontend keeps its local cache
+        return {"symbol": symbol, "historical": [], "source": "none", "count": 0, "warning": data.get("error", "No data")}
     return data
 
 
@@ -65,10 +80,11 @@ async def get_intraday_endpoint(
     period: str = Query("1mo", description="Lookback window: 5d, 1mo, 3mo, 6mo"),
 ):
     """Get intraday OHLCV candles (DuckDB-first, then Yahoo/Polygon fallback)."""
+    symbol = _normalize_symbol(symbol)
     from ...services.market_data import market_data_service
     data = await market_data_service.get_intraday(symbol, interval, period)
     if not data or "error" in data:
-        raise HTTPException(status_code=404, detail=data.get("error", "Intraday data unavailable"))
+        return {"symbol": symbol, "historical": [], "source": "none", "warning": data.get("error", "Intraday data unavailable") if data else "No data"}
     # Normalize output to match the historical endpoint shape
     candles = data.get("candles", [])
     historical = []

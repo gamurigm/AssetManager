@@ -38,14 +38,40 @@ export interface ChartIndicatorsToolbarProps {
     setAtrPeriod: (val: number) => void;
     showPSAR: boolean;
     setShowPSAR: (show: boolean) => void;
+    psarStep: number;
+    setPsarStep: (val: number) => void;
+    psarMax: number;
+    setPsarMax: (val: number) => void;
     showSupertrend: boolean;
     setShowSupertrend: (show: boolean) => void;
+    supertrendPeriod: number;
+    setSupertrendPeriod: (val: number) => void;
+    supertrendMult: number;
+    setSupertrendMult: (val: number) => void;
     showWilliams: boolean;
     setShowWilliams: (show: boolean) => void;
+    williamsPeriod: number;
+    setWilliamsPeriod: (val: number) => void;
     showMFI: boolean;
     setShowMFI: (show: boolean) => void;
+    mfiPeriod: number;
+    setMfiPeriod: (val: number) => void;
     showCMF: boolean;
     setShowCMF: (show: boolean) => void;
+    cmfPeriod: number;
+    setCmfPeriod: (val: number) => void;
+    showRSI: boolean;
+    setShowRSI: (show: boolean) => void;
+    rsiPeriod: number;
+    setRsiPeriod: (val: number) => void;
+    showCCI: boolean;
+    setShowCCI: (show: boolean) => void;
+    cciPeriod: number;
+    setCciPeriod: (val: number) => void;
+    showADX: boolean;
+    setShowADX: (show: boolean) => void;
+    adxPeriod: number;
+    setAdxPeriod: (val: number) => void;
 }
 
 export function ChartIndicatorsToolbar(props: ChartIndicatorsToolbarProps) {
@@ -168,28 +194,115 @@ export function ChartIndicatorsToolbar(props: ChartIndicatorsToolbarProps) {
                         {/* Parabolic SAR */}
                         <div className="flex items-center justify-between">
                             <span className="text-[11px] text-white/50 font-mono">Parabolic SAR</span>
-                            <button onClick={() => props.setShowPSAR(!props.showPSAR)} className={`text-[10px] font-bold px-2 py-0.5 rounded ${props.showPSAR ? "bg-pink-500/20 text-pink-400" : "bg-white/5 text-white/30"}`}>{props.showPSAR ? "ON" : "OFF"}</button>
+                            <button onClick={() => props.setShowPSAR(!props.showPSAR)} className={`text-[10px] font-bold px-2 py-0.5 rounded ${props.showPSAR ? "bg-amber-500/20 text-amber-400" : "bg-white/5 text-white/30"}`}>{props.showPSAR ? "ON" : "OFF"}</button>
                         </div>
+                        {props.showPSAR && (
+                            <div className="flex flex-col gap-2 pl-2">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[9px] text-white/30 uppercase font-bold">Step</span>
+                                    <input type="number" step="0.01" value={props.psarStep} onChange={e => props.setPsarStep(Number(e.target.value))} className="w-14 px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[11px] text-white font-mono text-center focus:outline-none" />
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[9px] text-white/30 uppercase font-bold">Max</span>
+                                    <input type="number" step="0.01" value={props.psarMax} onChange={e => props.setPsarMax(Number(e.target.value))} className="w-14 px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[11px] text-white font-mono text-center focus:outline-none" />
+                                </div>
+                            </div>
+                        )}
                         {/* Supertrend */}
                         <div className="flex items-center justify-between">
-                            <span className="text-[11px] text-white/50 font-mono">Supertrend (10,3)</span>
-                            <button onClick={() => props.setShowSupertrend(!props.showSupertrend)} className={`text-[10px] font-bold px-2 py-0.5 rounded ${props.showSupertrend ? "bg-teal-500/20 text-teal-400" : "bg-white/5 text-white/30"}`}>{props.showSupertrend ? "ON" : "OFF"}</button>
+                            <span className="text-[11px] text-white/50 font-mono">Supertrend</span>
+                            <button onClick={() => props.setShowSupertrend(!props.showSupertrend)} className={`text-[10px] font-bold px-2 py-0.5 rounded ${props.showSupertrend ? "bg-emerald-500/20 text-emerald-400" : "bg-white/5 text-white/30"}`}>{props.showSupertrend ? "ON" : "OFF"}</button>
                         </div>
+                        {props.showSupertrend && (
+                            <div className="flex flex-col gap-2 pl-2">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[9px] text-white/30 uppercase font-bold">Period</span>
+                                    <input type="number" value={props.supertrendPeriod} onChange={e => props.setSupertrendPeriod(Number(e.target.value))} className="w-14 px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[11px] text-white font-mono text-center focus:outline-none" />
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[9px] text-white/30 uppercase font-bold">Mult</span>
+                                    <input type="number" step="0.1" value={props.supertrendMult} onChange={e => props.setSupertrendMult(Number(e.target.value))} className="w-14 px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[11px] text-white font-mono text-center focus:outline-none" />
+                                </div>
+                            </div>
+                        )}
                         {/* Williams %R */}
                         <div className="flex items-center justify-between">
-                            <span className="text-[11px] text-white/50 font-mono">Williams %R (14)</span>
+                            <span className="text-[11px] text-white/50 font-mono">Will %R ({props.williamsPeriod})</span>
                             <button onClick={() => props.setShowWilliams(!props.showWilliams)} className={`text-[10px] font-bold px-2 py-0.5 rounded ${props.showWilliams ? "bg-cyan-500/20 text-cyan-400" : "bg-white/5 text-white/30"}`}>{props.showWilliams ? "ON" : "OFF"}</button>
                         </div>
+                        {props.showWilliams && (
+                            <div className="flex items-center gap-2 pl-2">
+                                <span className="text-[9px] text-white/30 uppercase font-bold">Period</span>
+                                <input type="number" value={props.williamsPeriod} min={1} max={100}
+                                    onChange={e => props.setWilliamsPeriod(Math.max(1, Number(e.target.value) || 14))}
+                                    className="w-14 px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[11px] text-white font-mono text-center focus:outline-none" />
+                            </div>
+                        )}
                         {/* MFI */}
                         <div className="flex items-center justify-between">
-                            <span className="text-[11px] text-white/50 font-mono">MFI (14)</span>
+                            <span className="text-[11px] text-white/50 font-mono">MFI ({props.mfiPeriod})</span>
                             <button onClick={() => props.setShowMFI(!props.showMFI)} className={`text-[10px] font-bold px-2 py-0.5 rounded ${props.showMFI ? "bg-violet-500/20 text-violet-400" : "bg-white/5 text-white/30"}`}>{props.showMFI ? "ON" : "OFF"}</button>
                         </div>
+                        {props.showMFI && (
+                            <div className="flex items-center gap-2 pl-2">
+                                <span className="text-[9px] text-white/30 uppercase font-bold">Period</span>
+                                <input type="number" value={props.mfiPeriod} min={1} max={100}
+                                    onChange={e => props.setMfiPeriod(Math.max(1, Number(e.target.value) || 14))}
+                                    className="w-14 px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[11px] text-white font-mono text-center focus:outline-none" />
+                            </div>
+                        )}
                         {/* CMF */}
                         <div className="flex items-center justify-between">
-                            <span className="text-[11px] text-white/50 font-mono">CMF (20)</span>
+                            <span className="text-[11px] text-white/50 font-mono">CMF ({props.cmfPeriod})</span>
                             <button onClick={() => props.setShowCMF(!props.showCMF)} className={`text-[10px] font-bold px-2 py-0.5 rounded ${props.showCMF ? "bg-blue-500/20 text-blue-400" : "bg-white/5 text-white/30"}`}>{props.showCMF ? "ON" : "OFF"}</button>
                         </div>
+                        {props.showCMF && (
+                            <div className="flex items-center gap-2 pl-2">
+                                <span className="text-[9px] text-white/30 uppercase font-bold">Period</span>
+                                <input type="number" value={props.cmfPeriod} min={1} max={100}
+                                    onChange={e => props.setCmfPeriod(Math.max(1, Number(e.target.value) || 20))}
+                                    className="w-14 px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[11px] text-white font-mono text-center focus:outline-none" />
+                            </div>
+                        )}
+                        {/* RSI */}
+                        <div className="flex items-center justify-between">
+                            <span className="text-[11px] text-white/50 font-mono">RSI ({props.rsiPeriod})</span>
+                            <button onClick={() => props.setShowRSI(!props.showRSI)} className={`text-[10px] font-bold px-2 py-0.5 rounded ${props.showRSI ? "bg-rose-500/20 text-rose-400" : "bg-white/5 text-white/30"}`}>{props.showRSI ? "ON" : "OFF"}</button>
+                        </div>
+                        {props.showRSI && (
+                            <div className="flex items-center gap-2 pl-2">
+                                <span className="text-[9px] text-white/30 uppercase font-bold">Period</span>
+                                <input type="number" value={props.rsiPeriod} min={1} max={100}
+                                    onChange={e => props.setRsiPeriod(Math.max(1, Number(e.target.value) || 14))}
+                                    className="w-14 px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[11px] text-white font-mono text-center focus:outline-none" />
+                            </div>
+                        )}
+                        {/* CCI */}
+                        <div className="flex items-center justify-between">
+                            <span className="text-[11px] text-white/50 font-mono">CCI ({props.cciPeriod})</span>
+                            <button onClick={() => props.setShowCCI(!props.showCCI)} className={`text-[10px] font-bold px-2 py-0.5 rounded ${props.showCCI ? "bg-lime-500/20 text-lime-400" : "bg-white/5 text-white/30"}`}>{props.showCCI ? "ON" : "OFF"}</button>
+                        </div>
+                        {props.showCCI && (
+                            <div className="flex items-center gap-2 pl-2">
+                                <span className="text-[9px] text-white/30 uppercase font-bold">Period</span>
+                                <input type="number" value={props.cciPeriod} min={1} max={100}
+                                    onChange={e => props.setCciPeriod(Math.max(1, Number(e.target.value) || 20))}
+                                    className="w-14 px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[11px] text-white font-mono text-center focus:outline-none" />
+                            </div>
+                        )}
+                        {/* ADX */}
+                        <div className="flex items-center justify-between">
+                            <span className="text-[11px] text-white/50 font-mono">ADX ({props.adxPeriod})</span>
+                            <button onClick={() => props.setShowADX(!props.showADX)} className={`text-[10px] font-bold px-2 py-0.5 rounded ${props.showADX ? "bg-fuchsia-500/20 text-fuchsia-400" : "bg-white/5 text-white/30"}`}>{props.showADX ? "ON" : "OFF"}</button>
+                        </div>
+                        {props.showADX && (
+                            <div className="flex items-center gap-2 pl-2">
+                                <span className="text-[9px] text-white/30 uppercase font-bold">Period</span>
+                                <input type="number" value={props.adxPeriod} min={1} max={100}
+                                    onChange={e => props.setAdxPeriod(Math.max(1, Number(e.target.value) || 14))}
+                                    className="w-14 px-1 py-0.5 bg-white/5 border border-white/10 rounded text-[11px] text-white font-mono text-center focus:outline-none" />
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

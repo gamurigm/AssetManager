@@ -83,7 +83,7 @@ export default function PortfolioView({
     const maxConcentration = totalValue > 0 ? (topSectorVal / totalValue) * 100 : 0;
 
     return (
-        <div className="flex-1 flex flex-col min-h-0 gap-4">
+        <div className="flex-1 flex flex-col min-h-0 gap-4 overflow-y-auto no-scrollbar">
             {/* ── Header + Metrics Ribbon ── */}
             <div className="shrink-0 relative overflow-hidden rounded-2xl bg-card/40 border border-border/50">
                 <div className="absolute inset-0 bg-gradient-to-r from-accent/[0.03] via-transparent to-purple-500/[0.03]" />
@@ -417,7 +417,7 @@ function ActivityPanel({ transactions, collapsed, togglePanel }: { transactions:
                 </div>
             </div>
             {!collapsed['activity'] && (
-                <div className="flex-1 overflow-y-auto p-0 animate-in fade-in slide-in-from-top-2 duration-300">
+                <div className="flex-1 min-h-[300px] max-h-[400px] overflow-y-auto no-scrollbar p-0 animate-in fade-in slide-in-from-top-2 duration-300">
                     {transactions.length === 0 ? (
                         <div className="h-full flex flex-col items-center justify-center p-8 text-center">
                             <Activity size={32} className="text-muted/20 mb-3" />

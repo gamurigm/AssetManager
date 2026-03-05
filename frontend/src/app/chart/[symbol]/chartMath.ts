@@ -227,17 +227,92 @@ export function calcCMF(highs: number[], lows: number[], closes: number[], volum
     return cmf;
 }
 
+/* ─── RSI (Relative Strength Index) ──────────────────────────────────── */
+
+export function calcRSI(closes: number[], period = 14): (number | null)[] {
+    const rsi: (number | null)[] = [];
+    if (closes.length < period + 1) return closes.map(() => null);
+    const changes: number[] = [];
+    for (let i = 1; i < closes.length; i++) changes.push(closes[i] - closes[i - 1]);
+    let avgGain = 0, avgLoss = 0;
+    for (let i = 0; i < period; i++) { if (changes[i] >= 0) avgGain += changes[i]; else avgLoss += Math.abs(changes[i]); }
+    avgGain /= period; avgLoss /= period;
+    rsi.push(null);
+    for (let i = 0; i < period - 1; i++) rsi.push(null);
+    rsi.push(avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss));
+    for (let i = period; i < changes.length; i++) {
+        const gain = changes[i] >= 0 ? changes[i] : 0;
+        const loss = changes[i] < 0 ? Math.abs(changes[i]) : 0;
+        avgGain = (avgGain * (period - 1) + gain) / period;
+        avgLoss = (avgLoss * (period - 1) + loss) / period;
+        rsi.push(avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss));
+    }
+    return rsi;
+}
+
+/* ─── CCI (Commodity Channel Index) ──────────────────────────────────── */
+
+export function calcCCI(highs: number[], lows: number[], closes: number[], period = 20): (number | null)[] {
+    const cci: (number | null)[] = [];
+    const tp = closes.map((c, i) => (highs[i] + lows[i] + c) / 3);
+    for (let i = 0; i < closes.length; i++) {
+        if (i < period - 1) { cci.push(null); continue; }
+        const slice = tp.slice(i - period + 1, i + 1);
+        const mean = slice.reduce((a, b) => a + b, 0) / period;
+        let md = 0; for (const t of slice) md += Math.abs(t - mean); md /= period;
+        cci.push(md === 0 ? 0 : (tp[i] - mean) / (0.015 * md));
+    }
+    return cci;
+}
+
+/* ─── ADX (Average Directional Index) ────────────────────────────────── */
+
+export function calcADX(highs: number[], lows: number[], closes: number[], period = 14) {
+    const len = closes.length;
+    const adx: (number | null)[] = Array(len).fill(null);
+    const pdi: (number | null)[] = Array(len).fill(null);
+    const ndi: (number | null)[] = Array(len).fill(null);
+    if (len < period + 1) return { adx, pdi, ndi };
+    const tr = [0], pdm = [0], ndm = [0];
+    for (let i = 1; i < len; i++) {
+        tr.push(Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i - 1]), Math.abs(lows[i] - closes[i - 1])));
+        const up = highs[i] - highs[i - 1], dn = lows[i - 1] - lows[i];
+        pdm.push(up > dn && up > 0 ? up : 0);
+        ndm.push(dn > up && dn > 0 ? dn : 0);
+    }
+    let sTR = 0, sPDM = 0, sNDM = 0;
+    for (let i = 1; i <= period; i++) { sTR += tr[i]; sPDM += pdm[i]; sNDM += ndm[i]; }
+    let dxSum = 0;
+    for (let i = period; i < len; i++) {
+        if (i > period) { sTR = sTR - sTR / period + tr[i]; sPDM = sPDM - sPDM / period + pdm[i]; sNDM = sNDM - sNDM / period + ndm[i]; }
+        const dp = sTR === 0 ? 0 : 100 * sPDM / sTR;
+        const dm = sTR === 0 ? 0 : 100 * sNDM / sTR;
+        pdi[i] = dp; ndi[i] = dm;
+        const dx = (dp + dm === 0) ? 0 : 100 * Math.abs(dp - dm) / (dp + dm);
+        if (i < 2 * period - 1) dxSum += dx;
+        else if (i === 2 * period - 1) { dxSum += dx; adx[i] = dxSum / period; }
+        else adx[i] = ((adx[i - 1]! * (period - 1)) + dx) / period;
+    }
+    return { adx, pdi, ndi };
+}
+
 /* ─── Frontend Volume Profile ─────────────────────────────────────────── */
 
 export function calcVolumeProfile(highs: number[], lows: number[], volumes: number[], numBins = 60, vaPct = 0.70) {
     const minP = Math.min(...lows), maxP = Math.max(...highs);
     if (minP === maxP) return { poc: minP, vah: minP, val: minP, bins: [] as number[], binSize: 0, minP, pocIdx: 0, vaLo: 0, vaHi: 0 };
+
+    // Fallback to TPO (Time Price Opportunity) if volume is zero (e.g., Forex)
+    const sumVol = volumes.reduce((s, v) => s + (v || 0), 0);
+    const effVols = sumVol === 0 ? volumes.map(() => 1) : volumes;
+
     const binSize = (maxP - minP) / numBins;
     const bins = new Array(numBins).fill(0);
     for (let k = 0; k < highs.length; k++) {
         const si = Math.max(0, Math.floor((lows[k] - minP) / binSize));
         const ei = Math.min(numBins - 1, Math.floor((highs[k] - minP) / binSize));
-        const perBin = si === ei ? volumes[k] : volumes[k] / (ei - si + 1);
+        const v = effVols[k] || 0;
+        const perBin = si === ei ? v : v / (ei - si + 1);
         for (let b = si; b <= ei; b++) bins[b] += perBin;
     }
     const pocIdx = bins.indexOf(Math.max(...bins));

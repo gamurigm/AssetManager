@@ -20,6 +20,9 @@ from ..application.use_cases import (
     SearchKnowledgeBaseUseCase, ReadBookSectionUseCase,
     CalculateEquityCurveUseCase
 )
+from ..services.portfolio_chart_service import PortfolioChartService
+from ..services.quant_models_service import QuantModelsService
+from ..services.ml_models_service import MLModelsService
 
 
 # --- Singletons (instantiated once) ---
@@ -64,3 +67,6 @@ get_historical = GetHistoricalUseCase(providers=_market_providers, repository=du
 search_knowledge_base_uc = SearchKnowledgeBaseUseCase(provider=kb_provider)
 read_book_section_uc = ReadBookSectionUseCase(provider=kb_provider)
 calculate_equity_curve_uc = CalculateEquityCurveUseCase(repository=duckdb_repo)
+portfolio_charts = PortfolioChartService(repo=duckdb_repo, get_quote_use_case=get_quote)
+quant_models = QuantModelsService(get_historical_uc=get_historical, yahoo_provider=yahoo_provider)
+ml_models = MLModelsService()

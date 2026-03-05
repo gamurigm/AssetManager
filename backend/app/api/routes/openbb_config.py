@@ -9,7 +9,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from pathlib import Path
-from ...core.container import get_quote, get_historical, fmp_provider, yahoo_provider, duckdb_repo, calculate_equity_curve_uc
+from ...core.container import get_quote, get_historical, fmp_provider, yahoo_provider, duckdb_repo, calculate_equity_curve_uc, portfolio_charts, quant_models, ml_models
 from ...services.risk_service import risk_service
 from ...services.standardizer import standardizer
 from ...services.openbb_rest_service import openbb_rest
@@ -97,10 +97,13 @@ async def openbb_cli(body: dict = Body(...)):
             "1. 'portfolio liquidate --all' (Sells EVERYTHING, no exceptions)\n"
             "2. 'portfolio liquidate --symbol AAPL' (Sells ONLY AAPL)\n"
             "3. 'portfolio liquidate --losers' (Sells ONLY losing positions in RED)\n"
-            "4. Basic OpenBB commands like 'equity price quote --symbol TSLA'\n\n"
+            "4. Basic OpenBB commands like 'equity price quote --symbol TSLA'\n"
+            "5. Portfolio charts: 'portfolio pie' (allocation), 'portfolio risk' (sector), 'portfolio performance' (real-time PnL), 'portfolio equity' (history curve), 'portfolio 3d' (quantitative 3D landscape), 'portfolio distribution' (Return Histogram).\n"
+            "6. Quant 3D Models: 'models options surface --symbol SPY' (Volatility Surface), 'models yield surface' (Yield Curve Evolution), 'models pca clusters --symbols AAPL,MSFT,NVDA' (PCA Clustering), 'models blackscholes --symbol AAPL' (Options Pricing & Greeks), 'models ratio --symbol1 NVDA --symbol2 INTC' (Relative Strength Pair Trading).\n"
+            "7. ML Models: 'ml hmm --symbol SPY' (HMM Regime Detection), 'ml montecarlo --symbol AAPL' (Monte Carlo GBM), 'ml clusters --symbols AAPL,MSFT,NVDA' (K-Means Clustering), 'ml bootstrap --symbol AAPL' (Block Bootstrap Resampling), 'ml intraday --symbol TSLA' (Real-Time Anomaly Detection).\n\n"
             "CRITICAL: If the user says 'liquidar todo', 'vende todo', 'limpiar portafolio', or 'salir de todo', "
             "YOU MUST output '<execute>portfolio liquidate --all</execute>'.\n"
-            "If they specify 'en rojo' or 'perdedoras', use '--losers'.\n"
+            "If they ask for charts, 3D models, volatility surfaces, yield curves, or PCA analysis, use the appropriate 'portfolio ...' or 'models ...' command inside <execute> tags.\n"
             "Example: 'vende tesla', output '<execute>portfolio liquidate --symbol TSLA</execute>'. "
             "If it's a general question, answer briefly, but prioritize the <execute> tag for actions."
         )
@@ -160,7 +163,26 @@ async def openbb_cli(body: dict = Body(...)):
             "━━━━━━━━━━━━━━━━━━━━━━━━━━ 💼 PORTFOLIO EXECUTION (DANGER)  ━━━━━━━━━━━━━━━━━━━━━━\n"
             "  portfolio liquidate --all              | Sells entirety of the portfolio at market price.\n"
             "  portfolio liquidate --symbol AAPL      | Liquidates a specific holding.\n"
-            "  portfolio liquidate --losers           | Sells only positions with negative PnL.\n\n"
+            "  portfolio liquidate --losers           | Sells only positions with negative PnL.\n"
+            "  portfolio pie                          | View current allocation pie chart (interactive).\n"
+            "  portfolio risk                         | View sector exposure risk (interactive).\n"
+            "  portfolio performance                  | View PnL performance per ticker (interactive).\n"
+            "  portfolio equity                       | View historical equity curve vs realized balance.\n"
+            "  portfolio 3d                           | View quantitative 3D risk vs return landscape.\n"
+            "  portfolio distribution                   | View statistical histogram of PnL returns.\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━ 🧮 QUANTITATIVE 3D MODELS (Math)       ━━━━━━━━━━━━━━━━━━━━━━\n"
+            "  models options surface                  | 3D Implied Volatility Surface (Strike/DTE/IV).\n"
+            "  models yield surface                    | 3D US Treasury Yield Curve Evolution.\n"
+            "  models pca clusters --symbols A,B,C...  | 3D PCA Factor Loadings Eigenspace.\n"
+            "  models blackscholes --symbol AAPL       | Black-Scholes Options Pricing & 3D Greeks.\n"
+            "  models ratio --symbol1 QQQ --symbol2 SPY| Relative Strength & Z-Score Pair Trading.\n\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━ 🧠 MACHINE LEARNING (AI-Powered)         ━━━━━━━━━━━━━━━━━━━━━━\n"
+            "  ml hmm --symbol SPY                    | HMM 3D Regime Detection (Bull/Bear/Neutral).\n"
+            "  ml montecarlo --symbol AAPL             | Monte Carlo GBM Price Simulation (Fan Chart).\n"
+            "  ml montecarlo --symbol TSLA --days 90   | Custom horizon simulation.\n"
+            "  ml clusters --symbols A,B,C...          | K-Means Unsupervised Asset Clustering (3D).\n"
+            "  ml bootstrap --symbol AAPL              | Block Bootstrap Resampling (multi-panel).\n"
+            "  ml intraday --symbol NVDA               | Real-Time 1m VWAP & Isolation Forest Anomalies.\n\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━ 📊 CORE MARKET DATA (Lightning Fast) ━━━━━━━━━━━━━━━━━━━━━━\n"
             "  quote          Real-time price quote        | quote --symbol AAPL\n"
             "  historical     Price history candles        | historical --symbol TSLA --limit 50\n"
@@ -228,15 +250,17 @@ async def openbb_cli(body: dict = Body(...)):
             "                 q liquida tesla\n"
             "                 q vende todas mis posiciones en rojo\n"
             "                 /qwen What command shows bond yields?\n\n"
-            "━━━━━━━━━━━━━━━━━━━━━━━━━━ 🕹️  TECLADO & SISTEMA                 ━━━━━━━━━━━━━━━━━━━━━━\n"
-            "  ↑ / ↓          Navegar historial de comandos\n"
-            "  Tab            Autocompletar comandos\n"
-            "  Ctrl+C         Cancelar ejecución  (o copiar selección)\n"
-            "  Ctrl+L         Limpiar pantalla\n"
-            "  Ctrl+U         Borrar línea actual\n"
-            "  Escape         Limpiar input\n"
-            "  help, h, ?     Mostrar esta ayuda.\n"
-            "  clear          Limpiar el buffer de pantalla.\n"
+            "  ★ QUICK ANALYTICS (Shortcuts)\n"
+            "    ratio AAPL MSFT --chart true          | Compare relative strength.\n"
+            "    bs AAPL                               | Black-Scholes Dashboard.\n"
+            "    hmm SPY                               | Market Regime Detection.\n"
+            "    mc TSLA --days 90                     | Monte Carlo Simulation.\n\n"
+            "  ★ QUICK KEYS\n"
+            "  ↑ / ↓          Navigate history\n"
+            "  Tab            Autocomplete\n"
+            "  Ctrl+L         Clear screen\n"
+            "  help, h, ?     Show this help\n"
+            "  clear          Clear screen buffer\n"
         )}
 
     # ─── Parse command + args ───────────────────────────────────────
@@ -274,10 +298,29 @@ async def openbb_cli(body: dict = Body(...)):
         "gdp": "economy.gdp.nominal",
         "treasury": "fixedincome.government.treasury_rates",
         "options": "derivatives.options.chains",
+        "ratio": "models.ratio",
+        "bs": "models.blackscholes",
+        "hmm": "ml.hmm",
+        "mc": "ml.montecarlo",
     }
-    # Only apply alias if it's a single-token shortcut
+    # Only apply alias if it's a single-token shortcut OR starts with an alias
     command = aliases.get(raw_cmd, raw_cmd)
-    kwargs = _parse_args(rest_tokens)
+    kwargs = {}
+    
+    # Handle aliases with positional arguments (e.g. "ratio AAPL MSFT")
+    if "." in raw_cmd:
+        base = raw_cmd.split(".")[0]
+        if base in aliases:
+            command = aliases[base]
+            # Put the rest of the tokens into placeholders if needed
+            extra_tokens = path_tokens[1:]
+            if base == "ratio" and len(extra_tokens) >= 2:
+                kwargs["symbol1"] = extra_tokens[0].upper()
+                kwargs["symbol2"] = extra_tokens[1].upper()
+            elif base in ("bs", "hmm", "mc") and len(extra_tokens) >= 1:
+                kwargs["symbol"] = extra_tokens[0].upper()
+
+    kwargs.update(_parse_args(rest_tokens))
 
     # ─── Smart Default Providers ────────────────────────────────────
     if "provider" not in kwargs:
@@ -356,6 +399,96 @@ async def openbb_cli(body: dict = Body(...)):
             )}
         else:
             return {"output": "Error: Database failed to persist the liquidation.", "type": "error"}
+
+    # ─── Portfolio Dynamic Charts ───────────────────────────────────
+    if command == "portfolio.pie":
+        html = await portfolio_charts.get_allocation_pie()
+        return {"type": "chart_window", "html": html}
+        
+    if command == "portfolio.risk":
+        html = await portfolio_charts.get_risk_analysis()
+        return {"type": "chart_window", "html": html}
+        
+    if command == "portfolio.performance":
+        html = await portfolio_charts.get_pnl_performance()
+        return {"type": "chart_window", "html": html}
+
+    if command == "portfolio.equity":
+        html = await portfolio_charts.get_equity_curve()
+        return {"type": "chart_window", "html": html}
+
+    if command == "portfolio.3d":
+        html = await portfolio_charts.get_3d_risk_return()
+        return {"type": "chart_window", "html": html}
+
+    if command == "portfolio.distribution":
+        html = await portfolio_charts.get_returns_distribution()
+        return {"type": "chart_window", "html": html}
+
+    # ─── Quantitative 3D Models ──────────────────────────────────────
+    if command == "models.options.surface":
+        symbol = kwargs.get("symbol", "SPY")
+        html = await quant_models.get_volatility_surface(symbol)
+        return {"type": "chart_window", "html": html}
+
+    if command == "models.yield.surface":
+        html = await quant_models.get_yield_surface()
+        return {"type": "chart_window", "html": html}
+
+    if command == "models.pca.clusters":
+        symbols = kwargs.get("symbols", kwargs.get("symbol", "AAPL,MSFT,NVDA,TSLA,META,AMZN,GOOGL,JPM,V,JNJ"))
+        html = await quant_models.get_pca_clusters(symbols)
+        return {"type": "chart_window", "html": html}
+
+    if command == "models.blackscholes":
+        symbol = kwargs.get("symbol", "SPY")
+        rf = float(kwargs.get("rf", 0.045))  # Default risk free rate 4.5%
+        html = await quant_models.get_black_scholes(symbol, risk_free_rate=rf)
+        return {"type": "chart_window", "html": html}
+
+    if command == "models.ratio":
+        # Supports --symbol1 AAPL --symbol2 MSFT or generic --symbol AAPL,MSFT
+        s1 = kwargs.get("symbol1")
+        s2 = kwargs.get("symbol2")
+        if not s1 or not s2:
+            syms = kwargs.get("symbol", "NVDA,INTC").split(',')
+            s1 = syms[0] if len(syms) > 0 else "NVDA"
+            s2 = syms[1] if len(syms) > 1 else "INTC"
+        html = await quant_models.get_relative_strength(s1, s2)
+        return {"type": "chart_window", "html": html}
+
+    # ─── Machine Learning Models ─────────────────────────────────────
+    if command == "ml.hmm":
+        symbol = kwargs.get("symbol", "SPY")
+        html = await ml_models.get_hmm_regimes(symbol)
+        return {"type": "chart_window", "html": html}
+
+    if command == "ml.montecarlo":
+        symbol = kwargs.get("symbol", "SPY")
+        days = int(kwargs.get("days", 60))
+        sims = int(kwargs.get("sims", 500))
+        html = await ml_models.get_monte_carlo(symbol, days=days, sims=sims)
+        return {"type": "chart_window", "html": html}
+
+    if command == "ml.clusters":
+        symbols = kwargs.get("symbols", kwargs.get("symbol", "AAPL,MSFT,NVDA,TSLA,META,AMZN,GOOGL,JPM,V,JNJ,XOM,PFE,KO,DIS,NFLX"))
+        n_clusters = int(kwargs.get("clusters", 4))
+        html = await ml_models.get_kmeans_clusters(symbols, n_clusters=n_clusters)
+        return {"type": "chart_window", "html": html}
+
+    if command == "ml.bootstrap":
+        symbol = kwargs.get("symbol", "SPY")
+        n_resamples = int(kwargs.get("samples", kwargs.get("resamples", 1000)))
+        block_size = int(kwargs.get("block", kwargs.get("block_size", 5)))
+        horizon = int(kwargs.get("horizon", kwargs.get("days", 60)))
+        confidence = float(kwargs.get("confidence", 95.0))
+        html = await ml_models.get_bootstrap(symbol, n_resamples=n_resamples, block_size=block_size, horizon=horizon, confidence=confidence)
+        return {"type": "chart_window", "html": html}
+
+    if command == "ml.intraday":
+        symbol = kwargs.get("symbol", "AAPL")
+        html = await ml_models.get_intraday_anomaly(symbol)
+        return {"type": "chart_window", "html": html}
 
     # ─── Command execution ───────────────────────────────────────────
     try:

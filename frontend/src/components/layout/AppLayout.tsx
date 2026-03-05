@@ -46,17 +46,21 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     }
 
     return (
-        <div className="flex min-h-screen bg-background text-foreground">
-            <div className="z-[100] fixed top-0 left-0 h-screen pointer-events-auto">
+        <div className="flex h-screen bg-background text-foreground overflow-hidden">
+            {/* Left Sidebar - Fixed width 68px */}
+            <div className="z-[100] h-full shrink-0 border-r border-border bg-card">
                 <Sidebar expanded={expanded} />
             </div>
-            <main
-                className="flex-1 ml-[68px] transition-all duration-300 w-full overflow-auto"
-                style={{ paddingBottom: terminalHeight > 0 ? `${terminalHeight}px` : undefined }}
-            >
-                {children}
-            </main>
-            <OpenBBTerminal />
+
+            {/* Right Container - Flex Column (Main + Terminal) */}
+            <div className="flex-1 flex flex-col min-w-0 h-full">
+                <main className="flex-1 overflow-auto min-h-0 relative">
+                    {children}
+                </main>
+                <div className="shrink-0">
+                    <OpenBBTerminal />
+                </div>
+            </div>
         </div>
     );
 }

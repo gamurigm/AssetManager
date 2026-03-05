@@ -64,7 +64,8 @@ export default function ChartWindow() {
         rawData, chartOpts, chartState.mas,
         chartState.showFib, chartState.fibLookback,
         chartState.showBB, chartState.bbPeriod, chartState.bbMult,
-        chartState.showPSAR, chartState.showSupertrend,
+        chartState.showPSAR, chartState.psarStep, chartState.psarMax,
+        chartState.showSupertrend, chartState.supertrendPeriod, chartState.supertrendMult,
         mainChartRef, mainChartApi, candleSeriesRef
     );
 
@@ -194,19 +195,62 @@ export default function ChartWindow() {
                 setAtrPeriod={chartState.setAtrPeriod}
                 showPSAR={chartState.showPSAR}
                 setShowPSAR={chartState.setShowPSAR}
+                psarStep={chartState.psarStep}
+                setPsarStep={chartState.setPsarStep}
+                psarMax={chartState.psarMax}
+                setPsarMax={chartState.setPsarMax}
                 showSupertrend={chartState.showSupertrend}
                 setShowSupertrend={chartState.setShowSupertrend}
+                supertrendPeriod={chartState.supertrendPeriod}
+                setSupertrendPeriod={chartState.setSupertrendPeriod}
+                supertrendMult={chartState.supertrendMult}
+                setSupertrendMult={chartState.setSupertrendMult}
                 showWilliams={chartState.showWilliams}
                 setShowWilliams={chartState.setShowWilliams}
+                williamsPeriod={chartState.williamsPeriod}
+                setWilliamsPeriod={chartState.setWilliamsPeriod}
                 showMFI={chartState.showMFI}
                 setShowMFI={chartState.setShowMFI}
+                mfiPeriod={chartState.mfiPeriod}
+                setMfiPeriod={chartState.setMfiPeriod}
                 showCMF={chartState.showCMF}
                 setShowCMF={chartState.setShowCMF}
+                cmfPeriod={chartState.cmfPeriod}
+                setCmfPeriod={chartState.setCmfPeriod}
+                showRSI={chartState.showRSI}
+                setShowRSI={chartState.setShowRSI}
+                rsiPeriod={chartState.rsiPeriod}
+                setRsiPeriod={chartState.setRsiPeriod}
+                showCCI={chartState.showCCI}
+                setShowCCI={chartState.setShowCCI}
+                cciPeriod={chartState.cciPeriod}
+                setCciPeriod={chartState.setCciPeriod}
+                showADX={chartState.showADX}
+                setShowADX={chartState.setShowADX}
+                adxPeriod={chartState.adxPeriod}
+                setAdxPeriod={chartState.setAdxPeriod}
             />
 
 
             {/* ─── Main Chart ─────────────────────────────────────────────── */}
             <div className={`w-full flex-1 relative ${measureActive ? 'cursor-crosshair' : ''}`} style={{ height: mainH }}>
+
+                {loading && rawData.length === 0 && (
+                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/50 backdrop-blur-sm">
+                        <div className="text-muted tracking-widest uppercase font-mono animate-pulse text-xs">Loading Market Data...</div>
+                    </div>
+                )}
+
+                {!loading && rawData.length === 0 && (
+                    <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-md">
+                        <div className="flex flex-col items-center">
+                            <span className="text-red-400 font-bold text-lg mb-2">No Market Data</span>
+                            <span className="text-muted text-xs">The symbol <span className="text-white font-mono">{symbol}</span> may be invalid, delisted, or missing data.</span>
+                            <span className="text-muted text-[10px] mt-2">Try using Yahoo Finance format (e.g., EURUSD=X instead of EURUSD)</span>
+                        </div>
+                    </div>
+                )}
+
                 <div ref={mainChartRef} className="absolute inset-0" />
                 {chartState.showVP && <canvas ref={vpCanvasRef} className="absolute inset-0 pointer-events-none z-10" />}
                 <canvas ref={measureCanvasRef} className="absolute inset-0 pointer-events-none z-20" />
@@ -217,7 +261,12 @@ export default function ChartWindow() {
                 showMACD={chartState.showMACD} setShowMACD={chartState.setShowMACD} macdFast={chartState.macdFast} setMacdFast={chartState.setMacdFast} macdSlow={chartState.macdSlow} setMacdSlow={chartState.setMacdSlow} macdSignal={chartState.macdSignal} setMacdSignal={chartState.setMacdSignal}
                 showStoch={chartState.showStoch} setShowStoch={chartState.setShowStoch} stochK={chartState.stochK} setStochK={chartState.setStochK} stochD={chartState.stochD} setStochD={chartState.setStochD} stochSmooth={chartState.stochSmooth} setStochSmooth={chartState.setStochSmooth}
                 showATR={chartState.showATR} setShowATR={chartState.setShowATR} atrPeriod={chartState.atrPeriod} setAtrPeriod={chartState.setAtrPeriod}
-                showWilliams={chartState.showWilliams} showMFI={chartState.showMFI} showCMF={chartState.showCMF}
+                showWilliams={chartState.showWilliams} williamsPeriod={chartState.williamsPeriod}
+                showMFI={chartState.showMFI} mfiPeriod={chartState.mfiPeriod}
+                showCMF={chartState.showCMF} cmfPeriod={chartState.cmfPeriod}
+                showRSI={chartState.showRSI} rsiPeriod={chartState.rsiPeriod}
+                showCCI={chartState.showCCI} cciPeriod={chartState.cciPeriod}
+                showADX={chartState.showADX} adxPeriod={chartState.adxPeriod}
             />
         </div>
     );

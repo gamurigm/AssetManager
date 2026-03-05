@@ -43,6 +43,9 @@ function syncToMain(mainChart: IChartApi, subChart: IChartApi) {
     };
 }
 
+// Global variable to hold subcharts across renders so they can be grouped for crosshair sync in the portfolio chart
+let symbolSubChartsRegistry: IChartApi[] = [];
+
 // Helper: safe line data (skip NaN)
 function safeLine(times: string[], values: (number | null)[]): any[] {
     return times.map((t, i) => {
@@ -200,7 +203,7 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
         let savedRange: any = null;
         if (mainChartApi.current) {
             savedRange = mainChartApi.current.timeScale().getVisibleLogicalRange();
-            setTimeout(() => { try { mainChartApi.current?.remove(); } catch(e){} }, 10);
+            setTimeout(() => { try { mainChartApi.current?.remove(); } catch (e) { } }, 10);
             mainChartApi.current = null;
         }
 
@@ -327,11 +330,18 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
         }
 
         // ResizeObserver for smooth resize
+        let isMounted = true;
         const ro = new ResizeObserver(() => {
-            if (el) chart.applyOptions({ width: el.clientWidth, height: el.clientHeight || 400 });
+            if (!isMounted || !el) return;
+            try { chart.applyOptions({ width: el.clientWidth, height: el.clientHeight || 400 }); } catch (e) { }
         });
         ro.observe(el);
-        return () => { ro.disconnect(); setTimeout(() => { try { chart.remove(); } catch(e){} }, 10); mainChartApi.current = null; };
+        return () => {
+            isMounted = false;
+            ro.disconnect();
+            try { chart.remove(); } catch (e) { }
+            mainChartApi.current = null;
+        };
     }, [candles, chartOpts, showEmas, showFib, showBollinger, showIchimoku, showVwap, showKeltner, showPsar, showSupertrend, ema1, ema2, ema3, holdings, transactions]);
 
     // ─── Sub-chart builder helper ─────────────────────────────────
@@ -344,12 +354,56 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
             builder(chart, times);
             chart.timeScale().fitContent();
 
-            let unsync: (() => void) | undefined;
-            if (mainChartApi.current) unsync = syncToMain(mainChartApi.current, chart);
+            // Register for crosshair sync
+            symbolSubChartsRegistry.push(chart);
 
-            const ro = new ResizeObserver(() => { if (el) chart.applyOptions({ width: el.clientWidth }); });
+            let isMounted = true;
+            let unsync: (() => void) | undefined;
+            // Retry syncing if main chart isn't ready immediately
+            let attempts = 0;
+            const trySync = () => {
+                if (!isMounted) return;
+                if (mainChartApi.current) {
+                    unsync = syncToMain(mainChartApi.current, chart);
+                } else if (attempts < 10) {
+                    attempts++;
+                    setTimeout(trySync, 50);
+                }
+            };
+            trySync();
+
+            // Crosshair sync logic
+            const syncId = Math.random().toString();
+            (chart as any)._syncId = syncId;
+            let isSyncing = false;
+
+            const onCrosshair = (param: any) => {
+                if (isSyncing || !param.time || param.point?.x < 0) return;
+                isSyncing = true;
+                const siblings = mainChartApi.current ? [mainChartApi.current, ...symbolSubChartsRegistry] : symbolSubChartsRegistry;
+                siblings.forEach(sibling => {
+                    if ((sibling as any)._syncId !== syncId) {
+                        try { sibling.setCrosshairPosition(0, param.time, sibling.timeScale() as any); } catch (e) { sibling.clearCrosshairPosition(); }
+                    }
+                });
+                isSyncing = false;
+            };
+            chart.subscribeCrosshairMove(onCrosshair);
+
+            const ro = new ResizeObserver(() => {
+                if (!isMounted || !el) return;
+                try { chart.applyOptions({ width: el.clientWidth }); } catch (e) { }
+            });
             ro.observe(el);
-            return () => { unsync?.(); ro.disconnect(); setTimeout(() => { try { chart.remove(); } catch(e){} }, 10); };
+
+            return () => {
+                isMounted = false;
+                symbolSubChartsRegistry = symbolSubChartsRegistry.filter(c => c !== chart);
+                chart.unsubscribeCrosshairMove(onCrosshair);
+                unsync?.();
+                ro.disconnect();
+                try { chart.remove(); } catch (e) { }
+            };
         }, [candles, chartOpts, ...deps]);
     };
 

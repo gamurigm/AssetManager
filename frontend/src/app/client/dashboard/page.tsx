@@ -85,7 +85,8 @@ export default function ClientDashboard() {
 
                 {/* Main Content + Sidebar */}
                 <div className="flex-1 flex overflow-hidden relative">
-                    <div className={`flex-1 overflow-hidden p-4 lg:px-6 lg:py-4 flex flex-col gap-4 transition-[padding] ease-[cubic-bezier(0.16,1,0.3,1)] duration-500 ${watchlistPinned ? 'pr-[350px]' : 'pr-[52px]'}`}>
+                    {/* Main Panels Area - Padding right to leave space for collapsed sidebar (40px) */}
+                    <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 lg:pl-6 lg:py-4 lg:pr-[40px] flex flex-col gap-4 transition-all duration-500">
                         {activeTab === "portfolio" ? (
                             <PortfolioView
                                 activeHoldings={activeHoldings}

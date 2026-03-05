@@ -55,11 +55,27 @@
 }
 
 * {
-  scrollbar-width: thin;
-  scrollbar-color: var(--scrollbar) transparent;
+  scrollbar-width: none;
+  /* Firefox */
+  -ms-overflow-style: none;
+  /* IE/Edge */
   transition-property: background-color, border-color, color, fill, stroke, box-shadow;
   transition-duration: 0.3s;
   transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+*::-webkit-scrollbar {
+  display: none;
+  /* Chrome/Safari/Brave */
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 body {

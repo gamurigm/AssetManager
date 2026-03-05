@@ -25,7 +25,11 @@ export function useMainChart(
     bbPeriod: number,
     bbMult: number,
     showPSAR: boolean,
+    psarStep: number,
+    psarMax: number,
     showSupertrend: boolean,
+    supertrendPeriod: number,
+    supertrendMult: number,
     mainChartRef: React.MutableRefObject<HTMLDivElement | null>,
     mainChartApi: React.MutableRefObject<IChartApi | null>,
     candleSeriesRef: React.MutableRefObject<ISeriesApi<"Candlestick"> | null>,
@@ -37,7 +41,7 @@ export function useMainChart(
         if (mainChartApi.current) {
             savedRange = mainChartApi.current.timeScale().getVisibleLogicalRange();
             const oldChart = mainChartApi.current;
-            setTimeout(() => { try { oldChart.remove(); } catch { } }, 10);
+            try { oldChart.remove(); } catch (e) { }
             mainChartApi.current = null;
         }
 
@@ -109,14 +113,14 @@ export function useMainChart(
 
         // Parabolic SAR
         if (showPSAR && rawData.length > 5) {
-            const sar = calcParabolicSAR(highs, lows);
+            const sar = calcParabolicSAR(highs, lows, psarStep, psarMax);
             chart.addSeries(LineSeries, { color: '#ec4899', lineWidth: 1, lineStyle: 3, pointMarkersVisible: true, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
                 .setData(times.map((t, i) => (sar[i] === null || isNaN(sar[i]!)) ? { time: t } : { time: t, value: sar[i]! }) as any);
         }
 
         // Supertrend
         if (showSupertrend && rawData.length > 20) {
-            const { supertrend, dir } = calcSupertrend(highs, lows, closes);
+            const { supertrend, dir } = calcSupertrend(highs, lows, closes, supertrendPeriod, supertrendMult);
             const upData = times.map((t, i) => (dir[i] === 1 && supertrend[i] !== null && !isNaN(supertrend[i]!)) ? { time: t, value: supertrend[i]! } : { time: t });
             const downData = times.map((t, i) => (dir[i] === -1 && supertrend[i] !== null && !isNaN(supertrend[i]!)) ? { time: t, value: supertrend[i]! } : { time: t });
             chart.addSeries(LineSeries, { color: '#2dd4bf', lineWidth: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
@@ -144,9 +148,9 @@ export function useMainChart(
             ro.disconnect();
             if (mainChartApi.current) {
                 const oldChart = mainChartApi.current;
-                setTimeout(() => { try { oldChart.remove(); } catch { } }, 10);
+                try { oldChart.remove(); } catch (e) { }
                 mainChartApi.current = null;
             }
         };
-    }, [rawData, chartOpts, mas, showFib, fibLookback, showBB, bbPeriod, bbMult, showPSAR, showSupertrend]);
+    }, [rawData, chartOpts, mas, showFib, fibLookback, showBB, bbPeriod, bbMult, showPSAR, psarStep, psarMax, showSupertrend, supertrendPeriod, supertrendMult]);
 }

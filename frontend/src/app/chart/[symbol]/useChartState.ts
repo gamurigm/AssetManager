@@ -37,18 +37,37 @@ export function useChartState() {
 
     // Parabolic SAR
     const [showPSAR, setShowPSAR] = useState(false);
+    const [psarStep, setPsarStep] = useState(0.02);
+    const [psarMax, setPsarMax] = useState(0.2);
 
     // Supertrend
     const [showSupertrend, setShowSupertrend] = useState(false);
+    const [supertrendPeriod, setSupertrendPeriod] = useState(10);
+    const [supertrendMult, setSupertrendMult] = useState(3);
 
     // Williams %R
     const [showWilliams, setShowWilliams] = useState(false);
+    const [williamsPeriod, setWilliamsPeriod] = useState(14);
 
     // MFI
     const [showMFI, setShowMFI] = useState(false);
+    const [mfiPeriod, setMfiPeriod] = useState(14);
 
     // CMF
     const [showCMF, setShowCMF] = useState(false);
+    const [cmfPeriod, setCmfPeriod] = useState(20);
+
+    // RSI
+    const [showRSI, setShowRSI] = useState(false);
+    const [rsiPeriod, setRsiPeriod] = useState(14);
+
+    // CCI
+    const [showCCI, setShowCCI] = useState(false);
+    const [cciPeriod, setCciPeriod] = useState(20);
+
+    // ADX
+    const [showADX, setShowADX] = useState(false);
+    const [adxPeriod, setAdxPeriod] = useState(14);
 
     return {
         mas, setMas,
@@ -70,9 +89,22 @@ export function useChartState() {
         showATR, setShowATR,
         atrPeriod, setAtrPeriod,
         showPSAR, setShowPSAR,
+        psarStep, setPsarStep,
+        psarMax, setPsarMax,
         showSupertrend, setShowSupertrend,
+        supertrendPeriod, setSupertrendPeriod,
+        supertrendMult, setSupertrendMult,
         showWilliams, setShowWilliams,
+        williamsPeriod, setWilliamsPeriod,
         showMFI, setShowMFI,
-        showCMF, setShowCMF
+        mfiPeriod, setMfiPeriod,
+        showCMF, setShowCMF,
+        cmfPeriod, setCmfPeriod,
+        showRSI, setShowRSI,
+        rsiPeriod, setRsiPeriod,
+        showCCI, setShowCCI,
+        cciPeriod, setCciPeriod,
+        showADX, setShowADX,
+        adxPeriod, setAdxPeriod,
     };
 }
