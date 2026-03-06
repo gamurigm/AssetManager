@@ -136,7 +136,7 @@
 /* ── Column Headers ─────────────── */
 .wlColHeaders {
     display: grid;
-    grid-template-columns: 1.2fr 85px 70px 60px;
+    grid-template-columns: 1.8fr 85px 70px 60px;
     padding: 6px 12px;
     border-bottom: 1px solid var(--border);
     font-size: 11px;
@@ -190,7 +190,7 @@
 /* ── Row ────────────────────────── */
 .wlRow {
     display: grid;
-    grid-template-columns: 1.2fr 85px 70px 60px;
+    grid-template-columns: 1.8fr 85px 70px 60px;
     align-items: center;
     padding: 8px 12px;
     cursor: pointer;
