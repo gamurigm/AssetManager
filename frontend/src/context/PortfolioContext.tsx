@@ -32,11 +32,14 @@ interface PortfolioContextType {
     openTrade: (symbol: string, name: string, shares: number, price: number, factor: number, sector: string, type: string, sl?: number, tp?: number) => Promise<void>;
     updatePositionLevels: (symbol: string, sl?: number, tp?: number) => void;
     refreshPortfolio: () => Promise<void>;
+    activePortfolio: string;
+    setActivePortfolio: (portfolio: string) => void;
 }
 
 const PortfolioContext = createContext<PortfolioContextType | undefined>(undefined);
 
 export function PortfolioProvider({ children }: { children: ReactNode }) {
+    const [activePortfolio, setActivePortfolio] = useState<string>("main");
     const [holdings, setHoldings] = useState<Holding[]>([]);
     const [isInitialized, setIsInitialized] = useState(false);
     const [realizedPnL, setRealizedPnL] = useState(0);
@@ -45,8 +48,8 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
     const refreshPortfolio = useCallback(async () => {
         try {
             const [hRes, pnlRes] = await Promise.all([
-                fetch('http://127.0.0.1:8282/api/v1/portfolios/'),
-                fetch('http://127.0.0.1:8282/api/v1/trading/history')
+                fetch(`http://127.0.0.1:8282/api/v1/portfolios/?portfolio_id=${activePortfolio}`),
+                fetch(`http://127.0.0.1:8282/api/v1/trading/history?portfolio_id=${activePortfolio}`)
             ]);
 
             const hData = await hRes.json();
@@ -79,7 +82,7 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
         } finally {
             setIsInitialized(true);
         }
-    }, []);
+    }, [activePortfolio]);
 
     // Initial Load
     React.useEffect(() => {
@@ -91,7 +94,7 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
         if (!isInitialized) return;
         const syncTimeout = setTimeout(async () => {
             try {
-                await fetch('http://127.0.0.1:8282/api/v1/portfolios/save', {
+                await fetch(`http://127.0.0.1:8282/api/v1/portfolios/save?portfolio_id=${activePortfolio}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(holdings)
@@ -101,7 +104,7 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
             }
         }, 1000);
         return () => clearTimeout(syncTimeout);
-    }, [holdings, isInitialized]);
+    }, [holdings, isInitialized, activePortfolio]);
 
     const totalUnrealizedPnL = holdings.reduce((sum: number, h: Holding) => sum + h.change, 0);
     const totalPnL = realizedPnL + totalUnrealizedPnL;
@@ -118,7 +121,7 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
             const equity = accountEquityRef.current;
             if (!equity || equity <= 0) return;
             try {
-                await fetch('http://127.0.0.1:8282/api/v1/portfolios/snapshot-equity', {
+                await fetch(`http://127.0.0.1:8282/api/v1/portfolios/snapshot-equity?portfolio_id=${activePortfolio}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ total_value: equity }),
@@ -129,7 +132,7 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
         const initial = setTimeout(recordSnapshot, 10000);
         const interval = setInterval(recordSnapshot, 60000);
         return () => { clearTimeout(initial); clearInterval(interval); };
-    }, [isInitialized]);
+    }, [isInitialized, activePortfolio]);
 
     const updateHoldings = useCallback((newHoldings: Holding[]) => {
         setHoldings(newHoldings);
@@ -168,7 +171,8 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
                     shares: shares,
                     price: price,
                     realized_pnl: 0,
-                    date: today
+                    date: today,
+                    portfolio_id: activePortfolio
                 })
             });
             setHoldings(prev => [...prev, newHolding]);
@@ -191,7 +195,8 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
                         shares: holdingToClose.shares,
                         price: holdingToClose.price,
                         realized_pnl: realized,
-                        date: new Date().toISOString().split("T")[0]
+                        date: new Date().toISOString().split("T")[0],
+                        portfolio_id: activePortfolio
                     })
                 });
                 setRealizedPnL(prev => prev + realized);
@@ -215,7 +220,9 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
             closePosition,
             openTrade,
             updatePositionLevels,
-            refreshPortfolio
+            refreshPortfolio,
+            activePortfolio,
+            setActivePortfolio
         }}>
             {children}
         </PortfolioContext.Provider>

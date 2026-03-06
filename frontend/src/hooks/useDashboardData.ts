@@ -13,7 +13,7 @@ const API_BASE = "http://127.0.0.1:8282";
  * Encapsulates history polling, risk metrics, price sync, and derived data.
  */
 export function useDashboardData() {
-    const { holdings, setHoldings, totalValue, accountEquity, totalPnL, pnlPercent, closePosition } = usePortfolio();
+    const { holdings, setHoldings, totalValue, accountEquity, totalPnL, pnlPercent, closePosition, activePortfolio } = usePortfolio();
 
     const [loading, setLoading] = useState(true);
     const [transactions, setTransactions] = useState<TransactionRecord[]>([]);
@@ -23,7 +23,7 @@ export function useDashboardData() {
     useEffect(() => {
         const fetchHistory = async () => {
             try {
-                const res = await fetch(`${API_BASE}/api/v1/trading/history`);
+                const res = await fetch(`${API_BASE}/api/v1/trading/history?portfolio_id=${activePortfolio}`);
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
                 setTransactions(data);
@@ -34,13 +34,13 @@ export function useDashboardData() {
         fetchHistory();
         const interval = setInterval(fetchHistory, 10000);
         return () => clearInterval(interval);
-    }, []);
+    }, [activePortfolio]);
 
     // ─── Risk Metrics (polled) ───────────────────────────────────
     useEffect(() => {
         const fetchRisk = async () => {
             try {
-                const res = await fetch(`${API_BASE}/api/v1/portfolios/risk`);
+                const res = await fetch(`${API_BASE}/api/v1/portfolios/risk?portfolio_id=${activePortfolio}`);
                 if (!res.ok) return;
                 const data = await res.json();
                 if (!data.error) setRiskData(data);
@@ -49,7 +49,7 @@ export function useDashboardData() {
         fetchRisk();
         const interval = setInterval(fetchRisk, 120000);
         return () => clearInterval(interval);
-    }, []);
+    }, [activePortfolio]);
 
     // ─── Logger ──────────────────────────────────────────────────
     useEffect(() => {

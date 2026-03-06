@@ -9,8 +9,12 @@ import {
     Briefcase,
     Sun,
     Moon,
+    Wallet,
+    Bitcoin
 } from "lucide-react";
 import { useState, useEffect } from "react";
+import { usePortfolio } from "@/context/PortfolioContext";
+
 
 const unifiedNav = [
     { label: "Overview", href: "/manager/dashboard", icon: LayoutDashboard },
@@ -22,6 +26,7 @@ const unifiedNav = [
 export default function Sidebar({ expanded }: { expanded: boolean }) {
     const pathname = usePathname();
     const [isDarkMode, setIsDarkMode] = useState(true);
+    const { activePortfolio, setActivePortfolio } = usePortfolio();
 
     useEffect(() => {
         const savedTheme = localStorage.getItem("mmam_theme");
@@ -101,6 +106,43 @@ export default function Sidebar({ expanded }: { expanded: boolean }) {
                     );
                 })}
             </nav>
+
+            {/* Portfolio Selector */}
+            <div className={`px-3 py-4 border-t ${isDarkMode ? "border-white/5" : "border-slate-100"}`}>
+                <p className={`text-[10px] uppercase tracking-[0.2em] px-2 pb-2 font-bold whitespace-nowrap ${isCollapsed ? "opacity-0 invisible" : "opacity-100 visible delay-100"} transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${isDarkMode ? "text-white/30" : "text-slate-400"}`}>
+                    Active Portfolio
+                </p>
+
+                <div className={`flex flex-col gap-1 ${isCollapsed ? "items-center" : ""}`}>
+                    <button
+                        onClick={() => setActivePortfolio("main")}
+                        className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all relative ${activePortfolio === "main"
+                                ? (isDarkMode ? "bg-accent/20 text-accent shadow-[inset_0_0_10px_rgba(59,130,246,0.1)] border border-accent/20" : "bg-accent/15 text-accent border border-accent/30 shadow-sm")
+                                : (isDarkMode ? "text-white/40 hover:text-white hover:bg-white/5 border border-transparent" : "text-slate-500 hover:text-slate-900 hover:bg-slate-50 border border-transparent")
+                            }`}
+                        title="Main Fund"
+                    >
+                        <Wallet size={16} className={`shrink-0 ${activePortfolio === "main" ? "text-accent" : ""}`} />
+                        <span className={`truncate tracking-tight whitespace-nowrap ${isCollapsed ? "opacity-0 invisible w-0 hidden" : "opacity-100 visible w-auto"} transition-all duration-300`}>
+                            Main Fund
+                        </span>
+                    </button>
+
+                    <button
+                        onClick={() => setActivePortfolio("crypto")}
+                        className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all relative ${activePortfolio === "crypto"
+                                ? (isDarkMode ? "bg-orange-500/20 text-orange-400 shadow-[inset_0_0_10px_rgba(249,115,22,0.1)] border border-orange-500/20" : "bg-orange-100 text-orange-600 border border-orange-300 shadow-sm")
+                                : (isDarkMode ? "text-white/40 hover:text-white hover:bg-white/5 border border-transparent" : "text-slate-500 hover:text-slate-900 hover:bg-slate-50 border border-transparent")
+                            }`}
+                        title="Crypto Assets"
+                    >
+                        <Bitcoin size={16} className={`shrink-0 ${activePortfolio === "crypto" ? (isDarkMode ? "text-orange-400" : "text-orange-500") : ""}`} />
+                        <span className={`truncate tracking-tight whitespace-nowrap ${isCollapsed ? "opacity-0 invisible w-0 hidden" : "opacity-100 visible w-auto"} transition-all duration-300`}>
+                            Crypto Assets
+                        </span>
+                    </button>
+                </div>
+            </div>
 
             {/* Bottom */}
             <div className={`px-3 pb-4 space-y-1 border-t pt-3 ${isDarkMode ? "border-white/5" : "border-slate-100"}`}>

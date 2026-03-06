@@ -4,8 +4,10 @@ import AppLayout from "@/components/layout/AppLayout";
 import { TrendingUp, Activity, DollarSign, RefreshCw } from "lucide-react";
 import React, { useEffect, useState, useRef } from "react";
 import { createChart, ColorType, BaselineSeries } from "lightweight-charts";
+import { usePortfolio } from "@/context/PortfolioContext";
 
 export default function ManagerDashboard() {
+    const { activePortfolio } = usePortfolio();
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const chartApi = useRef<any>(null);
     const [history, setHistory] = useState<{ time: number; realized: number; total: number }[]>([]);
@@ -15,13 +17,16 @@ export default function ManagerDashboard() {
 
     const fetchHistory = async () => {
         try {
-            const res = await fetch('http://127.0.0.1:8282/api/v1/portfolios/history');
+            const res = await fetch(`http://127.0.0.1:8282/api/v1/portfolios/history?portfolio_id=${activePortfolio}`);
             const data = await res.json();
             setHistory(data);
             if (data.length > 0) {
                 const latest = data[data.length - 1];
                 setCurrentBalance(latest.realized);
                 setCurrentEquity(latest.total);
+            } else {
+                setCurrentBalance(0);
+                setCurrentEquity(0);
             }
         } catch (err) {
             console.error("Failed to fetch equity history:", err);
@@ -34,7 +39,7 @@ export default function ManagerDashboard() {
         fetchHistory();
         const interval = setInterval(fetchHistory, 30000); // 30s refresh
         return () => clearInterval(interval);
-    }, []);
+    }, [activePortfolio]);
 
     useEffect(() => {
         if (!chartContainerRef.current || history.length === 0) return;
@@ -111,7 +116,7 @@ export default function ManagerDashboard() {
                     <div className="space-y-1">
                         <div className="flex items-center gap-2 text-accent">
                             <Activity size={16} />
-                            <span className="text-[10px] font-black uppercase tracking-[0.3em]">Equity Oracle v2</span>
+                            <span className="text-[10px] font-black uppercase tracking-[0.3em]">{activePortfolio} Fund</span>
                         </div>
                         <h1 className="text-4xl font-black tracking-tight dark:text-white text-zinc-900">Dual Equity Analysis</h1>
                         <p className="text-muted text-sm font-medium">Tracking Realized Capital vs Market-Adjusted Exposure.</p>
