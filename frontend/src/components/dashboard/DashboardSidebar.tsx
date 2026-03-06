@@ -85,7 +85,7 @@ export default function DashboardSidebar({
         <div
             onMouseEnter={handleMouseEnter}
             onMouseLeave={handleMouseLeave}
-            className={`absolute right-0 top-0 bottom-0 transition-[width] ease-[cubic-bezier(0.2,0.8,0.2,1)] duration-700 z-[100] flex flex-row-reverse shrink-0 border-l border-border/10 ${expanded ? 'w-[320px] shadow-[-20px_0_40px_rgba(0,0,0,0.15)] dark:shadow-[-20px_0_40px_rgba(0,0,0,0.4)]' : 'w-[40px] shadow-none'}`}
+            className={`absolute right-0 top-0 bottom-0 transition-[width] ease-[cubic-bezier(0.2,0.8,0.2,1)] duration-700 z-[100] flex flex-row-reverse shrink-0 border-l border-border/10 ${expanded ? 'w-[440px] shadow-[-20px_0_40px_rgba(0,0,0,0.15)] dark:shadow-[-20px_0_40px_rgba(0,0,0,0.4)]' : 'w-[40px] shadow-none'}`}
         >
             {/* 1. Vertical Toggle Rail - Pinned to the far right always */}
             <div className="w-[40px] bg-card/90 dark:bg-[#09090b]/80 backdrop-blur-3xl flex flex-col items-center py-4 gap-4 h-full border-l border-border/20 dark:border-white/5 relative z-20">
