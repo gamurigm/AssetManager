@@ -6,7 +6,7 @@ import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
 
 import {
-    Send, Sparkles, Bot, Activity, FileText, Copy, Check, ShieldCheck, Loader2, Trash2, Terminal
+    Send, Sparkles, Bot, Activity, FileText, Copy, Check, ShieldCheck, Loader2, Trash2, Terminal, UserCircle
 } from "lucide-react";
 
 interface Session {
@@ -70,6 +70,13 @@ export default function ChatPane({
         }
 
         if (commands.length === 0) return;
+
+        // AUTH CHECK: Only Macro Analyst and Strategy Analyst auto-execute
+        const authorizedAgents = ["Macro Analyst", "Strategy Analyst"];
+        if (!authorizedAgents.includes(selectedAgent)) {
+            console.log(`[Terminal] Auto-execution skipped for ${selectedAgent}. Authorization restricted to Macro/Strategy specialists.`);
+            return;
+        }
 
         // Auto-execute each command with a small delay between them
         commands.forEach((cmd, i) => {
@@ -158,8 +165,10 @@ export default function ChatPane({
                 if (done) break;
                 acc += decoder.decode(value, { stream: true });
                 onUpdateMessages(session.id, prev => {
+                    const idx = prev.length - 1;
+                    if (idx < 0 || prev[idx].role !== "assistant") return prev;
                     const u = [...prev];
-                    u[assistantIdx] = { role: "assistant", content: acc };
+                    u[idx] = { ...u[idx], content: acc };
                     return u;
                 });
             }
@@ -267,8 +276,10 @@ export default function ChatPane({
                 }
 
                 onUpdateMessages(session.id, prev => {
+                    const idx = prev.length - 1;
+                    if (idx < 0 || prev[idx].role !== "assistant") return prev;
                     const u = [...prev];
-                    u[newLength] = { role: "assistant", content: accC, reasoning: accR };
+                    u[idx] = { ...u[idx], content: accC, reasoning: accR };
                     return u;
                 });
             }
@@ -360,62 +371,63 @@ export default function ChatPane({
                     </div>
                 )}
 
-                {messages.map((m, i) => (
-                    <div key={i} className={`flex relative z-10 ${m.role === "user" ? "justify-end" : "justify-start"} message-animate`}>
-                        <div className={`${isMaximized ? "max-w-[85%]" : "max-w-[92%]"} space-y-2`}>
+                {messages?.map((m, i) => (
+                    m && (
+                        <div key={i} className={`flex relative z-10 ${m.role === "user" ? "justify-end" : "justify-start"} message-animate`}>
+                            <div className={`${isMaximized ? "max-w-[85%]" : "max-w-[92%]"} space-y-2`}>
 
-                            {m.role === "user" ? (
-                                <div className={`py-4 px-6 rounded-2xl rounded-tr-sm text-[16.5px] leading-relaxed font-bold shadow-md
+                                {m.role === "user" ? (
+                                    <div className={`py-4 px-6 rounded-2xl rounded-tr-sm text-[16.5px] leading-relaxed shadow-md
                                     ${isDarkMode
-                                        ? "bg-gradient-to-br from-fuchsia-600 to-violet-700 text-white shadow-fuchsia-600/20"
-                                        : "bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-indigo-600/20"}`}>
-                                    {m.content}
-                                </div>
-                            ) : (
-                                <div className={`relative rounded-2xl rounded-tl-sm overflow-hidden transition-all duration-300 shadow-lg
-                                    ${isDarkMode
-                                        ? "bg-gradient-to-b from-white/[0.06] to-white/[0.02] border border-white/[0.08]"
-                                        : "bg-white border border-zinc-200/80 shadow-xl"}`}>
-
-                                    <div className={`flex items-center gap-2 px-4 py-2 border-b
-                                        ${isDarkMode ? "border-white/5 bg-white/[0.02]" : "border-zinc-100 bg-zinc-50/50"}`}>
-                                        <div className={`h-5 w-5 rounded-md flex items-center justify-center
-                                            ${isDarkMode ? "bg-fuchsia-500/20 text-fuchsia-400" : "bg-indigo-100 text-indigo-600"}`}>
-                                            <Bot size={11} />
-                                        </div>
-                                        <div className="flex flex-col">
-                                            <span className={`text-[9px] font-black uppercase tracking-[0.15em] leading-tight
-                                                ${isDarkMode ? "text-zinc-500" : "text-zinc-400"}`}>
-                                                {selectedAgent !== "auto" ? selectedAgent : "Alpha Intelligence"}
-                                            </span>
-                                            {selectedModel !== "general" && (
-                                                <span className={`text-[8px] font-bold uppercase
-                                                    ${isDarkMode ? "text-fuchsia-500/50" : "text-indigo-400"}`}>
-                                                    {selectedModel} model
-                                                </span>
-                                            )}
-                                        </div>
-                                        <div className="flex-1" />
-                                        <button onClick={() => copyToClipboard(m.content, i)} className="opacity-0 group-hover:opacity-100 transition-opacity"
-                                            title="Copy">
-                                            {copiedIdx === i
-                                                ? <Check size={11} className="text-emerald-400" />
-                                                : <Copy size={11} className={isDarkMode ? "text-zinc-600 hover:text-zinc-400" : "text-zinc-400 hover:text-zinc-600"} />}
-                                        </button>
+                                            ? "bg-gradient-to-br from-fuchsia-600 to-violet-700 text-white shadow-fuchsia-600/20"
+                                            : "bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-indigo-600/20"}`}>
+                                        {m.content}
                                     </div>
+                                ) : (
+                                    <div className={`relative rounded-2xl rounded-tl-sm overflow-hidden transition-all duration-300 shadow-lg
+                                    ${isDarkMode
+                                            ? "bg-gradient-to-b from-white/[0.06] to-white/[0.02] border border-white/[0.08]"
+                                            : "bg-white border border-zinc-200/80 shadow-xl"}`}>
 
-                                    {m.reasoning && (
-                                        <div className={`mx-3 mt-3 p-4 rounded-xl text-[14px] leading-relaxed font-mono
-                                            ${isDarkMode ? "bg-amber-500/5 border border-amber-500/10 text-amber-300/80" : "bg-amber-50 border border-amber-100 text-amber-800"}`}>
-                                            <div className="flex items-center gap-1.5 mb-1.5 opacity-60">
-                                                <Activity size={10} className="animate-pulse" />
-                                                <span className="font-black uppercase tracking-[0.2em] text-[10px]">Neural Synthesis</span>
+                                        <div className={`flex items-center gap-2 px-4 py-2 border-b
+                                        ${isDarkMode ? "border-white/5 bg-white/[0.02]" : "border-zinc-100 bg-zinc-50/50"}`}>
+                                            <div className={`h-5 w-5 rounded-md flex items-center justify-center
+                                            ${isDarkMode ? "bg-fuchsia-500/20 text-fuchsia-400" : "bg-indigo-100 text-indigo-600"}`}>
+                                                <Bot size={11} />
                                             </div>
-                                            <div className="whitespace-pre-wrap">{m.reasoning}</div>
+                                            <div className="flex flex-col">
+                                                <span className={`text-[9px] font-black uppercase tracking-[0.15em] leading-tight
+                                                ${isDarkMode ? "text-zinc-500" : "text-zinc-400"}`}>
+                                                    {selectedAgent !== "auto" ? selectedAgent : "Alpha Intelligence"}
+                                                </span>
+                                                {selectedModel !== "general" && (
+                                                    <span className={`text-[8px] font-bold uppercase
+                                                    ${isDarkMode ? "text-fuchsia-500/50" : "text-indigo-400"}`}>
+                                                        {selectedModel} model
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="flex-1" />
+                                            <button onClick={() => copyToClipboard(m.content, i)} className="opacity-0 group-hover:opacity-100 transition-opacity"
+                                                title="Copy">
+                                                {copiedIdx === i
+                                                    ? <Check size={11} className="text-emerald-400" />
+                                                    : <Copy size={11} className={isDarkMode ? "text-zinc-600 hover:text-zinc-400" : "text-zinc-400 hover:text-zinc-600"} />}
+                                            </button>
                                         </div>
-                                    )}
 
-                                    <div className={`px-6 py-5 text-[18px] leading-[1.8] group
+                                        {m.reasoning && (
+                                            <div className={`mx-3 mt-3 p-4 rounded-xl text-[14px] leading-relaxed font-mono
+                                            ${isDarkMode ? "bg-amber-500/5 border border-amber-500/10 text-amber-300/80" : "bg-amber-50 border border-amber-100 text-amber-800"}`}>
+                                                <div className="flex items-center gap-1.5 mb-1.5 opacity-60">
+                                                    <Activity size={10} className="animate-pulse" />
+                                                    <span className="font-black uppercase tracking-[0.2em] text-[10px]">Neural Synthesis</span>
+                                                </div>
+                                                <div className="whitespace-pre-wrap">{m.reasoning}</div>
+                                            </div>
+                                        )}
+
+                                        <div className={`px-6 py-5 text-[18px] leading-[1.8] group
                                         prose prose-base max-w-full break-normal
                                         ${isDarkMode ? "prose-invert" : "prose-zinc"}
                                         prose-p:mb-5 last:prose-p:mb-0
@@ -426,57 +438,94 @@ export default function ChatPane({
                                         prose-th:px-3 prose-th:py-2 prose-td:px-3 prose-td:py-1.5
                                         prose-a:text-accent prose-a:no-underline prose-a:font-bold hover:prose-a:underline
                                         ${isDarkMode
-                                            ? "prose-strong:text-fuchsia-300 prose-code:text-emerald-400 prose-code:bg-emerald-400/5 prose-th:bg-white/5 prose-th:text-zinc-400"
-                                            : "prose-strong:text-indigo-700 prose-code:text-emerald-700 prose-code:bg-emerald-50 prose-th:bg-zinc-50 prose-th:text-zinc-500"}`}>
+                                                ? "prose-strong:text-fuchsia-300 prose-code:text-emerald-400 prose-code:bg-emerald-400/5 prose-th:bg-white/5 prose-th:text-zinc-400"
+                                                : "prose-strong:text-indigo-700 prose-code:text-emerald-700 prose-code:bg-emerald-50 prose-th:bg-zinc-50 prose-th:text-zinc-500"}`}>
 
-                                        {m.content === "" && isLoading ? (
-                                            <div className="flex items-center gap-3 h-8 px-1">
-                                                <Loader2 size={14} className="animate-spin text-accent" />
-                                                <span className={`text-[10px] font-black uppercase tracking-widest animate-pulse ${isDarkMode ? "text-zinc-600" : "text-zinc-400"}`}>
-                                                    {correctionAttempts > 0 ? `Auto-Correcting Syntax (Attempt ${correctionAttempts}/3)…` : 'Processing…'}
-                                                </span>
-                                            </div>
-                                        ) : (
-                                            <ReactMarkdown
-                                                remarkPlugins={[remarkGfm, remarkMath]}
-                                                rehypePlugins={[[rehypeKatex, { strict: false, throwOnError: false }]]}
-                                                components={{
-                                                    a: ({ node, ...props }) => <a target="_blank" rel="noopener noreferrer" {...props} />,
-                                                    code: ({ node, className, children, ...props }) => {
-                                                        const lang = className?.replace('language-', '') || '';
-                                                        const codeStr = String(children).replace(/\n$/, '');
-                                                        if (lang === 'openbb') {
-                                                            return (
-                                                                <div className={`my-3 rounded-xl overflow-hidden border ${isDarkMode ? 'border-cyan-500/30 bg-cyan-950/20' : 'border-teal-300 bg-teal-50'}`}>
-                                                                    <div className={`flex items-center justify-between px-3 py-1.5 ${isDarkMode ? 'bg-cyan-950/40 border-b border-cyan-500/20' : 'bg-teal-100 border-b border-teal-200'}`}>
-                                                                        <span className={`text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'text-cyan-400' : 'text-teal-700'}`}>OpenBB Command</span>
-                                                                        <button
-                                                                            onClick={() => dispatchToTerminal(codeStr)}
-                                                                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95 ${isDarkMode ? 'bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 border border-cyan-500/30' : 'bg-teal-600 text-white hover:bg-teal-700'}`}
-                                                                        >
-                                                                            <Terminal size={10} />
-                                                                            Run in Terminal
-                                                                        </button>
+                                            {m.content === "" && isLoading ? (
+                                                <div className="flex items-center gap-3 h-8 px-1">
+                                                    <Loader2 size={14} className="animate-spin text-accent" />
+                                                    <span className={`text-[10px] font-black uppercase tracking-widest animate-pulse ${isDarkMode ? "text-zinc-600" : "text-zinc-400"}`}>
+                                                        {correctionAttempts > 0 ? `Auto-Correcting Syntax (Attempt ${correctionAttempts}/3)…` : 'Processing…'}
+                                                    </span>
+                                                </div>
+                                            ) : (
+                                                <ReactMarkdown
+                                                    remarkPlugins={[remarkGfm, remarkMath]}
+                                                    rehypePlugins={[[rehypeKatex, { strict: false, throwOnError: false }]]}
+                                                    components={{
+                                                        a: ({ node, ...props }) => <a target="_blank" rel="noopener noreferrer" {...props} />,
+                                                        code: ({ node, className, children, ...props }) => {
+                                                            const lang = className?.replace('language-', '') || '';
+                                                            const codeStr = String(children).replace(/\n$/, '');
+                                                            if (lang === 'openbb') {
+                                                                return (
+                                                                    <div className={`my-3 rounded-xl overflow-hidden border ${isDarkMode ? 'border-cyan-500/30 bg-cyan-950/20' : 'border-teal-300 bg-teal-50'}`}>
+                                                                        <div className={`flex items-center justify-between px-3 py-1.5 ${isDarkMode ? 'bg-cyan-950/40 border-b border-cyan-500/20' : 'bg-teal-100 border-b border-teal-200'}`}>
+                                                                            <span className={`text-[9px] font-black uppercase tracking-widest ${isDarkMode ? 'text-cyan-400' : 'text-teal-700'}`}>OpenBB Command</span>
+                                                                            <button
+                                                                                onClick={() => dispatchToTerminal(codeStr)}
+                                                                                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all active:scale-95 ${isDarkMode ? 'bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 border border-cyan-500/30' : 'bg-teal-600 text-white hover:bg-teal-700'}`}
+                                                                            >
+                                                                                <Terminal size={10} />
+                                                                                Run in Terminal
+                                                                            </button>
+                                                                        </div>
+                                                                        <pre className={`px-4 py-3 text-[13px] font-mono font-bold overflow-x-auto ${isDarkMode ? 'text-cyan-300' : 'text-teal-800'}`}>
+                                                                            <code>{codeStr}</code>
+                                                                        </pre>
                                                                     </div>
-                                                                    <pre className={`px-4 py-3 text-[13px] font-mono font-bold overflow-x-auto ${isDarkMode ? 'text-cyan-300' : 'text-teal-800'}`}>
-                                                                        <code>{codeStr}</code>
-                                                                    </pre>
-                                                                </div>
-                                                            );
+                                                                );
+                                                            }
+                                                            // Default code block rendering
+                                                            return <code className={className} {...props}>{children}</code>;
                                                         }
-                                                        // Default code block rendering
-                                                        return <code className={className} {...props}>{children}</code>;
-                                                    }
-                                                }}
-                                            >
-                                                {preprocessMarkdown(m.content)}
-                                            </ReactMarkdown>
+                                                    }}
+                                                >
+                                                    {preprocessMarkdown(m.content.replace(/\[SWITCH_SUGGESTION:.*?\]/g, ""))}
+                                                </ReactMarkdown>
+                                            )}
+                                        </div>
+
+                                        {/* Agent Switch Suggestion UI */}
+                                        {m.role === 'assistant' && m.content.includes("[SWITCH_SUGGESTION:") && (
+                                            <div className={`mx-6 mb-5 p-4 rounded-xl border animate-in fade-in slide-in-from-bottom-2 duration-500
+                                                ${isDarkMode
+                                                    ? "bg-fuchsia-500/10 border-fuchsia-500/20"
+                                                    : "bg-indigo-50 border-indigo-100"}`}>
+                                                <div className="flex items-start gap-3">
+                                                    <div className={`mt-1 p-2 rounded-lg 
+                                                        ${isDarkMode ? "bg-fuchsia-500/20 text-fuchsia-400" : "bg-indigo-100 text-indigo-600"}`}>
+                                                        <UserCircle size={16} />
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <p className={`text-[13px] font-bold mb-3 ${isDarkMode ? "text-fuchsia-200" : "text-indigo-900"}`}>
+                                                            Specialist Recommendation
+                                                        </p>
+                                                        <div className="flex gap-2">
+                                                            <button
+                                                                onClick={() => {
+                                                                    const match = m.content.match(/\[SWITCH_SUGGESTION:\s*(.*?)\]/);
+                                                                    if (match && match[1]) {
+                                                                        onUpdateAgent(session.id, match[1].trim());
+                                                                    }
+                                                                }}
+                                                                className={`px-4 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-widest transition-all active:scale-95
+                                                                    ${isDarkMode
+                                                                        ? "bg-fuchsia-600 text-white hover:bg-fuchsia-500 shadow-lg shadow-fuchsia-600/20"
+                                                                        : "bg-indigo-600 text-white hover:bg-indigo-700 shadow-lg shadow-indigo-600/20"}`}
+                                                            >
+                                                                Switch to {m.content.match(/\[SWITCH_SUGGESTION:\s*(.*?)\]/)?.[1] || "Specialist"}
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         )}
                                     </div>
-                                </div>
-                            )}
+                                )}
+                            </div>
                         </div>
-                    </div>
+                    )
                 ))}
             </div>
 
@@ -485,11 +534,20 @@ export default function ChatPane({
 
                 {messages.length > 0 && !isLoading && (
                     <div className="flex gap-2 mb-3 overflow-x-auto scrollbar-none pb-1">
-                        <button onClick={handleGenerateReport}
-                            className={`shrink-0 px-3 py-1 rounded-full text-[9px] font-bold flex items-center gap-1 border transition-all
-                                ${isDarkMode ? "border-accent/20 text-accent/70 hover:bg-accent/10 hover:text-accent" : "border-indigo-200 text-indigo-500 hover:bg-indigo-50"}`}>
-                            <FileText size={9} /> Report PDF
-                        </button>
+                        {(selectedAgent === "auto" || selectedAgent === "Risk Manager") && (
+                            <button onClick={handleGenerateReport}
+                                className={`shrink-0 px-3 py-1 rounded-full text-[9px] font-bold flex items-center gap-1 border transition-all
+                                    ${isDarkMode ? "border-accent/20 text-accent/70 hover:bg-accent/10 hover:text-accent" : "border-indigo-200 text-indigo-500 hover:bg-indigo-50"}`}>
+                                <FileText size={9} /> Risk Audit PDF
+                            </button>
+                        )}
+                        {(selectedAgent === "auto" || selectedAgent === "Fundamental Analyst") && (
+                            <button onClick={handleGenerateReport}
+                                className={`shrink-0 px-3 py-1 rounded-full text-[9px] font-bold flex items-center gap-1 border transition-all
+                                    ${isDarkMode ? "border-emerald-500/20 text-emerald-400/70 hover:bg-emerald-500/10 hover:text-emerald-400" : "border-emerald-200 text-emerald-600 hover:bg-emerald-50"}`}>
+                                <Bot size={9} /> Valuat. Report PDF
+                            </button>
+                        )}
                     </div>
                 )}
 

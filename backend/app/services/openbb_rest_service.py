@@ -73,9 +73,21 @@ class OpenBBRestService:
         if want_chart:
             params["chart"] = "true"
 
+        # Determine if this should be a POST (econometrics and quantitative endpoints usually are)
+        is_post = "econometrics" in command_path or "quantitative" in command_path
+        
         try:
             client = self._get_client()
-            resp = await client.get(endpoint, params=params)
+            if is_post:
+                # POST endpoints usually expect params as JSON body or query params depending on OpenBB version
+                # In most OpenBB REST implementations, they are query params for the GET-like wrappers,
+                # but let's try POST with json for quantitative
+                resp = await client.post(endpoint, json=params)
+                # If POST fails with 405, fall back to GET (sometimes they are just GETs)
+                if resp.status_code == 405:
+                     resp = await client.get(endpoint, params=params)
+            else:
+                resp = await client.get(endpoint, params=params)
 
             if resp.status_code == 404:
                 return {"error": f"Endpoint not found: {endpoint}. Check 'help' for available commands.", "type": "error"}
@@ -95,6 +107,7 @@ class OpenBBRestService:
             }
         except httpx.HTTPStatusError as exc:
             body = exc.response.text
+            verb = "POST" if is_post else "GET"
             try:
                 import json
                 error_data = json.loads(body)
@@ -113,7 +126,7 @@ class OpenBBRestService:
                     body = "\n".join(friendly_errors)
             except Exception:
                 body = body[:500]
-            return {"error": f"HTTP {exc.response.status_code}: {body}", "type": "error"}
+            return {"error": f"HTTP {exc.response.status_code} ({verb}): {body}", "type": "error"}
         except Exception as e:
             return {"error": f"OpenBB API Error: {str(e)}", "type": "error"}
 

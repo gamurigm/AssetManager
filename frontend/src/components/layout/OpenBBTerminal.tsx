@@ -208,22 +208,22 @@ export default function OpenBBTerminal() {
                         setTermDragging(true);
                         termDragRef.current = { startX: e.clientX, startY: e.clientY, startPosX: termIconPos.x, startPosY: termIconPos.y, moved: false };
                     }}
-                    className={`h-14 w-14 flex items-center justify-center transition-all duration-500 group overflow-hidden relative shadow-2xl
-                        ${isDark ? 'bg-zinc-950 border-2 border-cyan-500/50 rounded-[22px] ring-4 ring-cyan-500/10 shadow-[0_0_30px_-5px_#22d3ee80]' : 'bg-gradient-to-br from-teal-500 via-cyan-600 to-teal-700 rounded-[22px] shadow-[0_15px_35px_-5px_rgba(20,184,166,0.5)] border border-white/20'}
-                        ${termDragging ? 'cursor-grabbing scale-110' : 'cursor-grab'}`}
+                    className={`h-16 w-16 flex items-center justify-center transition-all duration-500 group overflow-hidden relative shadow-2xl backdrop-blur-xl
+                        ${isDark ? 'bg-zinc-950/40 border-[1.5px] border-cyan-500/30 rounded-[24px] shadow-[0_0_40px_-10px_rgba(34,211,238,0.4)] hover:border-cyan-400' : 'bg-white/40 border-[1.5px] border-teal-500/30 rounded-[24px] shadow-[0_20px_40px_-10px_rgba(20,184,166,0.3)] hover:border-teal-500'}
+                        ${termDragging ? 'cursor-grabbing scale-105 rotate-12' : 'cursor-grab hover:scale-110 hover:-rotate-6 active:scale-95'}`}
                 >
-                    <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
-                    {!isDark && <div className="absolute inset-0 rounded-full bg-teal-400/20 animate-ping [animation-duration:3s]" />}
-                    <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity ${isDark ? 'bg-cyan-600/10' : 'bg-white/10'}`} />
-                    <TerminalIcon size={22} className="text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)] relative z-10" />
+                    <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+                    {!isDark && <div className="absolute inset-0 rounded-full bg-teal-400/10 animate-ping [animation-duration:3s]" />}
+                    <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 ${isDark ? 'bg-cyan-500/10' : 'bg-teal-500/10'}`} />
+                    <TerminalIcon size={24} className={`${isDark ? 'text-cyan-400' : 'text-teal-600'} drop-shadow-[0_0_8px_rgba(34,211,238,0.5)] relative z-10 transition-transform group-hover:scale-110`} />
                 </button>
             </div>
         );
     }
 
     const containerBase = isFullscreen
-        ? `fixed inset-0 z-[200] ${t.bg} ${t.panelBlur} flex flex-col p-6 transition-all duration-500`
-        : `relative w-full z-[150] flex flex-col transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] ${t.bg} ${t.panelBlur} border-t ${t.border}`;
+        ? `fixed inset-0 z-[200] ${t.bg} ${t.panelBlur} flex flex-col transition-all duration-700`
+        : `relative w-full z-[150] flex flex-col transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] ${t.bg} ${t.panelBlur} border-t ${t.border}`;
 
     return (
         <div className={containerBase} style={!isFullscreen ? { height: `${panelHeight}px` } : {}}>
@@ -243,18 +243,18 @@ export default function OpenBBTerminal() {
                 </div>
             )}
 
-            <div className={`flex flex-col h-full w-full font-mono ${isFullscreen ? `border ${t.border} rounded-xl overflow-hidden` : ''}`} data-terminal-panel>
+            <div className={`flex flex-col h-full w-full font-mono ${isFullscreen ? `border ${t.border} m-6 rounded-2xl overflow-hidden shadow-2xl` : 'rounded-t-[32px]'}`} data-terminal-panel>
                 <div className={`flex items-center justify-between ${t.bgTab} shrink-0 border-b ${t.borderTab} select-none`}>
                     <div className="flex items-center">
                         {sessions.map((s, i) => (
-                            <div key={s.id} onClick={() => setActiveId(s.id)} className={`group flex items-center gap-3 px-6 py-3 text-[12px] tracking-wider cursor-pointer transition-all border-r ${t.borderTab} relative ${activeId === s.id ? `${t.textCmd} ${t.bgTabActive} font-bold` : `${t.textDim} ${isDark ? 'hover:bg-zinc-800' : 'hover:bg-slate-200'}`}`}>
+                            <div key={s.id} onClick={() => setActiveId(s.id)} className={`group flex items-center gap-3 px-8 py-3.5 text-[11px] font-bold tracking-[0.2em] uppercase cursor-pointer transition-all border-r ${t.borderTab} relative ${activeId === s.id ? `${t.textBright} ${t.bgTabActive}` : `${t.textDim} hover:bg-white/5`}`}>
                                 {activeId === s.id && <div className={`absolute bottom-0 left-0 w-full h-[2px] ${t.tabIndicator} ${t.accentGlow}`} />}
                                 <span>{i + 1}:openbb</span>
                                 {s.isExecuting && s.id !== activeId && <Loader2 size={10} className={`animate-spin ${t.warn}`} />}
-                                {sessions.length > 1 && <button onClick={(e) => closeSession(e, s.id)} className={`opacity-0 group-hover:opacity-100 p-0.5 ${t.textError} rounded`}><X size={10} /></button>}
+                                {sessions.length > 1 && <button onClick={(e) => closeSession(e, s.id)} className={`ml-2 opacity-0 group-hover:opacity-100 p-0.5 ${t.textError} hover:bg-rose-500/10 rounded-full transition-all`}><X size={10} /></button>}
                             </div>
                         ))}
-                        <button onClick={newSession} className={`px-5 py-2.5 ${t.textDim} transition-colors border-r ${t.borderTab} ${isDark ? 'hover:text-cyan-400 hover:bg-zinc-800/50' : 'hover:text-teal-600 hover:bg-slate-200/50'}`}><Plus size={14} /></button>
+                        <button onClick={newSession} className={`px-6 py-2.5 ${t.textDim} transition-all border-r ${t.borderTab} hover:text-white hover:bg-white/5`}><Plus size={14} /></button>
                     </div>
                     <div className={`flex items-center gap-5 px-5 ${t.textDim}`}>
                         <div className="hidden sm:flex items-center gap-1.5">
@@ -280,8 +280,8 @@ export default function OpenBBTerminal() {
                             {activeSession.isExecuting && <div className={`flex items-center gap-3 ${t.warn} font-bold tracking-[0.15em] text-[10px] uppercase py-3`}><span className={`w-2 h-2 ${t.warnDot} rounded-full animate-pulse`} />-- executing --</div>}
                             <div ref={endRef} />
                         </div>
-                        <div className={`h-11 border-t-2 ${isDark ? 'border-cyan-500/40' : 'border-teal-500/30'} shrink-0 flex items-center px-5 gap-3 ${isDark ? 'bg-black/80' : 'bg-slate-200/80'} backdrop-blur-md`}>
-                            <span className={`shrink-0 select-none font-bold text-[16px] ${isFocused ? t.textCmd : t.textDim}`}>❯</span>
+                        <div className={`h-14 border-t ${t.border} shrink-0 flex items-center px-6 gap-4 bg-black/20 backdrop-blur-xl group/input`}>
+                            <span className={`shrink-0 select-none font-bold text-[18px] transition-transform duration-300 ${isFocused ? `${t.textCmd} scale-110` : t.textDim}`}>❯</span>
                             <form onSubmit={handleCommand} className="flex-1 flex items-center h-full min-w-0">
                                 <input ref={inputRef} type="text" value={activeSession.input} onChange={e => updateActiveSession({ input: e.target.value, historyIndex: -1 })} onKeyDown={handleKeyDown} onFocus={() => setIsFocused(true)} onBlur={() => setIsFocused(false)} className={`w-full bg-transparent border-none outline-none ${t.textInput} focus:ring-0 py-0 px-0 tracking-wider text-[15px] font-semibold antialiased`} spellCheck={false} autoComplete="off" placeholder={activeSession.isExecuting && activeSession.pendingCmd ? `queued: ${activeSession.pendingCmd}` : activeSession.isExecuting ? 'executing…' : ''} />
                             </form>

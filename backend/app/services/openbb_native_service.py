@@ -24,6 +24,8 @@ except Exception as e:
     sys.exit(1)
 
 def _format_dict(d, indent=0):
+    if not isinstance(d, dict):
+        return str(d)
     lines = []
     prefix = "  " * indent
     for k, v in d.items():
@@ -31,6 +33,8 @@ def _format_dict(d, indent=0):
             lines.append(f"{prefix}{k}: {v:,.4f}")
         elif isinstance(v, int):
             lines.append(f"{prefix}{k}: {v:,}")
+        elif isinstance(v, dict):
+            lines.append(f"{prefix}{k}:\n{_format_dict(v, indent+1)}")
         else:
             lines.append(f"{prefix}{k}: {v}")
     return "\n".join(lines)
@@ -40,8 +44,9 @@ def handle(request):
         path_parts = request["path_parts"]
         kwargs = request.get("kwargs", {})
 
-        # ── Technical indicators: auto-fetch OHLCV data first ──────────
+        # ── Technical & Quantitative indicators: auto-fetch OHLCV data first ──────────
         is_technical = path_parts[0] == "technical" if path_parts else False
+        is_quantitative = path_parts[0] == "quantitative" if path_parts else False
         is_relative_rotation = is_technical and len(path_parts) > 1 and path_parts[1] == "relative_rotation"
 
         if is_relative_rotation:
@@ -91,9 +96,10 @@ def handle(request):
             if missing:
                  return {"error": f"Required data missing for symbols: {', '.join(missing)}. Please check tickers (e.g. use ^DJI instead of DJI).", "hint": "YFinance tickers usually require ^ for indices."}
 
-        elif is_technical:
+        elif is_technical or is_quantitative:
             symbol = kwargs.pop("symbol", "SPY")
-            _default_start = (datetime.today() - timedelta(days=365)).strftime("%Y-%m-%d")  # 1 year
+            # Increase default lookback to 2 years to satisfy 252-day windows for sharpe/risk metrics
+            _default_start = (datetime.today() - timedelta(days=730)).strftime("%Y-%m-%d")
             start_date = kwargs.pop("start_date", _default_start)
             kwargs.pop("end_date", None)
             kwargs.pop("provider", None)
@@ -103,6 +109,10 @@ def handle(request):
             except Exception as e:
                 return {"error": f"Failed to fetch data for {symbol}: {str(e)}", "traceback": traceback.format_exc()}
             kwargs["data"] = df
+            
+            # Default target to 'close' for quantitative stats if not provided
+            if is_quantitative and "target" not in kwargs:
+                kwargs["target"] = "close"
 
         obj = obb
         for i, attr in enumerate(path_parts):
@@ -133,7 +143,9 @@ def handle(request):
         
         return {"error": f"{err_type}: {err_msg}", "traceback": traceback.format_exc()}
 
-    if chart_requested:
+    try:
+        chart_requested = kwargs.get("chart", False)
+        if chart_requested:
             if hasattr(res, "chart") and res.chart is not None:
                 if hasattr(res.chart, "fig") and res.chart.fig is not None:
                     html = res.chart.fig.to_html(include_plotlyjs="cdn", full_html=True, config={"scrollZoom": True, "displayModeBar": True})
@@ -143,20 +155,27 @@ def handle(request):
             else:
                 return {"error": "No chart generated for this command."}
 
+        # Try to_dataframe first, but wrap in try-except for scalar metrics
         if hasattr(res, "to_dataframe"):
-            df = res.to_dataframe()
-            if df.empty:
-                return {"output": "Query returned no data."}
-            text = df.head(25).to_string(index=False)
-            if len(df) > 25:
-                text += f"\n... Showing 25 of {len(df)} rows"
-            return {"output": text}
-        elif hasattr(res, "results"):
+            try:
+                df = res.to_dataframe()
+                if not df.empty:
+                    text = df.head(25).to_string(index=False)
+                    if len(df) > 25:
+                        text += f"\n... Showing 25 of {len(df)} rows"
+                    return {"output": text}
+                else:
+                    return {"output": "Query returned no data."}
+            except:
+                # Some scalar results fail to_dataframe(), fall through to results
+                pass
+
+        if hasattr(res, "results"):
             results = res.results
             if isinstance(results, list):
                 if len(results) == 0:
                     return {"output": "Query returned no results."}
-                elif hasattr(results[0], "__dict__"):
+                elif len(results) > 0 and hasattr(results[0], "__dict__"):
                     lines = [str(r.__dict__ if hasattr(r, "__dict__") else r) for r in results[:20]]
                     text = "\n".join(lines)
                     if len(results) > 20:
@@ -169,7 +188,7 @@ def handle(request):
         else:
             return {"output": str(res)}
     except Exception as e:
-        return {"error": f"{type(e).__name__}: {str(e)}", "traceback": traceback.format_exc()}
+        return {"error": f"Format Error ({type(e).__name__}): {str(e)}", "traceback": traceback.format_exc()}
 
 # Main loop: read JSON lines from stdin, write JSON lines to stdout
 for line in sys.stdin:

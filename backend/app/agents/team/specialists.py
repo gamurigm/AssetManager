@@ -26,6 +26,24 @@ KIMI_K25 = "moonshotai/kimi-k2.5"
 DEEPSEEK_V3 = "deepseek-ai/deepseek-v3.2"
 NEMOTRON_253B = "nvidia/llama-3.1-nemotron-ultra-253b-v1"
 
+# --- Shared Delegation Tool ---
+async def delegate_subtask(ctx: RunContext[TeamContext], specialist_name: str, instruction: str) -> str:
+    """
+    Delegate a specific sub-task to another specialist in the Alpha Core team.
+    Use this when you need data or analysis outside your immediate expertise.
+    Available Specialists: 'Fundamental Analyst', 'Quantitative Analyst', 'Risk Manager', 'Macro Analyst', 'Strategy Analyst'
+    """
+    # specialists_map is defined at the bottom but available in global scope at runtime
+    agent = specialists_map.get(specialist_name)
+    if not agent:
+        return f"Error: Specialist '{specialist_name}' not found. Available: {list(specialists_map.keys())}"
+    
+    # Track delegation in shared context
+    ctx.deps.add_message("system", f"[DELEGATION] {specialist_name} requested for: {instruction[:100]}...", "System")
+    
+    result = await agent.run(instruction, ctx.deps)
+    return f"RESULT FROM {specialist_name}: {result}"
+
 # --- Tools for Fundamental Analyst ---
 async def get_market_news(ctx: RunContext[TeamContext], limit: int = 5) -> str:
     """Get latest market news headlines regarding a specific topic or general market."""
@@ -214,7 +232,8 @@ async def execute_openbb_terminal_command(ctx: RunContext[TeamContext], command_
     
     result = await openbb_native.execute(command_path, kwargs)
     if "error" in result:
-        raw_err = result.get('error') or "Unknown OpenBB Engine Error"
+        err_val = str(result.get('error', '')).strip()
+        raw_err = err_val if err_val else "Unknown OpenBB Engine Error (Empty error string)"
         err_msg = f"Error: {raw_err}"
         if "hint" in result:
             err_msg += f"\nHint: {result['hint']}"
@@ -253,6 +272,85 @@ async def get_technical_indicator(ctx: RunContext[TeamContext], symbol: str, ind
         return f"Error retrieving {indicator} for {symbol}."
         
     return f"{indicator} for {symbol}: {data.get('value')} (Source: {data.get('source')})"
+
+async def calculate_markov_transition_matrix(ctx: RunContext[TeamContext], symbol: str, days: int = 500) -> str:
+    """
+    Calculate the observable Markov Chain transition matrix for a specific asset.
+    Discretizes daily returns into 'Up', 'Down', and 'Flat' states.
+    Returns the transition matrix and probabilities for the next state based on the current close.
+    """
+    from ...services.market_data import market_data_service
+    import pandas as pd
+    import numpy as np
+
+    data = await market_data_service.get_historical(symbol, limit=days)
+    if not data or "error" in data:
+        return f"Error retrieving historical data for {symbol}."
+    
+    hist = data.get("historical", [])
+    if not hist:
+        return f"No historical data available for {symbol}."
+
+    # Parse objects into list of dicts
+    records = []
+    for d in hist:
+        if hasattr(d, '__dict__'): records.append(d.__dict__)
+        else: records.append(d)
+    
+    df = pd.DataFrame(records)
+    if 'date' not in df.columns or 'close' not in df.columns:
+        return "Invalid data format returned for Markov analysis."
+        
+    df['date'] = pd.to_datetime(df['date'])
+    df = df.sort_values('date')
+    df['returns'] = df['close'].pct_change()
+    df = df.dropna()
+
+    # Discretize: 0: Down (< -0.5%), 1: Flat ([-0.5%, 0.5%]), 2: Up (> 0.5%)
+    def get_state(r):
+        if r < -0.005: return 0
+        if r > 0.005: return 2
+        return 1
+
+    df['state'] = df['returns'].apply(get_state)
+    df['next_state'] = df['state'].shift(-1)
+    df_clean = df.dropna()
+
+    if df_clean.empty:
+        return "Insufficient data transitions to build Markov model."
+
+    # Transition Matrix
+    matrix = pd.crosstab(df_clean['state'], df_clean['next_state'], normalize='index')
+    
+    labels = {0: 'Down', 1: 'Flat', 2: 'Up'}
+    # Ensure all states are present for square matrix
+    for s in [0, 1, 2]:
+        if s not in matrix.index: matrix.loc[s] = 0.0
+        if s not in matrix.columns: matrix[s] = 0.0
+        
+    matrix = matrix.sort_index(axis=0).sort_index(axis=1)
+    matrix.index = [labels[i] for i in matrix.index]
+    matrix.columns = [labels[i] for i in matrix.columns]
+
+    current_state_val = df['state'].iloc[-1]
+    current_state_label = labels[current_state_val]
+    next_probs = matrix.loc[current_state_label]
+
+    res = f"### 📊 MARKOV CHAIN TRANSITION MATRIX: {symbol.upper()}\n"
+    res += f"**Dataset:** Last {len(df)} trading sessions\n"
+    res += f"**State Definition:** Up (>0.5%), Down (<-0.5%), Flat (between)\n\n"
+    res += "#### Probability Matrix (From Row → To Column):\n"
+    res += matrix.to_markdown() + "\n\n"
+    res += f"#### 🎯 CURRENT STATE: **{current_state_label}**\n"
+    res += f"Probability distribution for the NEXT session:\n"
+    for label, prob in next_probs.items():
+        res += f"- **{label}**: {prob*100:.2f}%\n"
+        
+    top_prob = next_probs.idxmax()
+    top_val = next_probs.max()
+    res += f"\n**Statistical Edge:** Given the current state is {current_state_label}, the most probable outcome is **{top_prob}** ({top_val*100:.1f}% confidence)."
+    
+    return res
 
 # --- Tools for Macro Analyst ---
 async def get_macro_indicators(ctx: RunContext[TeamContext]) -> str:
@@ -374,7 +472,7 @@ fundamental_analyst = TeamAgent(
     model_name=NEMOTRON_253B,
     tools=[get_market_news, get_company_profile, get_balance_sheet, search_knowledge_base, read_textbook_section,
            general_web_search, discover_openbb_endpoints, get_openbb_endpoint_details, query_openbb_api, query_openbb_api_post,
-           execute_openbb_terminal_command]
+           execute_openbb_terminal_command, calculate_markov_transition_matrix, delegate_subtask]
 )
 
 quant_analyst = TeamAgent(
@@ -382,7 +480,7 @@ quant_analyst = TeamAgent(
     role=_load_prompt("quant_analyst.md") + OPENBB_API_REFERENCE,
     model_name=NEMOTRON_253B,
     tools=[get_price, get_technical_indicator, discover_openbb_endpoints, get_openbb_endpoint_details,
-           query_openbb_api, query_openbb_api_post, execute_openbb_terminal_command]
+           query_openbb_api, query_openbb_api_post, execute_openbb_terminal_command, calculate_markov_transition_matrix, delegate_subtask]
 )
 
 risk_manager = TeamAgent(
@@ -390,7 +488,7 @@ risk_manager = TeamAgent(
     role=_load_prompt("risk_manager.md") + OPENBB_API_REFERENCE,
     model_name=MISTRAL_LARGE,
     tools=[calculate_risk_metrics, generate_detailed_alpha_report, general_web_search,
-           discover_openbb_endpoints, get_openbb_endpoint_details, query_openbb_api, execute_openbb_terminal_command]
+           discover_openbb_endpoints, get_openbb_endpoint_details, query_openbb_api, execute_openbb_terminal_command, delegate_subtask]
 )
 
 macro_analyst = TeamAgent(
@@ -398,14 +496,14 @@ macro_analyst = TeamAgent(
     role=_load_prompt("macro_analyst.md") + OPENBB_API_REFERENCE,
     model_name=NEMOTRON_253B,
     tools=[get_macro_indicators, general_web_search, discover_openbb_endpoints, get_openbb_endpoint_details,
-           query_openbb_api, query_openbb_api_post, execute_openbb_terminal_command]
+           query_openbb_api, query_openbb_api_post, execute_openbb_terminal_command, delegate_subtask]
 )
 
 trader = TeamAgent(
     name="Trader",
     role=_load_prompt("trader.md") + OPENBB_API_REFERENCE,
     model_name=MISTRAL_LARGE,
-    tools=[place_order, discover_openbb_endpoints, query_openbb_api, execute_openbb_terminal_command]
+    tools=[place_order, discover_openbb_endpoints, query_openbb_api, execute_openbb_terminal_command, delegate_subtask]
 )
 
 # --- Tools for Strategy Analyst ---
@@ -526,7 +624,7 @@ strategy_analyst = TeamAgent(
     model_name=NEMOTRON_253B,
     tools=[run_strategy_signal, create_or_edit_strategy_engine, search_knowledge_base, read_textbook_section,
            general_web_search, discover_openbb_endpoints, get_openbb_endpoint_details, query_openbb_api,
-           query_openbb_api_post, execute_openbb_terminal_command],
+           query_openbb_api_post, execute_openbb_terminal_command, calculate_markov_transition_matrix, delegate_subtask],
 )
 
 project_manager = TeamAgent(

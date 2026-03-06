@@ -138,7 +138,9 @@ class AlphaReport(FPDF):
             self.set_xy(x + w - 15, y + 3)
             is_up = trend.startswith("+")
             self.set_font("Helvetica", "B", 8)
-            self.set_text_color(39, 174, 96 if is_up else 192, 57, 43)
+            # Fix: set_text_color takes 3 args (R, G, B), not a mix of literals and booleans in-line
+            color = (39, 174, 96) if is_up else (192, 57, 43)
+            self.set_text_color(*color)
             self.cell(10, 5, self.safe_text(trend), align="R")
 
     def box_note(self, title: str, content: str):

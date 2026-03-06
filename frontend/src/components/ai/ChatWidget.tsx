@@ -258,8 +258,8 @@ export default function ChatWidget() {
                 right: isStellarMode ? 20 : (isMaximized ? 0 : iconPos.x),
                 top: isStellarMode ? 20 : "auto",
                 bottom: isStellarMode ? "auto" : (isMaximized ? 0 : iconPos.y),
-                width: isStellarMode ? "12px" : (isMaximized ? "100%" : (isOpen ? (activeSessionIds.length > 1 ? `min(${Math.max(1200, chatSize.width)}px, 95vw)` : `${chatSize.width}px`) : "56px")),
-                height: isStellarMode ? "12px" : (isMaximized ? "100%" : (isOpen ? (window.innerWidth < 640 ? "100vh" : `${chatSize.height}px`) : "56px")),
+                width: isStellarMode ? "12px" : (isMaximized ? "100%" : (isOpen ? (activeSessionIds.length > 1 ? `min(${Math.max(1200, chatSize.width)}px, 95vw)` : `${chatSize.width}px`) : "64px")),
+                height: isStellarMode ? "12px" : (isMaximized ? "100%" : (isOpen ? (window.innerWidth < 640 ? "100vh" : `${chatSize.height}px`) : "64px")),
             }}
         >
             {isStellarMode ? (
@@ -416,18 +416,18 @@ export default function ChatWidget() {
                 /* ── FLOATING ICON ──────────────────────────── */
                 <button
                     onMouseDown={handleMouseDownIcon}
-                    className={`h-14 w-14 flex items-center justify-center transition-all duration-500 group overflow-hidden relative shadow-2xl
+                    className={`h-16 w-16 flex items-center justify-center transition-all duration-500 group overflow-hidden relative shadow-2xl backdrop-blur-xl
                         ${isDarkMode
-                            ? "bg-zinc-950 border-2 border-fuchsia-500/50 rounded-[22px] ring-4 ring-fuchsia-500/10 shadow-[0_0_30px_-5px_#d946ef80]"
-                            : "bg-gradient-to-br from-indigo-600 via-violet-600 to-indigo-700 rounded-[22px] shadow-[0_15px_35px_-5px_rgba(79,70,229,0.5)] border border-white/20"}
-                        ${isDragging ? "cursor-grabbing scale-110" : "cursor-grab"}`}
+                            ? "bg-zinc-950/40 border-[1.5px] border-fuchsia-500/30 rounded-[24px] shadow-[0_0_40px_-10px_rgba(217,70,239,0.4)] hover:border-fuchsia-400"
+                            : "bg-white/40 border-[1.5px] border-indigo-500/30 rounded-[24px] shadow-[0_20px_40px_-10px_rgba(79,70,229,0.3)] hover:border-indigo-500"}
+                        ${isDragging ? "cursor-grabbing scale-105 -rotate-12" : "cursor-grab hover:scale-110 hover:rotate-6 active:scale-95"}`}
                 >
-                    <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
+                    <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-white/10 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-1000" />
                     {!isDarkMode && (
-                        <div className="absolute inset-0 rounded-full bg-indigo-400/20 animate-ping [animation-duration:3s]" />
+                        <div className="absolute inset-0 rounded-full bg-indigo-400/10 animate-ping [animation-duration:3s]" />
                     )}
-                    <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity ${isDarkMode ? "bg-fuchsia-600/10" : "bg-white/10"}`} />
-                    <Sparkles size={22} className="text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.3)] relative z-10" />
+                    <div className={`absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 ${isDarkMode ? "bg-fuchsia-600/10" : "bg-indigo-600/10"}`} />
+                    <Sparkles size={24} className={`${isDarkMode ? "text-fuchsia-400" : "text-indigo-600"} drop-shadow-[0_0_8px_rgba(217,70,239,0.5)] relative z-10 transition-transform group-hover:scale-110`} />
                 </button>
             )}
         </div>
