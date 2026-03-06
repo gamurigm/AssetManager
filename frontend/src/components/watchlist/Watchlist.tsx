@@ -48,6 +48,11 @@ const SYMBOL_ICONS: Record<string, { bg: string; label: string; textColor?: stri
     "AMZN": { bg: "#FF9900", label: "A" },
     "TSLA": { bg: "#CC0000", label: "T" },
     "META": { bg: "#0081FB", label: "M" },
+    "GC=F": { bg: "#FFD700", label: "G", textColor: "#000" }, // Gold
+    "SI=F": { bg: "#C0C0C0", label: "S", textColor: "#000" }, // Silver
+    "CL=F": { bg: "#1a1a1a", label: "O", textColor: "#fff" }, // Oil
+    "^GSPC": { bg: "#1e3a8a", label: "S" }, // S&P 500
+    "^IXIC": { bg: "#1565C0", label: "N" }, // Nasdaq
 };
 
 function getSymbolIcon(symbol: string) {
@@ -92,7 +97,8 @@ export default function Watchlist({ onSelectSymbol }: { onSelectSymbol: (s: stri
         { name: "CRIPTO", expanded: true, symbols: ["BTC/USD", "ETH/USD", "SOL/USD"] },
         { name: "FOREX", expanded: true, symbols: ["USDMXN", "EURGBP", "CHFEUR"] },
         { name: "STOCKS", expanded: true, symbols: ["AAPL", "NVDA", "GOOG", "MSFT"] },
-        { name: "INDICES", expanded: true, symbols: ["NASDAQ", "RSP"] },
+        { name: "COMMODITIES", expanded: true, symbols: ["GC=F", "SI=F", "CL=F"] },
+        { name: "INDICES & BONDS", expanded: true, symbols: ["^IXIC", "^GSPC", "TLT"] },
     ]);
 
     const allSymbols = groups.flatMap(g => g.symbols);
@@ -109,6 +115,7 @@ export default function Watchlist({ onSelectSymbol }: { onSelectSymbol: (s: stri
                         const chgPct = d.changePercentage || 0;
                         return {
                             symbol: s,
+                            name: d.name || s,
                             price: prc,
                             change: prc * (chgPct / 100),
                             changePercent: chgPct,
@@ -259,7 +266,12 @@ export default function Watchlist({ onSelectSymbol }: { onSelectSymbol: (s: stri
                                         >
                                             {iconInfo.label}
                                         </div>
-                                        <span className={styles.wlSymName}>{sym}</span>
+                                        <div className="flex flex-col min-w-0">
+                                            <span className={styles.wlSymName}>{sym}</span>
+                                            <span className="text-[9px] text-muted truncate opacity-70 font-medium">
+                                                {item?.name || sym}
+                                            </span>
+                                        </div>
                                     </div>
                                     <span className={styles.wlRowLast}>
                                         {item ? <PriceDisplay price={item.price} /> : "—"}
