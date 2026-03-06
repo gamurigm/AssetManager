@@ -6,9 +6,9 @@ from ...core.container import duckdb_repo, get_quote
 router = APIRouter()
 
 @router.get("/history")
-async def get_trading_history():
+async def get_trading_history(portfolio_id: str = "main"):
     """Retrieve full trade history from storage."""
-    return duckdb_repo.get_transactions()
+    return duckdb_repo.get_transactions(portfolio_id)
 
 @router.post("/record")
 async def record_transaction(
@@ -17,7 +17,8 @@ async def record_transaction(
     shares: float = Body(...),
     price: float = Body(0.0),
     realized_pnl: float = Body(0.0),
-    date: str = Body(None)
+    date: str = Body(None),
+    portfolio_id: str = Body("main")
 ):
     """Record a manually executed trade or liquidation. Fetches real market price if price <= 0."""
     final_price = price
@@ -34,21 +35,22 @@ async def record_transaction(
         shares=shares, 
         price=final_price, 
         realized_pnl=realized_pnl,
-        custom_date=date
+        custom_date=date,
+        portfolio_id=portfolio_id
     )
 
     if success:
         # Reconcile portfolio holdings for this symbol
-        _sync_portfolio_entry(symbol)
+        _sync_portfolio_entry(symbol, portfolio_id)
 
     return {"status": "success" if success else "failed", "market_price_used": final_price <= 0, "recorded_price": final_price}
 
-def _sync_portfolio_entry(symbol: str):
+def _sync_portfolio_entry(symbol: str, portfolio_id: str = "main"):
     """Update the 'portfolio' table entry for a symbol based on transaction history aggregate."""
     from ...services.intraday_repository import intraday_repository # or similar search
     
     # 1. Get aggregate position from transactions
-    transactions = duckdb_repo.get_transactions()
+    transactions = duckdb_repo.get_transactions(portfolio_id)
     symbol_txs = [t for t in transactions if t['symbol'] == symbol]
     
     total_shares = sum(t['shares'] if t['type'] == 'BUY' else -t['shares'] for t in symbol_txs)
@@ -60,13 +62,13 @@ def _sync_portfolio_entry(symbol: str):
     avg_entry = total_cost / buy_shares if buy_shares > 0 else 0
     
     # 2. Get existing metadata if symbol exists in portfolio or use defaults
-    current_portfolio = duckdb_repo.get_portfolio()
+    current_portfolio = duckdb_repo.get_portfolio(portfolio_id)
     existing = next((h for h in current_portfolio if h['symbol'] == symbol), None)
     
     if total_shares == 0:
         # Liquidated - Remove from portfolio
         new_portfolio = [h for h in current_portfolio if h['symbol'] != symbol]
-        duckdb_repo.save_portfolio(new_portfolio)
+        duckdb_repo.save_portfolio(new_portfolio, portfolio_id)
         return
 
     if existing:
@@ -74,7 +76,7 @@ def _sync_portfolio_entry(symbol: str):
         existing['shares'] = total_shares
         existing['entryPrice'] = avg_entry
         # Preserve other metadata (name, sector, factor, sl, tp)
-        duckdb_repo.save_portfolio(current_portfolio)
+        duckdb_repo.save_portfolio(current_portfolio, portfolio_id)
     else:
         # New entry - need some metadata. Try to find in Initial holdings or use placeholders
         from .portfolios import INITIAL_HOLDINGS
@@ -93,7 +95,7 @@ def _sync_portfolio_entry(symbol: str):
             "tp": None
         }
         current_portfolio.append(new_entry)
-        duckdb_repo.save_portfolio(current_portfolio)
+        duckdb_repo.save_portfolio(current_portfolio, portfolio_id)
 
 
 
