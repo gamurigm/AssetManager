@@ -61,7 +61,8 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
             # Persistent Portfolio / Holdings Table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS portfolio (
-                    symbol VARCHAR PRIMARY KEY,
+                    portfolio_id VARCHAR DEFAULT 'main',
+                    symbol VARCHAR,
                     name VARCHAR,
                     shares DOUBLE,
                     entry_price DOUBLE,
@@ -69,23 +70,55 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
                     sector VARCHAR,
                     asset_type VARCHAR,
                     purchase_date VARCHAR,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    sl DOUBLE,
+                    tp DOUBLE,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (portfolio_id, symbol)
                 )
             """)
-            # Migration: Add purchase_date if missing
+            # Migration: Add purchase_date if missing, and migrate to multi-portfolio format
             cols = conn.execute("PRAGMA table_info('portfolio')").fetchall()
             col_names = [c[1] for c in cols]
-            if 'purchase_date' not in col_names:
+            
+            # Simple column additions for older DBs before multi-portfolio
+            if 'purchase_date' not in col_names and 'sl' not in col_names:
                 conn.execute("ALTER TABLE portfolio ADD COLUMN purchase_date VARCHAR DEFAULT '2024-01-01'")
-            if 'sl' not in col_names:
                 conn.execute("ALTER TABLE portfolio ADD COLUMN sl DOUBLE")
-            if 'tp' not in col_names:
                 conn.execute("ALTER TABLE portfolio ADD COLUMN tp DOUBLE")
+                
+            # Upgrading to multi-portfolio format
+            cols = conn.execute("PRAGMA table_info('portfolio')").fetchall()
+            col_names = [c[1] for c in cols]
+            if 'portfolio_id' not in col_names:
+                conn.execute("ALTER TABLE portfolio RENAME TO portfolio_old")
+                conn.execute("""
+                    CREATE TABLE portfolio (
+                        portfolio_id VARCHAR DEFAULT 'main',
+                        symbol VARCHAR,
+                        name VARCHAR,
+                        shares DOUBLE,
+                        entry_price DOUBLE,
+                        factor DOUBLE,
+                        sector VARCHAR,
+                        asset_type VARCHAR,
+                        purchase_date VARCHAR,
+                        sl DOUBLE,
+                        tp DOUBLE,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (portfolio_id, symbol)
+                    )
+                """)
+                conn.execute("""
+                    INSERT INTO portfolio (portfolio_id, symbol, name, shares, entry_price, factor, sector, asset_type, purchase_date, sl, tp)
+                    SELECT 'main', symbol, name, shares, entry_price, factor, sector, asset_type, purchase_date, sl, tp FROM portfolio_old
+                """)
+                conn.execute("DROP TABLE portfolio_old")
 
             # Transactions History Table
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS transactions (
                     id INTEGER PRIMARY KEY,
+                    portfolio_id VARCHAR DEFAULT 'main',
                     type VARCHAR,
                     symbol VARCHAR,
                     shares DOUBLE,
@@ -112,15 +145,23 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
                 conn.execute("ALTER TABLE transactions ADD COLUMN date VARCHAR")
             if 'time' not in existing_t:
                 conn.execute("ALTER TABLE transactions ADD COLUMN time VARCHAR")
+            if 'portfolio_id' not in existing_t:
+                conn.execute("ALTER TABLE transactions ADD COLUMN portfolio_id VARCHAR DEFAULT 'main'")
 
             # Equity Snapshots Table (Realized vs Total)
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS equity_snapshots (
+                    portfolio_id VARCHAR DEFAULT 'main',
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     realized_balance DOUBLE,
                     total_equity DOUBLE
                 )
             """)
+            
+            cols_e = conn.execute("PRAGMA table_info('equity_snapshots')").fetchall()
+            existing_e = [c[1] for c in cols_e]
+            if 'portfolio_id' not in existing_e:
+                conn.execute("ALTER TABLE equity_snapshots ADD COLUMN portfolio_id VARCHAR DEFAULT 'main'")
 
             # Insider Trading Table
             conn.execute("""
@@ -144,12 +185,12 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
             conn.execute("CREATE INDEX IF NOT EXISTS idx_insider_ticker ON insider_trading(ticker)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_insider_date ON insider_trading(trade_date)")
 
-            # Initial Seed: If empty, start with 1200 from 2 years ago
+            # Initial Seed: If empty, start with 1200 from 2 years ago for 'main'
             res = conn.execute("SELECT COUNT(*) FROM equity_snapshots").fetchone()
             if res[0] == 0:
                 conn.execute("""
-                    INSERT INTO equity_snapshots (timestamp, realized_balance, total_equity)
-                    VALUES (CURRENT_TIMESTAMP - INTERVAL '2 year', 1200, 1200)
+                    INSERT INTO equity_snapshots (portfolio_id, timestamp, realized_balance, total_equity)
+                    VALUES ('main', CURRENT_TIMESTAMP - INTERVAL '2 year', 1200, 1200)
                 """)
         finally:
             conn.close()
@@ -244,20 +285,20 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
 
     # --- Portfolio Persistence ---
 
-    def save_portfolio(self, holdings: List[Dict[str, Any]]):
-        """Save current holdings. Replaces entire portfolio table to match current state."""
+    def save_portfolio(self, holdings: List[Dict[str, Any]], portfolio_id: str = "main"):
+        """Save current holdings for a specific portfolio. Replaces entire portfolio subset."""
         with self._write_lock:
             conn = self._connect(read_only=False)
             try:
-                conn.execute("DELETE FROM portfolio")
+                conn.execute("DELETE FROM portfolio WHERE portfolio_id = ?", [portfolio_id])
                 if holdings:
                     data = [
-                        (h['symbol'], h['name'], h['shares'], h['entryPrice'], h['factor'], h['sector'], h['type'], h.get('purchaseDate', '2024-01-01'), h.get('sl'), h.get('tp'))
+                        (portfolio_id, h['symbol'], h['name'], h['shares'], h['entryPrice'], h['factor'], h['sector'], h['type'], h.get('purchaseDate', '2024-01-01'), h.get('sl'), h.get('tp'))
                         for h in holdings
                     ]
                     conn.executemany("""
-                        INSERT INTO portfolio (symbol, name, shares, entry_price, factor, sector, asset_type, purchase_date, sl, tp)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        INSERT INTO portfolio (portfolio_id, symbol, name, shares, entry_price, factor, sector, asset_type, purchase_date, sl, tp)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, data)
                 return True
             except Exception as e:
@@ -266,14 +307,15 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
             finally:
                 conn.close()
 
-    def get_portfolio(self) -> List[Dict[str, Any]]:
-        """Retrieve current holdings from storage."""
+    def get_portfolio(self, portfolio_id: str = "main") -> List[Dict[str, Any]]:
+        """Retrieve current holdings from storage for a specific portfolio."""
         conn = self._connect(read_only=True)
         try:
             rows = conn.execute("""
                 SELECT symbol, name, shares, entry_price, factor, sector, asset_type, purchase_date, sl, tp
                 FROM portfolio
-            """).fetchall()
+                WHERE portfolio_id = ?
+            """, [portfolio_id]).fetchall()
             return [
                 {
                     "symbol": r[0], "name": r[1], "shares": r[2], 
@@ -289,8 +331,8 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
         finally:
             conn.close()
 
-    def add_transaction(self, type_str: str, symbol: str, shares: float, price: float, realized_pnl: float = 0, custom_date: str = None):
-        """Record a single transaction with optional custom date."""
+    def add_transaction(self, type_str: str, symbol: str, shares: float, price: float, realized_pnl: float = 0, custom_date: str = None, portfolio_id: str = "main"):
+        """Record a single transaction with optional custom date for a specific portfolio."""
         from datetime import datetime
         with self._write_lock:
             conn = self._connect(read_only=False)
@@ -306,9 +348,9 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
                 time_str = now.strftime("%I:%M %p")
                 
                 conn.execute("""
-                    INSERT INTO transactions (id, type, symbol, shares, price, realized_pnl, date, time)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                """, [new_id, type_str, symbol, shares, price, realized_pnl, date_str, time_str])
+                    INSERT INTO transactions (id, portfolio_id, type, symbol, shares, price, realized_pnl, date, time)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, [new_id, portfolio_id, type_str, symbol, shares, price, realized_pnl, date_str, time_str])
                 return True
             except Exception as e:
                 print(f"[DuckDB] Transaction error: {e}")
@@ -316,15 +358,16 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
             finally:
                 conn.close()
 
-    def get_transactions(self) -> List[Dict[str, Any]]:
-        """Retrieve all transactions."""
+    def get_transactions(self, portfolio_id: str = "main") -> List[Dict[str, Any]]:
+        """Retrieve all transactions for a specific portfolio."""
         conn = self._connect(read_only=True)
         try:
             rows = conn.execute("""
                 SELECT type, symbol, shares, price, realized_pnl, date, time, epoch(timestamp)
                 FROM transactions
+                WHERE portfolio_id = ?
                 ORDER BY timestamp ASC
-            """).fetchall()
+            """, [portfolio_id]).fetchall()
             return [
                 {
                     "type": r[0], "symbol": r[1], "shares": r[2], 
@@ -341,11 +384,11 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
 
     # --- Equity & Performance History ---
 
-    def get_total_realized_pnl(self) -> float:
-        """Sum up all realized_pnl from transactions."""
+    def get_total_realized_pnl(self, portfolio_id: str = "main") -> float:
+        """Sum up all realized_pnl from transactions for a specific portfolio."""
         conn = self._connect(read_only=True)
         try:
-            res = conn.execute("SELECT SUM(realized_pnl) FROM transactions").fetchone()
+            res = conn.execute("SELECT SUM(realized_pnl) FROM transactions WHERE portfolio_id = ?", [portfolio_id]).fetchone()
             return res[0] if res and res[0] is not None else 0.0
         except Exception as e:
             print(f"[DuckDB] Realized PnL error: {e}")
@@ -353,19 +396,19 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
         finally:
             conn.close()
 
-    def record_equity_snapshot(self, total_equity: float):
+    def record_equity_snapshot(self, total_equity: float, portfolio_id: str = "main"):
         """Record a snapshot of both realized balance and total equity."""
         # Calculate current realized balance (Seed 1200 + sum of all gains/losses)
-        realized_gains = self.get_total_realized_pnl()
+        realized_gains = self.get_total_realized_pnl(portfolio_id)
         current_realized_balance = 1200 + realized_gains
         
         with self._write_lock:
             conn = self._connect(read_only=False)
             try:
                 conn.execute("""
-                    INSERT INTO equity_snapshots (realized_balance, total_equity)
-                    VALUES (?, ?)
-                """, [current_realized_balance, total_equity])
+                    INSERT INTO equity_snapshots (portfolio_id, realized_balance, total_equity)
+                    VALUES (?, ?, ?)
+                """, [portfolio_id, current_realized_balance, total_equity])
                 return True
             except Exception as e:
                 print(f"[DuckDB] Equity snapshot error: {e}")
@@ -373,15 +416,16 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
             finally:
                 conn.close()
 
-    def get_equity_history(self) -> List[Dict[str, Any]]:
-        """Retrieve full history of realized vs total equity."""
+    def get_equity_history(self, portfolio_id: str = "main") -> List[Dict[str, Any]]:
+        """Retrieve full history of realized vs total equity for a specific portfolio."""
         conn = self._connect(read_only=True)
         try:
             rows = conn.execute("""
                 SELECT epoch(timestamp), realized_balance, total_equity
                 FROM equity_snapshots
+                WHERE portfolio_id = ?
                 ORDER BY timestamp ASC
-            """).fetchall()
+            """, [portfolio_id]).fetchall()
             return [
                 {
                     "time": int(r[0]), 

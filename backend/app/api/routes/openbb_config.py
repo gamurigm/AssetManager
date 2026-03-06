@@ -256,7 +256,8 @@ async def openbb_cli(body: dict = Body(...)):
 
     # ─── Portfolio Liquidator ───────────────────────────────────────
     if command == "portfolio.liquidate":
-        holdings = duckdb_repo.get_portfolio()
+        portfolio_id = str(kwargs.get("portfolio", "main")).lower()
+        holdings = duckdb_repo.get_portfolio(portfolio_id)
         if not holdings:
             return {"output": "No active holdings found in portfolio to liquidate."}
             
@@ -303,7 +304,8 @@ async def openbb_cli(body: dict = Body(...)):
                     symbol=sym,
                     shares=shares,
                     price=current_price,
-                    realized_pnl=pnl
+                    realized_pnl=pnl,
+                    portfolio_id=portfolio_id
                 )
             else:
                 keep_holdings.append(h)
@@ -312,7 +314,7 @@ async def openbb_cli(body: dict = Body(...)):
             criteria = "TODO" if is_all else ("EN ROJO" if is_losers else (f"SYMBOL {target_symbol}" if target_symbol else "N/A"))
             return {"output": f"⚠️ No se encontraron activos que cumplan el criterio: [{criteria}].\n\nSi quieres vender TODO independientemente del PnL, usa: 'portfolio liquidate --all' o dile a Qwen 'vende absolutamente todo'."}
             
-        success = duckdb_repo.save_portfolio(keep_holdings)
+        success = duckdb_repo.save_portfolio(keep_holdings, portfolio_id)
         if success:
             total_realized = sum(float(s.split('($')[1].split(')')[0].replace(',','')) for s in liquidated_symbols if '($' in s)
             return {"output": (
@@ -351,11 +353,13 @@ async def openbb_cli(body: dict = Body(...)):
             total_usd = float(usd_val[:-1]) * 1000 if usd_val.endswith('k') else float(usd_val)
             shares = total_usd / price
 
+        portfolio_id = str(kwargs.get("portfolio", "main")).lower()
+
         # Add Transaction
-        duckdb_repo.add_transaction("BUY", symbol, shares, price)
+        duckdb_repo.add_transaction("BUY", symbol, shares, price, portfolio_id=portfolio_id)
         
         # Reconcile Portfolio
-        holdings = duckdb_repo.get_portfolio()
+        holdings = duckdb_repo.get_portfolio(portfolio_id)
         existing = next((h for h in holdings if h['symbol'] == symbol), None)
         
         if existing:
@@ -380,8 +384,8 @@ async def openbb_cli(body: dict = Body(...)):
                 "tp": float(kwargs.get("tp")) if kwargs.get("tp") else None
             })
         
-        duckdb_repo.save_portfolio(holdings)
-        return {"output": f"✅ BUY ORDER EXECUTED\nSymbol: {symbol}\nShares: {shares}\nPrice:  ${price:,.4f}\nTotal:  ${(shares*price):,.2f}\nSL:     {kwargs.get('sl') or 'None'} | TP: {kwargs.get('tp') or 'None'}"}
+        duckdb_repo.save_portfolio(holdings, portfolio_id)
+        return {"output": f"✅ BUY ORDER EXECUTED [{portfolio_id.upper()}]\nSymbol: {symbol}\nShares: {shares}\nPrice:  ${price:,.4f}\nTotal:  ${(shares*price):,.2f}\nSL:     {kwargs.get('sl') or 'None'} | TP: {kwargs.get('tp') or 'None'}"}
 
     if command == "portfolio.sell":
         symbol = kwargs.get("symbol")
@@ -391,7 +395,8 @@ async def openbb_cli(body: dict = Body(...)):
             return {"output": "Usage: sell --symbol AAPL --shares 5 (OR --usd 1000) [--price 160]", "type": "error"}
         
         symbol = symbol.upper()
-        holdings = duckdb_repo.get_portfolio()
+        portfolio_id = str(kwargs.get("portfolio", "main")).lower()
+        holdings = duckdb_repo.get_portfolio(portfolio_id)
         existing = next((h for h in holdings if h['symbol'] == symbol), None)
         if not existing:
             return {"output": f"❌ No position found for {symbol}", "type": "error"}
@@ -416,34 +421,36 @@ async def openbb_cli(body: dict = Body(...)):
 
         # Calculate PnL
         pnl = (price - existing['entryPrice']) * shares
-        duckdb_repo.add_transaction("SELL", symbol, shares, price, realized_pnl=pnl)
+        duckdb_repo.add_transaction("SELL", symbol, shares, price, realized_pnl=pnl, portfolio_id=portfolio_id)
 
         # Update Portfolio
         existing['shares'] -= shares
         if existing['shares'] <= 0.0001: # handle floating point
             holdings = [h for h in holdings if h['symbol'] != symbol]
         
-        duckdb_repo.save_portfolio(holdings)
-        return {"output": f"✅ SELL ORDER EXECUTED\nSymbol: {symbol}\nShares: {shares}\nPrice:  ${price:,.4f}\nTotal:  ${(shares*price):,.2f}\nRealized PnL: {'+' if pnl >= 0 else ''}${pnl:,.2f}"}
+        duckdb_repo.save_portfolio(holdings, portfolio_id)
+        return {"output": f"✅ SELL ORDER EXECUTED [{portfolio_id.upper()}]\nSymbol: {symbol}\nShares: {shares}\nPrice:  ${price:,.4f}\nTotal:  ${(shares*price):,.2f}\nRealized PnL: {'+' if pnl >= 0 else ''}${pnl:,.2f}"}
 
     if command == "portfolio.modify":
         symbol = kwargs.get("symbol")
+        portfolio_id = str(kwargs.get("portfolio", "main")).lower()
         if not symbol: return {"output": "Usage: modify --symbol AAPL --sl 140 --tp 180", "type": "error"}
         symbol = symbol.upper()
-        holdings = duckdb_repo.get_portfolio()
+        holdings = duckdb_repo.get_portfolio(portfolio_id)
         existing = next((h for h in holdings if h['symbol'] == symbol), None)
         if not existing: return {"output": f"❌ No position found for {symbol}", "type": "error"}
 
         if kwargs.get("sl"): existing['sl'] = float(kwargs.get("sl"))
         if kwargs.get("tp"): existing['tp'] = float(kwargs.get("tp"))
         
-        duckdb_repo.save_portfolio(holdings)
+        duckdb_repo.save_portfolio(holdings, portfolio_id)
         return {"output": f"✅ POSITION MODIFIED: {symbol}\nStop Loss:  {existing.get('sl', 'None')}\nTake Profit: {existing.get('tp', 'None')}"}
 
     if command == "portfolio.positions":
-        holdings = duckdb_repo.get_portfolio()
+        portfolio_id = str(kwargs.get("portfolio", "main")).lower()
+        holdings = duckdb_repo.get_portfolio(portfolio_id)
         if not holdings:
-            return {"output": "No open positions."}
+            return {"output": f"No open positions in [{portfolio_id.upper()}]."}
         
         lines = [f"{'SYMBOL':<8} │ {'SHARES':>10} │ {'ENTRY':>10} │ {'S/L':>10} │ {'T/P':>10}"]
         lines.append("─" * 60)

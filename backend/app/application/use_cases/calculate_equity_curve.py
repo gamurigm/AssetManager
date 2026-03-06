@@ -7,19 +7,19 @@ class CalculateEquityCurveUseCase:
     def __init__(self, repository):
         self._repository = repository
 
-    def execute(self, days: int = 730) -> List[Dict[str, Any]]:
+    def execute(self, days: int = 730, portfolio_id: str = "main") -> List[Dict[str, Any]]:
         """
-        Calculates historical equity curve starting from initial capital of $1200.
-        Superimposes Realized Balance vs Total Equity.
+        Calculates historical equity curve starting from initial capital.
+        Superimposes Realized Balance vs Total Equity for a specific portfolio.
         """
         # 1. Setup Timeline
         end_date = datetime.now().date()
         start_date = end_date - timedelta(days=days)
         date_range = pd.date_range(start=start_date, end=end_date, freq='D')
         
-        # 2. Get Data
-        portfolio = self._repository.get_portfolio()
-        transactions = self._repository.get_transactions()
+        # 2. Get Data for the specific portfolio
+        portfolio = self._repository.get_portfolio(portfolio_id)
+        transactions = self._repository.get_transactions(portfolio_id)
         
         # 3. Fetch Prices for all symbols in portfolio
         symbols = [p['symbol'] for p in portfolio]
