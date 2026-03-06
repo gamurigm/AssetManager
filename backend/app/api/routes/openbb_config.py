@@ -12,7 +12,7 @@ from pathlib import Path
 
 def _load_prompt(filename: str) -> str:
     """Load Markdown prompt from the prompts directory."""
-    prompt_path = Path(__file__).parent.parent / "agents" / "team" / "prompts" / filename
+    prompt_path = Path(__file__).parent.parent.parent / "agents" / "team" / "prompts" / filename
     try:
         with open(prompt_path, "r", encoding="utf-8") as f:
             return f.read().strip()
@@ -237,15 +237,22 @@ async def openbb_cli(body: dict = Body(...)):
                     kwargs["shares"] = val
             elif base == "modify" and len(extra_tokens) >= 1:
                 kwargs["symbol"] = extra_tokens[0].upper()
+        
 
     kwargs.update(_parse_args(rest_tokens))
 
     # ─── Smart Default Providers ────────────────────────────────────
     if "provider" not in kwargs:
-        if command.startswith(("equity.", "derivatives.", "etf.", "index.", "crypto.")):
+        if command in ("index.constituents", "etf.holdings") or command.startswith("equity.discovery."):
+            kwargs["provider"] = "fmp"
+        elif command.startswith(("equity.", "derivatives.", "etf.", "index.", "crypto.")):
             kwargs["provider"] = "yfinance"
         elif command.startswith("economy.") or command.startswith("fixedincome."):
             kwargs["provider"] = "bls" if "bls" in command else "fred"
+
+    # Strip '^' for FMP indices if needed (symbol normalization)
+    if kwargs.get("provider") == "fmp" and "symbol" in kwargs:
+        kwargs["symbol"] = str(kwargs["symbol"]).lstrip("^")
 
     # ─── Portfolio Liquidator ───────────────────────────────────────
     if command == "portfolio.liquidate":
