@@ -27,9 +27,9 @@ export default function BackendGate({ children }: BackendGateProps) {
             if (res.ok) {
                 setStatus("Systems online. Appreciating 3D aesthetics...");
 
-                // Ensure at least 5 seconds of loading screen
+                // Ensure at least 4 seconds of loading screen (User requested 4s)
                 const elapsed = Date.now() - mountTime.current;
-                const remaining = Math.max(0, 5000 - elapsed);
+                const remaining = Math.max(0, 4000 - elapsed);
                 setProgressOverride(100);
 
                 setTimeout(() => {
