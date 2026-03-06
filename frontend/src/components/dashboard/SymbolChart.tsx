@@ -188,7 +188,7 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
     // ─── Chart Options Builder ──────────────────────────────────
     const chartOpts = useCallback((h: number) => ({
         layout: { background: { type: ColorType.Solid as const, color: 'transparent' }, textColor: isLight ? '#3f3f46' : '#71717a' },
-        grid: { vertLines: { color: isLight ? '#f4f4f5' : '#1a1a1a' }, horzLines: { color: isLight ? '#f4f4f5' : '#1a1a1a' } },
+        grid: { vertLines: { visible: false }, horzLines: { visible: false } },
         height: h,
         rightPriceScale: { borderVisible: false },
         timeScale: { borderVisible: false },

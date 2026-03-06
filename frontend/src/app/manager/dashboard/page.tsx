@@ -45,8 +45,8 @@ export default function ManagerDashboard() {
                 textColor: '#71717a',
             },
             grid: {
-                vertLines: { color: 'rgba(39, 39, 42, 0.4)' },
-                horzLines: { color: 'rgba(39, 39, 42, 0.4)' },
+                horzLines: { visible: false },
+                vertLines: { visible: false },
             },
             width: chartContainerRef.current.clientWidth,
             height: 500,

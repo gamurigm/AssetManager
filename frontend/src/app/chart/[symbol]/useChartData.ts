@@ -85,8 +85,8 @@ export function useChartData(symbol: string, timeframe: string, isLight: boolean
             fontFamily: "'Inter', sans-serif",
         },
         grid: {
-            vertLines: { color: isLight ? '#f4f4f5' : '#141414' },
-            horzLines: { color: isLight ? '#f4f4f5' : '#141414' },
+            vertLines: { visible: false },
+            horzLines: { visible: false },
         },
         timeScale: { borderColor: isLight ? '#e4e4e7' : '#1f1f1f', timeVisible: isIntradayTF },
         rightPriceScale: { borderColor: isLight ? '#e4e4e7' : '#1f1f1f' },
