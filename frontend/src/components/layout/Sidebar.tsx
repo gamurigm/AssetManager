@@ -10,10 +10,36 @@ import {
     Sun,
     Moon,
     Wallet,
-    Bitcoin
+    Bitcoin,
+    Cpu,
+    Crosshair,
+    Globe2,
+    Landmark,
+    Leaf,
+    LineChart,
+    Building2,
+    Cog
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { usePortfolio } from "@/context/PortfolioContext";
+
+// Define the full list of portfolios requested by user + 3 suggestions
+const PORTFOLIOS = [
+    { id: "main", label: "Main Fund", icon: Wallet, color: "blue", activeBgDark: "bg-blue-500/20", activeTextDark: "text-blue-400", activeBorderDark: "border-blue-500/20", activeBgLight: "bg-blue-100", activeTextLight: "text-blue-600", activeBorderLight: "border-blue-300" },
+    { id: "crypto", label: "Crypto Assets", icon: Bitcoin, color: "orange", activeBgDark: "bg-orange-500/20", activeTextDark: "text-orange-400", activeBorderDark: "border-orange-500/20", activeBgLight: "bg-orange-100", activeTextLight: "text-orange-600", activeBorderLight: "border-orange-300" },
+    { id: "tech", label: "Technology", icon: Cpu, color: "indigo", activeBgDark: "bg-indigo-500/20", activeTextDark: "text-indigo-400", activeBorderDark: "border-indigo-500/20", activeBgLight: "bg-indigo-100", activeTextLight: "text-indigo-600", activeBorderLight: "border-indigo-300" },
+    { id: "med", label: "Medicine", icon: Crosshair, color: "rose", activeBgDark: "bg-rose-500/20", activeTextDark: "text-rose-400", activeBorderDark: "border-rose-500/20", activeBgLight: "bg-rose-100", activeTextLight: "text-rose-600", activeBorderLight: "border-rose-300" },
+    { id: "asian", label: "Asian Mkts", icon: Globe2, color: "red", activeBgDark: "bg-red-500/20", activeTextDark: "text-red-400", activeBorderDark: "border-red-500/20", activeBgLight: "bg-red-100", activeTextLight: "text-red-600", activeBorderLight: "border-red-300" },
+    { id: "europe", label: "Europe Mkts", icon: Globe2, color: "blue", activeBgDark: "bg-blue-600/20", activeTextDark: "text-blue-500", activeBorderDark: "border-blue-600/20", activeBgLight: "bg-blue-200", activeTextLight: "text-blue-700", activeBorderLight: "border-blue-400" },
+    { id: "emergin", label: "Emerging", icon: Leaf, color: "emerald", activeBgDark: "bg-emerald-500/20", activeTextDark: "text-emerald-400", activeBorderDark: "border-emerald-500/20", activeBgLight: "bg-emerald-100", activeTextLight: "text-emerald-600", activeBorderLight: "border-emerald-300" },
+    { id: "bonds", label: "Bonds", icon: Landmark, color: "slate", activeBgDark: "bg-slate-500/20", activeTextDark: "text-slate-400", activeBorderDark: "border-slate-500/20", activeBgLight: "bg-slate-200", activeTextLight: "text-slate-600", activeBorderLight: "border-slate-300" },
+    { id: "test1", label: "Test 1", icon: Cog, color: "zinc", activeBgDark: "bg-zinc-500/20", activeTextDark: "text-zinc-400", activeBorderDark: "border-zinc-500/20", activeBgLight: "bg-zinc-200", activeTextLight: "text-zinc-600", activeBorderLight: "border-zinc-300" },
+    { id: "test2", label: "Test 2", icon: Cog, color: "zinc", activeBgDark: "bg-zinc-500/20", activeTextDark: "text-zinc-400", activeBorderDark: "border-zinc-500/20", activeBgLight: "bg-zinc-200", activeTextLight: "text-zinc-600", activeBorderLight: "border-zinc-300" },
+    // 3 Suggestions
+    { id: "options", label: "Options/Deriv.", icon: LineChart, color: "purple", activeBgDark: "bg-purple-500/20", activeTextDark: "text-purple-400", activeBorderDark: "border-purple-500/20", activeBgLight: "bg-purple-100", activeTextLight: "text-purple-600", activeBorderLight: "border-purple-300" },
+    { id: "real_estate", label: "Real Estate", icon: Building2, color: "amber", activeBgDark: "bg-amber-500/20", activeTextDark: "text-amber-400", activeBorderDark: "border-amber-500/20", activeBgLight: "bg-amber-100", activeTextLight: "text-amber-600", activeBorderLight: "border-amber-300" },
+    { id: "ai_driven", label: "AI Driven", icon: Cpu, color: "cyan", activeBgDark: "bg-cyan-500/20", activeTextDark: "text-cyan-400", activeBorderDark: "border-cyan-500/20", activeBgLight: "bg-cyan-100", activeTextLight: "text-cyan-600", activeBorderLight: "border-cyan-300" },
+];
 
 
 const unifiedNav = [
@@ -113,34 +139,30 @@ export default function Sidebar({ expanded }: { expanded: boolean }) {
                     Active Portfolio
                 </p>
 
-                <div className={`flex flex-col gap-1 ${isCollapsed ? "items-center" : ""}`}>
-                    <button
-                        onClick={() => setActivePortfolio("main")}
-                        className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all relative ${activePortfolio === "main"
-                                ? (isDarkMode ? "bg-accent/20 text-accent shadow-[inset_0_0_10px_rgba(59,130,246,0.1)] border border-accent/20" : "bg-accent/15 text-accent border border-accent/30 shadow-sm")
-                                : (isDarkMode ? "text-white/40 hover:text-white hover:bg-white/5 border border-transparent" : "text-slate-500 hover:text-slate-900 hover:bg-slate-50 border border-transparent")
-                            }`}
-                        title="Main Fund"
-                    >
-                        <Wallet size={16} className={`shrink-0 ${activePortfolio === "main" ? "text-accent" : ""}`} />
-                        <span className={`truncate tracking-tight whitespace-nowrap ${isCollapsed ? "opacity-0 invisible w-0 hidden" : "opacity-100 visible w-auto"} transition-all duration-300`}>
-                            Main Fund
-                        </span>
-                    </button>
-
-                    <button
-                        onClick={() => setActivePortfolio("crypto")}
-                        className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition-all relative ${activePortfolio === "crypto"
-                                ? (isDarkMode ? "bg-orange-500/20 text-orange-400 shadow-[inset_0_0_10px_rgba(249,115,22,0.1)] border border-orange-500/20" : "bg-orange-100 text-orange-600 border border-orange-300 shadow-sm")
-                                : (isDarkMode ? "text-white/40 hover:text-white hover:bg-white/5 border border-transparent" : "text-slate-500 hover:text-slate-900 hover:bg-slate-50 border border-transparent")
-                            }`}
-                        title="Crypto Assets"
-                    >
-                        <Bitcoin size={16} className={`shrink-0 ${activePortfolio === "crypto" ? (isDarkMode ? "text-orange-400" : "text-orange-500") : ""}`} />
-                        <span className={`truncate tracking-tight whitespace-nowrap ${isCollapsed ? "opacity-0 invisible w-0 hidden" : "opacity-100 visible w-auto"} transition-all duration-300`}>
-                            Crypto Assets
-                        </span>
-                    </button>
+                <div className={`flex flex-col gap-1 max-h-[300px] overflow-y-auto pr-1 custom-scrollbar ${isCollapsed ? "items-center" : ""}`}>
+                    {PORTFOLIOS.map((p) => {
+                        const isActive = activePortfolio === p.id;
+                        return (
+                            <button
+                                key={p.id}
+                                onClick={() => setActivePortfolio(p.id)}
+                                className={`flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition-all relative ${isActive
+                                        ? (isDarkMode
+                                            ? `${p.activeBgDark} ${p.activeTextDark} shadow-[inset_0_0_10px_rgba(255,255,255,0.05)] border ${p.activeBorderDark}`
+                                            : `${p.activeBgLight} ${p.activeTextLight} border ${p.activeBorderLight} shadow-sm`)
+                                        : (isDarkMode
+                                            ? "text-white/40 hover:text-white hover:bg-white/5 border border-transparent"
+                                            : "text-slate-500 hover:text-slate-900 hover:bg-slate-50 border border-transparent")
+                                    }`}
+                                title={p.label}
+                            >
+                                <p.icon size={16} className={`shrink-0 ${isActive ? (isDarkMode ? p.activeTextDark : p.activeTextLight) : ""}`} />
+                                <span className={`truncate tracking-tight whitespace-nowrap ${isCollapsed ? "opacity-0 invisible w-0 hidden" : "opacity-100 visible w-auto"} transition-all duration-300`}>
+                                    {p.label}
+                                </span>
+                            </button>
+                        );
+                    })}
                 </div>
             </div>
 
