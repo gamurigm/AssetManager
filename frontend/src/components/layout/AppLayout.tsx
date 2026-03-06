@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useState, useEffect } from "react";
+import { SocketProvider } from "@/context/SocketContext";
 
 // Lazy-load heavy layout components (deferred until after BackendGate)
 const Sidebar = dynamic(() => import("@/components/layout/Sidebar"), {
@@ -55,7 +56,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
             {/* Right Container - Flex Column (Main + Terminal) */}
             <div className="flex-1 flex flex-col min-w-0 h-full">
                 <main className="flex-1 overflow-auto min-h-0 relative">
-                    {children}
+                    <SocketProvider>
+                        {children}
+                    </SocketProvider>
                 </main>
                 <div className="shrink-0">
                     <OpenBBTerminal />

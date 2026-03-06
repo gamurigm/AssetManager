@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Plus, MoreHorizontal, ChevronDown, ChevronRight, ExternalLink, LayoutGrid, Pencil, X } from "lucide-react";
+import { useSocket } from "@/context/SocketContext";
 import styles from "./Watchlist.module.css";
 
 declare global {
@@ -14,6 +15,7 @@ declare global {
 
 interface WatchlistItem {
     symbol: string;
+    name?: string;
     price: number;
     change: number;
     changePercent: number;
@@ -91,6 +93,7 @@ export default function Watchlist({ onSelectSymbol }: { onSelectSymbol: (s: stri
     const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
     const [newSymbol, setNewSymbol] = useState("");
     const [showAddInput, setShowAddInput] = useState(false);
+    const [lastUpdatedSymbol, setLastUpdatedSymbol] = useState<string | null>(null);
     const addInputRef = useRef<HTMLInputElement>(null);
 
     const [groups, setGroups] = useState<WatchlistGroup[]>([
@@ -102,6 +105,8 @@ export default function Watchlist({ onSelectSymbol }: { onSelectSymbol: (s: stri
     ]);
 
     const allSymbols = groups.flatMap(g => g.symbols);
+
+    const { socket, connected } = useSocket();
 
     // Fetch quote data
     useEffect(() => {
@@ -128,10 +133,39 @@ export default function Watchlist({ onSelectSymbol }: { onSelectSymbol: (s: stri
             setItems(data);
         };
         fetchAll();
-        const timer = setInterval(fetchAll, 30000);
-        return () => clearInterval(timer);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [allSymbols.join(",")]);
+
+    // WebSocket Listeners
+    useEffect(() => {
+        if (!socket || !connected) return;
+
+        // Join rooms for all current symbols
+        allSymbols.forEach(s => socket.emit("join_symbol", s));
+
+        const onPriceUpdate = (data: any) => {
+            setLastUpdatedSymbol(data.symbol);
+            setTimeout(() => setLastUpdatedSymbol(prev => prev === data.symbol ? null : prev), 1000);
+
+            setItems(prev => prev.map(item => {
+                if (item.symbol === data.symbol) {
+                    return {
+                        ...item,
+                        price: data.price,
+                        change: data.change,
+                        changePercent: data.changePercent
+                    };
+                }
+                return item;
+            }));
+        };
+
+        socket.on("price_update", onPriceUpdate);
+
+        return () => {
+            allSymbols.forEach(s => socket.emit("leave_symbol", s));
+            socket.off("price_update", onPriceUpdate);
+        };
+    }, [socket, connected, allSymbols.join(",")]);
 
     const toggleGroup = (name: string) => {
         setGroups(prev => prev.map(g => g.name === name ? { ...g, expanded: !g.expanded } : g));
@@ -256,7 +290,7 @@ export default function Watchlist({ onSelectSymbol }: { onSelectSymbol: (s: stri
                             return (
                                 <div
                                     key={sym}
-                                    className={`${styles.wlRow} ${isSelected ? styles.wlRowSelected : ""}`}
+                                    className={`${styles.wlRow} ${isSelected ? styles.wlRowSelected : ""} ${lastUpdatedSymbol === sym ? styles.wlPriceUpdated : ""}`}
                                     onClick={() => handleSelectSymbol(sym)}
                                 >
                                     <div className={styles.wlRowSymbol}>

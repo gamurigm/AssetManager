@@ -79,12 +79,26 @@ async def get_portfolio_risk(portfolio_id: str = Query("main", description="Targ
 @router.post("/report")
 async def generate_portfolio_report(
     holdings: List[Dict[str, Any]] = Body(...),
-    total_value: float = Body(...),
-    total_pnl: float = Body(...)
+    total_value: float = Body(0),
+    total_pnl: float = Body(0),
+    type: str = Body("standard"),
+    intelligence_text: str = Body("")
 ):
-    filename = report_service.generate_balance_sheet(holdings, total_value, total_pnl)
+    """
+    Generate different types of institutional reports.
+    Types: 'standard', 'executive', 'risk', 'intelligence'
+    """
+    if type == "executive":
+        filename = report_service.generate_executive_summary(holdings, intelligence_text)
+    elif type == "risk":
+        filename = report_service.generate_risk_audit(holdings)
+    elif type == "intelligence":
+        filename = report_service.generate_custom_intelligence_report(intelligence_text, holdings, total_value, total_pnl)
+    else:
+        filename = report_service.generate_balance_sheet(holdings, total_value, total_pnl)
+        
     report_url = f"http://localhost:8282/view-reports/{filename}"
-    return {"url": report_url, "filename": filename}
+    return {"url": report_url, "filename": filename, "type": type}
 
 @router.post("/snapshot-equity")
 async def snapshot_equity(

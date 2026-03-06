@@ -13,6 +13,7 @@ from ...services.market_data import market_data_service
 from ...services.openbb_rest_service import openbb_rest
 from ...services.openbb_native_service import openbb_native
 from ...services.openbb_api_catalog import openbb_catalog
+from ...services.gsd_service import gsd_service
 from ...core.container import search_knowledge_base_uc, read_book_section_uc
 from ...core.config import settings
 import asyncio
@@ -213,7 +214,16 @@ async def execute_openbb_terminal_command(ctx: RunContext[TeamContext], command_
     
     result = await openbb_native.execute(command_path, kwargs)
     if "error" in result:
-        return f"Error: {result['error']}"
+        raw_err = result.get('error') or "Unknown OpenBB Engine Error"
+        err_msg = f"Error: {raw_err}"
+        if "hint" in result:
+            err_msg += f"\nHint: {result['hint']}"
+        if "traceback" in result:
+            # Include just the last 5 lines of traceback for context
+            tb = str(result["traceback"]).strip().split("\n")[-5:]
+            err_msg += f"\nTraceback Extract:\n" + "\n".join(tb)
+        return err_msg
+        
     return result.get("output", "Command executed.")
 
 # --- Tools for Quantitative Analyst ---
@@ -284,12 +294,17 @@ async def calculate_risk_metrics(ctx: RunContext[TeamContext], symbol: str) -> s
     # Store in context
     ctx.deps.update_scratchpad(f"risk_{symbol}", {"VaR": var, "Sharpe": sharpe})
     
-async def generate_detailed_alpha_report(ctx: RunContext[TeamContext], analysis_text: Optional[str] = None) -> str:
+async def generate_detailed_alpha_report(ctx: RunContext[TeamContext], report_type: str = "standard", analysis_text: Optional[str] = None) -> str:
     """
-    Generates a professional, deeply detailed PDF Alpha Report with charts, 
-    risk metrics (VaR, Sharpe, Risk Adjusted Returns), Trend Projections 
-    using Gradient Descent, and Hedging Strategies.
-    If 'analysis_text' is provided, it will be included as a dedicated Intelligence Section.
+    Generates professional, specialized institutional PDF reports.
+    
+    Valid report_types:
+    - 'standard': Full performance report with equity charts and portfolio exposure.
+    - 'executive': High-level strategic brief for management (requires analysis_text).
+    - 'risk': Deep-dive audit focused on VaR, Volatility, and Tail Risk metrics.
+    - 'intelligence': Focuses on specialist neural insights and convergence (requires analysis_text).
+    
+    If 'analysis_text' is provided, it will be injected as the core intelligence section.
     """
     from ...services.report_service import report_service
     # Fetches real-time portfolio from context or DB
@@ -298,21 +313,23 @@ async def generate_detailed_alpha_report(ctx: RunContext[TeamContext], analysis_
     total_pnl = ctx.deps.scratchpad.get("current_portfolio", {}).get("total_pnl", 0)
     
     if not holdings:
-        # Fallback to DB
         from ...core.container import duckdb_repo
         holdings = duckdb_repo.get_portfolio()
-        total_val = sum(h.get('shares',0) * h.get('entryPrice',0) for h in holdings)
-        total_pnl = 0 # Placeholder if not in context
-        
-    if analysis_text:
-        # New bespoke path
-        filename = report_service.generate_custom_intelligence_report(analysis_text, holdings, total_val, total_pnl)
+        total_val = sum(h.get('shares',0) * h.get('price', h.get('entryPrice',0)) for h in holdings)
+        total_pnl = sum(h.get('change', 0) for h in holdings)
+    
+    # Route to specialized generator
+    if report_type == "executive":
+        filename = report_service.generate_executive_summary(holdings, analysis_text or "No brief provided.")
+    elif report_type == "risk":
+        filename = report_service.generate_risk_audit(holdings)
+    elif report_type == "intelligence":
+        filename = report_service.generate_custom_intelligence_report(analysis_text or "No intelligence provided.", holdings, total_val, total_pnl)
     else:
-        # Standard automated path
         filename = report_service.generate_balance_sheet(holdings, total_val, total_pnl)
 
     url = f"http://localhost:8282/view-reports/{filename}"
-    return f"REPORT GENERATED: {filename}. Access URL: {url}"
+    return f"REPORT GENERATED: {filename} ({report_type}). Access URL: {url}"
 
 # --- Tools for Trader ---
 async def place_order(ctx: RunContext[TeamContext], symbol: str, quantity: int, side: str, order_type: str = "market") -> str:
@@ -335,9 +352,11 @@ import time
 
 # ─── Load Prompts Dynamically ───
 
+
 def _load_prompt(filename: str) -> str:
     """Load Markdown prompt from the prompts directory."""
     prompt_dir = os.path.join(os.path.dirname(__file__), "prompts")
+    # Support subdirectories like 'gsd/gsd-roadmapper.md'
     filepath = os.path.join(prompt_dir, filename)
     try:
         with open(filepath, "r", encoding="utf-8") as f:
@@ -464,6 +483,43 @@ async def create_or_edit_strategy_engine(ctx: RunContext[TeamContext], strategy_
         return f"FAILED to create strategy: {str(e)}\nPlease review your Python code for syntax errors or missing required methods (run_session)."
 
 
+# --- Tools for Project Manager (GSD) ---
+
+async def get_project_status(ctx: RunContext[TeamContext]) -> str:
+    """Get the current GSD project status, progress, and roadmap analysis."""
+    progress = gsd_service.get_progress("json")
+    roadmap = gsd_service.get_roadmap_analysis()
+    return f"PROJECT PROGRESS:\n{json.dumps(progress, indent=2)}\n\nROADMAP ANALYSIS:\n{json.dumps(roadmap, indent=2)}"
+
+async def manage_roadmap(ctx: RunContext[TeamContext], action: str, description: str) -> str:
+    """
+    Manage the project roadmap. 
+    Actions: 'add_phase'
+    Example: manage_roadmap(action="add_phase", description="Integrate OpenClaw scraping")
+    """
+    if action == "add_phase":
+        result = gsd_service.add_phase(description)
+        return f"ROADMAP UPDATED: {json.dumps(result, indent=2)}"
+    return f"Unsupported roadmap action: {action}"
+
+async def update_requirement_status(ctx: RunContext[TeamContext], req_ids: List[str]) -> str:
+    """Mark roadmap requirements as complete."""
+    result = gsd_service.mark_requirement_complete(req_ids)
+    return f"REQUIREMENTS UPDATED: {json.dumps(result, indent=2)}"
+
+async def scaffold_gsd_docs(ctx: RunContext[TeamContext], phase: str, plan: str, doc_type: str = "plan") -> str:
+    """
+    Scaffold GSD documentation files.
+    doc_type: 'plan' or 'summary'
+    """
+    if doc_type == "plan":
+        result = gsd_service.scaffold_plan(phase, plan)
+    else:
+        result = gsd_service.scaffold_summary(phase, plan)
+    return f"DOC SCAFFOLDED: {json.dumps(result, indent=2)}"
+
+
+
 strategy_analyst = TeamAgent(
     name="Strategy Analyst",
     role=_load_prompt("strategy_analyst.md") + OPENBB_API_REFERENCE,
@@ -471,6 +527,27 @@ strategy_analyst = TeamAgent(
     tools=[run_strategy_signal, create_or_edit_strategy_engine, search_knowledge_base, read_textbook_section,
            general_web_search, discover_openbb_endpoints, get_openbb_endpoint_details, query_openbb_api,
            query_openbb_api_post, execute_openbb_terminal_command],
+)
+
+project_manager = TeamAgent(
+    name="Project Manager",
+    role=_load_prompt("gsd/gsd-roadmapper.md"),
+    model_name=MISTRAL_LARGE,
+    tools=[get_project_status, manage_roadmap, update_requirement_status, scaffold_gsd_docs, general_web_search]
+)
+
+phase_planner = TeamAgent(
+    name="Phase Planner",
+    role=_load_prompt("gsd/gsd-planner.md"),
+    model_name=NEMOTRON_253B,
+    tools=[scaffold_gsd_docs, discover_openbb_endpoints, get_openbb_endpoint_details, general_web_search]
+)
+
+quality_auditor = TeamAgent(
+    name="Quality Auditor", 
+    role=_load_prompt("gsd/gsd-verifier.md"),
+    model_name=MISTRAL_LARGE,
+    tools=[get_project_status, update_requirement_status, general_web_search]
 )
 
 # Export map for Orchestrator lookup
@@ -481,4 +558,7 @@ specialists_map = {
     "Macro Analyst": macro_analyst,
     "Trader": trader,
     "Strategy Analyst": strategy_analyst,
+    "Project Manager": project_manager,
+    "Phase Planner": phase_planner,
+    "Quality Auditor": quality_auditor,
 }

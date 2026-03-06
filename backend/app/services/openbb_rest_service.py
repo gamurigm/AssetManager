@@ -94,7 +94,25 @@ class OpenBBRestService:
                 "type": "error"
             }
         except httpx.HTTPStatusError as exc:
-            body = exc.response.text[:500]
+            body = exc.response.text
+            try:
+                import json
+                error_data = json.loads(body)
+                if exc.response.status_code == 422:
+                    # Special handling for Pydantic validation errors
+                    details = error_data.get("detail", [])
+                    friendly_errors = []
+                    for d in details:
+                        msg = d.get("msg", "Validation error")
+                        loc = ".".join(str(x) for x in d.get("loc", []))
+                        expected = d.get("ctx", {}).get("expected")
+                        err_line = f"[{loc}] {msg}"
+                        if expected:
+                            err_line += f" (Expected: {expected})"
+                        friendly_errors.append(err_line)
+                    body = "\n".join(friendly_errors)
+            except Exception:
+                body = body[:500]
             return {"error": f"HTTP {exc.response.status_code}: {body}", "type": "error"}
         except Exception as e:
             return {"error": f"OpenBB API Error: {str(e)}", "type": "error"}

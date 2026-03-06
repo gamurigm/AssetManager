@@ -46,17 +46,18 @@ except ImportError:
 
 # App setup
 from .core.config import settings
-from .api.routes import auth, clients, portfolios, trading, agents, market_data, openbb_config, watchlist, analytics, simulation, bybit, finviz, fmp, openbb_widgets, macro_economy
+from .api.routes import auth, clients, portfolios, trading, agents, market_data, openbb_config, watchlist, analytics, simulation, bybit, finviz, fmp, openbb_widgets, macro_economy, open_claw
 
 # Socket.IO setup
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
 
-from .services.scheduler_service import start_scheduler, stop_scheduler
+from .services.scheduler_service import start_scheduler, stop_scheduler, broadcast_prices_job
+from .services.realtime_service import realtime_service
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    start_scheduler()
+    start_scheduler(sio) # Pass SIO to scheduler for broadcasting
     yield
     # Shutdown
     stop_scheduler()
@@ -110,6 +111,7 @@ app.include_router(macro_economy.router, prefix="", tags=["macro_economy"])
 app.include_router(bybit.router, prefix=f"{settings.API_V1_STR}/bybit", tags=["bybit"])
 app.include_router(finviz.router, prefix=f"{settings.API_V1_STR}/finviz", tags=["finviz"])
 app.include_router(fmp.router, prefix=f"{settings.API_V1_STR}/fmp", tags=["fmp"])
+app.include_router(open_claw.router, prefix=f"{settings.API_V1_STR}/openclaw", tags=["open_claw"])
 
 @app.get("/")
 async def root():
@@ -126,6 +128,19 @@ async def connect(sid, environ):
 @sio.event
 async def disconnect(sid):
     logger.info(f"Socket Client disconnected: {sid}")
+    realtime_service.clear_client(sid)
+
+@sio.on("join_symbol")
+async def join_symbol(sid, symbol: str):
+    logger.info(f"[Socket] Client {sid} joining room: {symbol}")
+    await sio.enter_room(sid, symbol)
+    realtime_service.subscribe(sid, symbol)
+
+@sio.on("leave_symbol")
+async def leave_symbol(sid, symbol: str):
+    logger.info(f"[Socket] Client {sid} leaving room: {symbol}")
+    await sio.leave_room(sid, symbol)
+    realtime_service.unsubscribe(sid, symbol)
 
 # Store sio reference for use in routes
 app.state.sio = sio

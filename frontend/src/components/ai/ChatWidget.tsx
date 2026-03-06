@@ -40,6 +40,9 @@ export default function ChatWidget() {
     const [isDragging, setIsDragging] = useState(false);
     const dragRef = useRef<{ startX: number; startY: number; startPosX: number; startPosY: number; moved: boolean; } | null>(null);
     const inactivityTimer = useRef<NodeJS.Timeout | null>(null);
+    const [chatSize, setChatSize] = useState({ width: 520, height: 800 });
+    const [isResizing, setIsResizing] = useState(false);
+    const resizeRef = useRef<{ startX: number; startY: number; startWidth: number; startHeight: number } | null>(null);
 
     // ── Persistence removed as requested by user
     // "solo recordar la sesion actual luego al desconcetar borrar automaticamente hata nuevo aviso"
@@ -118,16 +121,13 @@ export default function ChatWidget() {
             const dY = dragRef.current.startY - e.clientY;
             if (Math.abs(dX) > 5 || Math.abs(dY) > 5) dragRef.current.moved = true;
 
-            // Define bounds based on whether it's open (it's much larger) or closed (just an icon)
             const padding = 20;
-            const curWidth = isOpen ? (activeSessionIds.length > 1 ? Math.min(1200, window.innerWidth * 0.95) : Math.min(520, window.innerWidth)) : 70;
-            const curHeight = isOpen ? Math.min(800, window.innerHeight - 80) : 70;
+            const curWidth = isOpen ? (activeSessionIds.length > 1 ? Math.min(1200, window.innerWidth * 0.95) : chatSize.width) : 70;
+            const curHeight = isOpen ? (window.innerWidth < 640 ? window.innerHeight : chatSize.height) : 70;
 
             const maxRight = window.innerWidth - curWidth - padding;
             const maxBottom = window.innerHeight - curHeight - padding;
 
-            // X and Y are relative to bottom-right in the old CSS, 
-            // but it's easier to keep them as "Offset from bottom right" 
             setIconPos({
                 x: Math.min(Math.max(padding, dragRef.current.startPosX + dX), Math.max(padding, maxRight)),
                 y: Math.min(Math.max(padding, dragRef.current.startPosY + dY), Math.max(padding, maxBottom)),
@@ -136,7 +136,6 @@ export default function ChatWidget() {
         const handleMouseUp = () => {
             if (!isDragging) return;
             setIsDragging(false);
-            // If dragging icon, not moved -> open it and snap to safe position
             if (!isOpen && dragRef.current && !dragRef.current.moved) {
                 snapToSafePosition();
                 setIsOpen(true);
@@ -151,7 +150,45 @@ export default function ChatWidget() {
             window.removeEventListener("mousemove", handleMouseMove);
             window.removeEventListener("mouseup", handleMouseUp);
         };
-    }, [isDragging, isOpen, activeSessionIds.length]);
+    }, [isDragging, isOpen, activeSessionIds.length, chatSize]);
+
+    // Resize Logic (Anchor bottom-right, drag top-left)
+    const handleMouseDownResize = (e: React.MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsResizing(true);
+        resizeRef.current = {
+            startX: e.clientX,
+            startY: e.clientY,
+            startWidth: chatSize.width,
+            startHeight: chatSize.height
+        };
+    };
+
+    useEffect(() => {
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!isResizing || !resizeRef.current) return;
+            const dX = resizeRef.current.startX - e.clientX;
+            const dY = resizeRef.current.startY - e.clientY;
+
+            setChatSize({
+                width: Math.max(400, resizeRef.current.startWidth + dX),
+                height: Math.max(500, resizeRef.current.startHeight + dY)
+            });
+        };
+        const handleMouseUp = () => {
+            setIsResizing(false);
+            resizeRef.current = null;
+        };
+        if (isResizing) {
+            window.addEventListener("mousemove", handleMouseMove);
+            window.addEventListener("mouseup", handleMouseUp);
+        }
+        return () => {
+            window.removeEventListener("mousemove", handleMouseMove);
+            window.removeEventListener("mouseup", handleMouseUp);
+        };
+    }, [isResizing]);
 
     // ── Session Management
     const createSession = () => {
@@ -216,13 +253,13 @@ export default function ChatWidget() {
     // ── RENDER ──────────────────────────────────────────────────────
     return (
         <div
-            className={`fixed z-[9999] flex flex-col items-end transition-all ease-[cubic-bezier(0.2,0.8,0.2,1)] duration-700 ${isDragging ? "select-none transition-none shadow-2xl" : ""}`}
+            className={`fixed z-[9999] flex flex-col items-end transition-all ease-[cubic-bezier(0.2,0.8,0.2,1)] duration-700 ${isDragging || isResizing ? "select-none transition-none shadow-2xl" : ""}`}
             style={{
                 right: isStellarMode ? 20 : (isMaximized ? 0 : iconPos.x),
                 top: isStellarMode ? 20 : "auto",
                 bottom: isStellarMode ? "auto" : (isMaximized ? 0 : iconPos.y),
-                width: isStellarMode ? "12px" : (isMaximized ? "100%" : (isOpen ? (activeSessionIds.length > 1 ? "min(1200px, 95vw)" : "min(520px, 100vw)") : "56px")),
-                height: isStellarMode ? "12px" : (isMaximized ? "100%" : (isOpen ? (window.innerWidth < 640 ? "100vh" : "min(800px, calc(100vh - 80px))") : "56px")),
+                width: isStellarMode ? "12px" : (isMaximized ? "100%" : (isOpen ? (activeSessionIds.length > 1 ? `min(${Math.max(1200, chatSize.width)}px, 95vw)` : `${chatSize.width}px`) : "56px")),
+                height: isStellarMode ? "12px" : (isMaximized ? "100%" : (isOpen ? (window.innerWidth < 640 ? "100vh" : `${chatSize.height}px`) : "56px")),
             }}
         >
             {isStellarMode ? (
@@ -234,6 +271,16 @@ export default function ChatWidget() {
                 <div className={`w-full h-full flex flex-col overflow-hidden transition-all duration-700 glass
                     ${isDarkMode ? "bg-zinc-950/80 border border-white/10 shadow-[0_40px_100px_-20px_rgba(0,0,0,0.8)]" : "bg-white/90 border border-zinc-200 shadow-[0_40px_100px_-20px_rgba(0,0,0,0.15)]"}
                     ${isMaximized || (typeof window !== "undefined" && window.innerWidth < 640) ? "rounded-none border-none" : "rounded-[32px]"} ring-1 ring-black/5`}>
+
+                    {/* Resize handle (Top-Left) */}
+                    {isOpen && !isMaximized && (
+                        <div
+                            onMouseDown={handleMouseDownResize}
+                            className="absolute top-0 left-0 w-8 h-8 cursor-nw-resize z-[60] group/resizer flex items-center justify-center"
+                        >
+                            <div className="w-4 h-4 border-t-2 border-l-2 border-white/20 rounded-tl-lg group-hover/resizer:border-fuchsia-500 transition-colors" />
+                        </div>
+                    )}
 
                     {/* ── HEADER ─────────────────────────────────── */}
                     <header

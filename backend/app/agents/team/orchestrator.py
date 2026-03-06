@@ -8,6 +8,7 @@ import asyncio
 import uuid
 
 from ...services.risk_service import risk_service
+from ...services.open_claw_service import open_claw_service
 import os
 
 def _load_prompt(filename: str) -> str:
@@ -68,6 +69,49 @@ async def delegate_parallel_tasks(ctx: RunContext[TeamContext], tasks: List[Dict
     return "\n\n".join(results)
 
 
+async def execute_open_claw_task(ctx: RunContext[TeamContext], instruction: str) -> str:
+    """
+    Delegate a web-automation, advanced scraping, or external messaging task to the OpenClaw agent.
+    Use this for: scraping Reddit/Xsentiment, checking news on sites without APIs, 
+    or sending WhatsApp/Telegram notifications.
+    """
+    from app.core.logging import logger
+    logger.info(f"[OpenClaw] -> Head of Strategy delegating: {instruction}")
+    ctx.deps.add_message("system", f"Delegating web automation to OpenClaw: {instruction}", "Head of Strategy")
+    
+    result = await open_claw_service.run_task(instruction)
+    if result.get("status") == "success":
+        data = result.get("data", {})
+        return f"OpenClaw Task Result: {data.get('summary', 'Task completed successfully.')}\nDetails: {json.dumps(data.get('details', {}))}"
+    else:
+        return f"OpenClaw Error: {result.get('message', 'Unknown error connecting to OpenClaw service.')}"
+
+
+async def update_gsd_tracking(ctx: RunContext[TeamContext], filename: str, content: str) -> str:
+    """
+    Update GSD tracking files (ROADMAP.md, STATE.md).
+    Use this when a milestone is completed, a new phase is planned, or project state changes.
+    """
+    from app.core.logging import logger
+    from pathlib import Path
+    
+    if filename not in ["ROADMAP.md", "STATE.md", "PLAN.md"]:
+        return f"Error: Cannot update {filename}. Only ROADMAP.md, STATE.md, and PLAN.md are allowed."
+    
+    root_dir = Path(__file__).parent.parent.parent.parent.parent
+    filepath = root_dir / filename
+    
+    try:
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(content)
+        logger.info(f"📝 [GSD] Updated {filename}")
+        ctx.deps.add_message("system", f"Updated GSD file: {filename}", "Head of Strategy")
+        return f"Successfully updated {filename}."
+    except Exception as e:
+        logger.error(f"❌ [GSD] Failed to update {filename}: {e}")
+        return f"Error updating {filename}: {str(e)}"
+
+
 # ── Orchestrator class ──────────────────────────────────────────────
 
 from .specialists import query_openbb_api, execute_openbb_terminal_command
@@ -84,7 +128,14 @@ class HeadOfStrategy(TeamAgent):
             "Head of Strategy",
             _load_prompt("orchestrator.md"),
             ORCHESTRATOR_MODEL,
-            tools=[delegate_task, delegate_parallel_tasks, query_openbb_api, execute_openbb_terminal_command],
+            tools=[
+                delegate_task, 
+                delegate_parallel_tasks, 
+                query_openbb_api, 
+                execute_openbb_terminal_command, 
+                execute_open_claw_task,
+                update_gsd_tracking
+            ],
         )
         # session_id → TeamContext (multi-conversation support)
         self._sessions: Dict[str, TeamContext] = {}

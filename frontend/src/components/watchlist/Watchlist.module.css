@@ -281,6 +281,20 @@
     color: var(--muted);
 }
 
+.wlPriceUpdated {
+    animation: wlPriceFlash 1s ease-out;
+}
+
+@keyframes wlPriceFlash {
+    0% {
+        background-color: rgba(var(--accent-rgb, 59, 130, 246), 0.15);
+    }
+
+    100% {
+        background-color: transparent;
+    }
+}
+
 /* ── Bottom Detail Panel ────────── */
 .wlDetail {
     flex-shrink: 0;

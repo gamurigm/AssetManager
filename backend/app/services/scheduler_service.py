@@ -10,6 +10,7 @@ from app.core.logging import logger
 from app.core.container import duckdb_repo
 from app.services.risk_service import risk_service
 from app.services.crawler import crawler_service
+from app.services.realtime_service import realtime_service
 
 
 # ──────────────────────────────────────────────
@@ -123,10 +124,16 @@ async def record_equity_snapshot():
 # ──────────────────────────────────────────────
 # SCHEDULER INITIALIZATION
 # ──────────────────────────────────────────────
+# ──────────────────────────────────────────────
+# 4. REAL-TIME PRICE BROADCASTER (every 5-10 s)
+# ──────────────────────────────────────────────
+async def broadcast_prices_job(sio):
+    """Broadcast prices for all active symbols to their respective Socket.IO rooms."""
+    await realtime_service.broadcast_prices(sio)
+
 scheduler = AsyncIOScheduler()
 
-
-def start_scheduler():
+def start_scheduler(sio=None):
     """Start all background jobs."""
 
     # 1. Portfolio Risk Scan — every 60 minutes
@@ -177,6 +184,17 @@ def start_scheduler():
         run_date=run_date,
         id="portfolio_scan_startup",
     )
+
+    # 5. Fast Market Data Stream — every 5 seconds
+    if sio:
+        scheduler.add_job(
+            broadcast_prices_job,
+            "interval",
+            seconds=5,
+            args=[sio],
+            id="realtime_price_stream",
+            replace_existing=True,
+        )
 
     scheduler.start()
     logger.info(

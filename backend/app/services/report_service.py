@@ -131,307 +131,153 @@ class ReportService:
         total_value: float,
         total_pnl: float,
     ) -> str:
-        """Generates a professional PDF report with risk analytics and charts."""
-        # 1. Risk analytics
+        """Standard Portfolio Performance Report."""
         risk_report = risk_service.get_portfolio_risk_report(holdings)
+        
+        try: eq_path = self._save_chart_as_file(self._generate_equity_chart(), "equity")
+        except: eq_path = ""
+        try: mom_path = self._save_chart_as_file(self._generate_momentum_chart(), "momentum")
+        except: mom_path = ""
 
-        # 2. Charts
-        try:
-            eq_b64 = self._generate_equity_chart()
-        except Exception:
-            eq_b64 = ""
-        try:
-            mom_b64 = self._generate_momentum_chart()
-        except Exception:
-            mom_b64 = ""
-
-        eq_path = self._save_chart_as_file(eq_b64, "equity")
-        mom_path = self._save_chart_as_file(mom_b64, "momentum")
-
-        # 3. Build PDF
-        pdf = AlphaReport()
+        pdf = AlphaReport(mode="Standard")
         pdf.set_auto_page_break(auto=True, margin=15)
         pdf.add_page()
 
-        # ── Top metrics row ─────────────────────────────────────────
-        y = pdf.get_y() + 2
-        pdf.metric_card("Net Asset Value (NAV)", f"${total_value:,.2f}", 10, y)
-        pnl_str = f"{'+'if total_pnl>=0 else ''}${total_pnl:,.2f}"
-        pdf.metric_card("Total P&L (Unrealized)", pnl_str, 75, y)
+        # Metrics Row 1
+        y = pdf.get_y()
+        pnl_pct = (total_pnl / (total_value - total_pnl) * 100) if (total_value - total_pnl) != 0 else 0
+        pdf.metric_card("Net Asset Value (NAV)", f"${total_value:,.2f}", 12, y)
+        pdf.metric_card("Total P&L (Unrealized)", f"${total_pnl:,.2f}", 77, y, trend=f"{pnl_pct:+.2f}%")
+        pdf.metric_card("Risk Adj. Return", str(risk_report.get("risk_adjusted_return", "N/A")), 142, y)
+        pdf.set_y(y + 26)
 
-        rar_val = risk_report.get("risk_adjusted_return", "N/A")
-        pdf.metric_card("Risk Adjusted Return", str(rar_val), 140, y)
-        pdf.set_y(y + 22)
+        # Asset Matrix
+        pdf.section_title("Core Portfolio Exposure")
+        pdf.box_note("Structural Overview", 
+                    f"Portfolio contains {len(holdings)} active positions across multiple sectors. "
+                    f"Aggregate volatility is currently {risk_report.get('annualized_volatility')}% with a Sharpe of {risk_report.get('sharpe_ratio')}.")
 
-        # ── Risk metrics row ────────────────────────────────────────
-        pdf.section_title("Risk Matrix & Performance Metrics")
-        y2 = pdf.get_y()
-        pdf.metric_card("VaR (95%)", f"{risk_report.get('var_95_percent', 'N/A')}%", 10, y2)
-        pdf.metric_card("Sharpe Ratio", str(risk_report.get("sharpe_ratio", "N/A")), 75, y2)
-        pdf.metric_card("Expected Value E[x]", f"${risk_report.get('expected_value_trade', 0)}", 140, y2)
-        pdf.set_y(y2 + 22)
-
-        y3 = pdf.get_y()
-        pdf.metric_card("Ann. Volatility", f"{risk_report.get('annualized_volatility', 'N/A')}%", 10, y3)
-        pdf.metric_card("Skewness", str(risk_report.get("skewness", 0)), 75, y3)
-        pdf.metric_card("Excess Kurtosis", str(risk_report.get("excess_kurtosis", 0)), 140, y3)
-        pdf.set_y(y3 + 22)
-
-        # (formulas omitted — kept in math_core.py docstrings for reference)
-
-        # ── Holdings table ──────────────────────────────────────────
-        pdf.section_title("Portfolio Exposure")
-        pdf.set_font("Helvetica", "B", 7)
-        pdf.set_fill_color(44, 62, 80)
-        pdf.set_text_color(255, 255, 255)
-        col_w = [25, 50, 22, 28, 28, 30]
-        headers = ["Symbol", "Name", "Shares", "Entry", "Market", "P&L ($)"]
-        for i, h in enumerate(headers):
-            pdf.cell(col_w[i], 7, h, border=1, fill=True, align="C")
-        pdf.ln()
-
-        pdf.set_font("Helvetica", "", 7)
-        pdf.set_text_color(26, 26, 26)
-        for idx, h in enumerate(holdings):
-            if pdf.get_y() > 270:
-                pdf.add_page()
-            fill = idx % 2 == 0
-            if fill:
-                pdf.set_fill_color(253, 253, 253)
-            else:
-                pdf.set_fill_color(255, 255, 255)
-
-            sym = pdf.safe_text(h.get("symbol", "N/A"))
-            name = pdf.safe_text(h.get("name", "N/A")[:26])
-            shares = h.get("shares", 0)
-            entry = h.get("entryPrice", 0)
-            price = h.get("price", 0)
-            change = h.get("change", 0)
-
-            pdf.cell(col_w[0], 6, sym, border=1, fill=fill, align="C")
-            pdf.cell(col_w[1], 6, name, border=1, fill=fill)
-            pdf.cell(col_w[2], 6, f"{shares:.2f}", border=1, fill=fill, align="R")
-            pdf.cell(col_w[3], 6, f"${entry:,.2f}", border=1, fill=fill, align="R")
-            pdf.cell(col_w[4], 6, f"${price:,.2f}", border=1, fill=fill, align="R")
-            # Color P&L
-            if change >= 0:
-                pdf.set_text_color(39, 174, 96)
-            else:
-                pdf.set_text_color(192, 57, 43)
-            pdf.cell(col_w[5], 6, f"${change:,.2f}", border=1, fill=fill, align="R")
-            pdf.set_text_color(26, 26, 26)
-            pdf.ln()
-
-        # ── Charts ──────────────────────────────────────────────────
-        if eq_path and os.path.exists(eq_path):
+        rows = []
+        for h in holdings:
+            rows.append([
+                h.get("symbol"), 
+                h.get("name")[:25], 
+                f"{h.get('shares'):.2f}", 
+                f"${h.get('entryPrice',0):,.2f}", 
+                f"${h.get('price',0):,.2f}", 
+                f"{'+' if h.get('change',0)>=0 else ''}${h.get('change',0):,.2f}"
+            ])
+        pdf.summary_table(rows, ["Asset", "Security Name", "Size", "Entry", "Last", "PnL ($)"], [22, 55, 25, 28, 28, 30])
+        
+        # Charts Page
+        if eq_path:
             pdf.add_page()
-            pdf.section_title("Equity Curve & Trend Projection")
-            pdf.image(eq_path, x=10, w=190)
-            pdf.ln(3)
-            pdf.set_font("Helvetica", "I", 7)
-            pdf.set_text_color(127, 140, 141)
-            pdf.cell(0, 5, "Historical equity curve with smoothed trend line projection.")
-            pdf.ln(6)
+            pdf.section_title("Performance & Trend Projection")
+            pdf.image(eq_path, x=12, w=186)
+            pdf.box_note("Quant Insight", "The equity curve includes a 30-day structural trend projection optimized via Gradient Descent.")
 
-        if mom_path and os.path.exists(mom_path):
-            if not eq_path:
-                pdf.add_page()
-            pdf.section_title("Asset Momentum (Linear Regression Slopes)")
-            pdf.image(mom_path, x=10, w=190)
-            pdf.ln(3)
-            pdf.set_font("Helvetica", "I", 7)
-            pdf.set_text_color(127, 140, 141)
-            pdf.cell(0, 5, "Positive slope = bullish momentum, negative = bearish. Based on 30-day regression.")
-            pdf.ln(6)
-
-        # ── Transaction Log (The Audit Trail) ───────────────────────
-        pdf.add_page()
-        pdf.section_title("Institutional Transaction History (Audit Trail)")
-        pdf.set_font("Helvetica", "B", 7)
-        pdf.set_fill_color(30, 30, 35)
-        pdf.set_text_color(255, 255, 255)
-        
-        tx_w = [25, 20, 20, 20, 30, 30, 45]
-        tx_headers = ["Symbol", "Type", "Shares", "Price", "Realized P&L", "Date", "Status"]
-        for i, th in enumerate(tx_headers):
-            pdf.cell(tx_w[i], 7, th, border=1, fill=True, align="C")
-        pdf.ln()
-
-        pdf.set_font("Helvetica", "", 7)
-        pdf.set_text_color(40, 40, 40)
-        
-        transactions = duckdb_repo.get_transactions()
-        for idx, t in enumerate(reversed(transactions[-40:])):  # Last 40 trades
-            fill = idx % 2 == 0
-            pdf.set_fill_color(245, 245, 245) if fill else pdf.set_fill_color(255, 255, 255)
-            
-            pnl = t.get("realized_pnl", 0)
-            pnl_c = (39, 174, 96) if pnl > 0 else (192, 57, 43) if pnl < 0 else (120, 120, 120)
-
-            pdf.cell(tx_w[0], 6, t.get("symbol"), border=1, fill=fill, align="C")
-            pdf.cell(tx_w[1], 6, t.get("type"), border=1, fill=fill, align="C")
-            pdf.cell(tx_w[2], 6, f"{t.get('shares'):.2f}", border=1, fill=fill, align="R")
-            pdf.cell(tx_w[3], 6, f"${t.get('price'):,.2f}", border=1, fill=fill, align="R")
-            
-            # Color the P&L cell
-            pdf.set_text_color(*pnl_c)
-            pdf.cell(tx_w[4], 6, f"${pnl:,.2f}", border=1, fill=fill, align="R")
-            pdf.set_text_color(40, 40, 40)
-            
-            pdf.cell(tx_w[5], 6, t.get("date"), border=1, fill=fill, align="C")
-            pdf.cell(tx_w[6], 6, "CONFIRMED_NODE_ALPHA", border=1, fill=fill, align="C")
-            pdf.ln()
-
-        # ── Theoretical Foundations ─────────────────────────────────
-        self._add_theoretical_foundations(pdf)
-
-        # 4. Save
-        filename = f"alpha_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-        filepath = os.path.join(self.reports_dir, filename)
-        pdf.output(filepath)
-
-        # Cleanup temp chart images
+        # Save
+        filename = f"performance_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        pdf.output(os.path.join(self.reports_dir, filename))
         for p in [eq_path, mom_path]:
-            if p and os.path.exists(p):
-                try:
-                    os.remove(p)
-                except Exception:
-                    pass
-
+            if p and os.path.exists(p): os.remove(p)
         return filename
 
-    def _add_theoretical_foundations(self, pdf: AlphaReport):
-        """Appends a theoretical appendix to the risk report."""
-        pdf.add_page()
-        pdf.section_title("Algorithmic Risk Theory & Statistical Foundations")
-        
-        pdf.set_font("Helvetica", "B", 10)
-        pdf.set_text_color(44, 62, 80)
-        pdf.cell(0, 6, "1. Value at Risk (VaR) vs Modified VaR (Cornish-Fisher)", ln=True)
-        pdf.set_font("Helvetica", "", 8)
-        pdf.set_text_color(40, 40, 40)
-        text_var = (
-            "Standard Value at Risk (VaR) assumes that asset returns follow a normal distribution. However, "
-            "financial markets exhibit 'fat tails' and skewness, meaning extreme events occur more frequently "
-            "than a normal distribution predicts. Our system implements the Cornish-Fisher expansion (Modified VaR) "
-            "to adjust the standard Z-score using the calculated Skewness and Excess Kurtosis of the portfolio. "
-            "This provides a much more robust risk threshold during market drawdowns."
-        )
-        pdf.multi_cell(0, 5, text_var)
-        pdf.ln(5)
-
-        pdf.set_font("Helvetica", "B", 10)
-        pdf.set_text_color(44, 62, 80)
-        pdf.cell(0, 6, "2. Gradient Descent & Momentum Prediction", ln=True)
-        pdf.set_font("Helvetica", "", 8)
-        pdf.set_text_color(40, 40, 40)
-        text_gd = (
-            "Rather than relying on lagging indicators like Simple Moving Averages, the system models asset trajectory "
-            "using Linear Regression optimized via Gradient Descent over a rolling 30-day epoch window. By minimizing the Mean "
-            "Squared Error (MSE) between the regression line and normalized price action, we mathematically extract the structural slope "
-            "(momentum) of the asset. A positive slope indicates definitive capital inflow, while a negative slope signifies distribution."
-        )
-        pdf.multi_cell(0, 5, text_gd)
-        pdf.ln(5)
-
-        pdf.set_font("Helvetica", "B", 10)
-        pdf.set_text_color(44, 62, 80)
-        pdf.cell(0, 6, "3. Risk-Adjusted Return (RAR) & Sharpe Architecture", ln=True)
-        pdf.set_font("Helvetica", "", 8)
-        pdf.set_text_color(40, 40, 40)
-        text_sharpe = (
-            "The Sharpe Ratio evaluates return per unit of standard deviation (volatility), subtracting the risk-free rate. "
-            "Our RAR (Risk-Adjusted Return) metric takes this further by computing Expected Return (E[R]) normalized against "
-            "both Volatility (sigma) and total Capital at Risk (C). This ensures that heavy allocations in highly volatile assets "
-            "are mathematically penalized if they do not provide geometrically outsized expectations."
-        )
-        pdf.multi_cell(0, 5, text_sharpe)
-        pdf.ln(5)
-        
-        pdf.set_font("Helvetica", "B", 10)
-        pdf.set_text_color(44, 62, 80)
-        pdf.cell(0, 6, "4. Skewness and Excess Kurtosis Dynamics", ln=True)
-        pdf.set_font("Helvetica", "", 8)
-        pdf.set_text_color(40, 40, 40)
-        text_kurt = (
-            "Skewness measures the asymmetry of the return distribution. Negative skewness indicates a tendency for large "
-            "losses and small gains. Kurtosis measures the 'tailedness'. Excess Kurtosis > 0 (Leptokurtic distribution) indicates a high "
-            "probability of black swan tail events. The risk engine continuously monitors these metrics to algorithmically trigger "
-            "Protective Put Collar strategies when the structural tail risk exceeds the portfolio's mandate thresholds."
-        )
-        pdf.multi_cell(0, 5, text_kurt)
-        pdf.ln(6)
-
-    def generate_custom_intelligence_report(
-        self,
-        analysis_text: str,
-        holdings: List[Dict[str, Any]],
-        total_value: float,
-        total_pnl: float,
-    ) -> str:
-        """Generates a PDF that includes bespoke specialist analysis text."""
-        # 1. Base Logic (Charts)
+    def generate_executive_summary(self, holdings: List[Dict[str, Any]], intelligence_text: str) -> str:
+        """High-level brief for Asset Managers (Executive Mode)."""
+        total_val = sum(h['shares'] * h.get('price', h['entryPrice']) for h in holdings)
         risk_report = risk_service.get_portfolio_risk_report(holdings)
-        try:
-            eq_b64 = self._generate_equity_chart()
-        except: eq_b64 = ""
-        eq_path = self._save_chart_as_file(eq_b64, "custom_equity")
 
-        # 2. Build PDF
-        pdf = AlphaReport()
+        pdf = AlphaReport(mode="Executive")
         pdf.set_auto_page_break(auto=True, margin=15)
         pdf.add_page()
 
-        # Metrics row
-        y = pdf.get_y() + 2
-        pdf.metric_card("Net Asset Value", f"${total_value:,.2f}", 10, y)
-        pdf.metric_card("Portfolio P&L", f"${total_pnl:,.2f}", 75, y)
-        pdf.metric_card("VaR (95%)", f"{risk_report.get('var_95_percent')}%", 140, y)
-        pdf.set_y(y + 22)
+        y = pdf.get_y()
+        pdf.metric_card("Current AUM", f"${total_val:,.2f}", 12, y)
+        pdf.metric_card("Portfolio VaR", f"{risk_report.get('var_95_percent')}%", 77, y)
+        pdf.metric_card("Efficiency (Sharpe)", str(risk_report.get("sharpe_ratio")), 142, y)
+        pdf.set_y(y + 28)
 
-        # ── Intelligence Section ────────────────────────────────────
-        pdf.section_title("Specialist Neural Intelligence Analysis")
+        pdf.section_title("Intelligence Alpha Brief")
         pdf.set_font("Helvetica", "B", 10)
-        pdf.set_text_color(52, 152, 219)
-        pdf.cell(0, 6, "CONFIDENTIAL STRATEGIC ADVISORY", ln=True)
+        pdf.set_text_color(44, 62, 80)
+        pdf.cell(0, 8, "STRATEGIC OUTLOOK & NEURAL CONFLUENCE", ln=True)
         pdf.ln(2)
+        pdf.set_font("Helvetica", "", 10)
+        pdf.multi_cell(0, 6, pdf.safe_text(intelligence_text))
         
-        # Injected AI text
-        pdf.long_text_box(analysis_text)
-        pdf.ln(5)
-
-        # ── Visual Analytics ────────────────────────────────────────
-        if eq_path and os.path.exists(eq_path):
-            pdf.section_title("Equity Performance & Alpha Projection")
-            pdf.image(eq_path, x=10, w=190)
-            os.remove(eq_path)
-
-        # ── Asset matrix ────────────────────────────────────────────
         pdf.ln(10)
-        pdf.section_title("Current Institutional Exposure")
-        pdf.set_font("Helvetica", "B", 8)
-        pdf.set_text_color(255, 255, 255)
-        pdf.set_fill_color(30, 30, 35)
-        w = [30, 60, 30, 30, 40]
-        h_titles = ["Symbol", "Position Name", "Shares", "Price", "Value"]
-        for i, t in enumerate(h_titles):
-            pdf.cell(w[i], 7, t, border=1, fill=True, align="C")
-        pdf.ln()
+        pdf.section_title("Top Positional Exposures")
+        top_rows = []
+        for h in sorted(holdings, key=lambda x: x['shares']*x.get('price', 0), reverse=True)[:5]:
+            val = h['shares'] * h.get('price', 0)
+            top_rows.append([h['symbol'], h['name'][:30], f"{(val/total_val*100):.1f}%", f"${val:,.2f}"])
+        pdf.summary_table(top_rows, ["Symbol", "Security", "Weight (%)", "Market Value"], [30, 80, 40, 40])
 
-        pdf.set_font("Helvetica", "", 8)
-        pdf.set_text_color(40, 40, 40)
-        for h in holdings:
-            pdf.cell(w[0], 6, pdf.safe_text(str(h.get('symbol'))), border=1)
-            pdf.cell(w[1], 6, pdf.safe_text(str(h.get('name'))[:30]), border=1)
-            pdf.cell(w[2], 6, f"{h.get('shares'):.2f}", border=1, align="R")
-            pdf.cell(w[3], 6, f"${h.get('price', 0):,.2f}", border=1, align="R")
-            pdf.cell(w[4], 6, f"${h.get('shares')*h.get('price',0):,.2f}", border=1, align="R")
-            pdf.ln()
-
-        # 3. Save
-        filename = f"custom_alpha_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        filename = f"executive_brief_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
         pdf.output(os.path.join(self.reports_dir, filename))
         return filename
+
+    def generate_risk_audit(self, holdings: List[Dict[str, Any]]) -> str:
+        """Deep-dive Risk Audit (Risk Mode)."""
+        risk_report = risk_service.get_portfolio_risk_report(holdings)
+        
+        pdf = AlphaReport(mode="Risk")
+        pdf.set_auto_page_break(auto=True, margin=15)
+        pdf.add_page()
+
+        y = pdf.get_y()
+        pdf.metric_card("Value at Risk (95%)", f"{risk_report.get('var_95_percent')}%", 12, y)
+        pdf.metric_card("Ann. Volatility", f"{risk_report.get('annualized_volatility')}%", 77, y)
+        pdf.metric_card("E[X] Per Trade", f"${risk_report.get('expected_value_trade', 0):,.2f}", 142, y)
+        pdf.set_y(y + 28)
+
+        pdf.section_title("Tail Risk & Statistical Moments")
+        pdf.box_note("Risk Advisory", 
+                    "The following metrics measure the asymmetry and tail density of portfolio returns. "
+                    "Extreme kurtosis suggests black-swan vulnerability.")
+        
+        mom_rows = [
+            ["Skewness (Asymmetry)", str(risk_report.get("skewness", 0)), "Target: > -0.5"],
+            ["Excess Kurtosis", str(risk_report.get("excess_kurtosis", 0)), "Target: < 3.0"],
+            ["Modified VaR (Cornish-Fisher)", f"{risk_report.get('var_95_percent')}%", "Institutional Limit: 15%"]
+        ]
+        pdf.summary_table(mom_rows, ["Metric Name", "Portfolio Value", "Institutional Benchmark"], [70, 50, 68])
+
+        pdf.ln(5)
+        pdf.section_title("Hedged Strategy Recommendations")
+        strat = risk_report.get("hedging_strategy", {})
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.set_text_color(192, 57, 43)
+        pdf.cell(0, 8, f"RECOMMENDED ACTION: {strat.get('action', 'MONITOR')}", ln=True)
+        pdf.set_font("Helvetica", "", 10)
+        pdf.set_text_color(44, 62, 80)
+        pdf.multi_cell(0, 6, f"Primary Strategy: {strat.get('recommended_strategy')}\nTarget: {strat.get('primary_hedge_target')}\nRatio: {strat.get('hedge_ratio')}")
+
+        filename = f"risk_audit_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        pdf.output(os.path.join(self.reports_dir, filename))
+        return filename
+
+    def generate_custom_intelligence_report(self, analysis_text: str, holdings: List[Dict[str, Any]], total_value: float, total_pnl: float) -> str:
+        """The 'Bespoke Intel' variant (Intelligence Mode)."""
+        pdf = AlphaReport(mode="Intelligence")
+        pdf.set_auto_page_break(auto=True, margin=15)
+        pdf.add_page()
+        
+        y = pdf.get_y()
+        pdf.metric_card("NAV", f"${total_value:,.2f}", 12, y)
+        pdf.metric_card("PnL", f"${total_pnl:,.2f}", 77, y)
+        pdf.metric_card("Intel Score", "High Alpha", 142, y)
+        pdf.set_y(y + 28)
+
+        pdf.section_title("Global Signal Convergence")
+        pdf.long_text_box(analysis_text)
+        
+        filename = f"intel_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        pdf.output(os.path.join(self.reports_dir, filename))
+        return filename
+
+report_service = ReportService()
 
 
 report_service = ReportService()

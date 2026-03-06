@@ -365,7 +365,7 @@ export default function ChatPane({
                         <div className={`${isMaximized ? "max-w-[85%]" : "max-w-[92%]"} space-y-2`}>
 
                             {m.role === "user" ? (
-                                <div className={`py-3 px-5 rounded-2xl rounded-tr-sm text-[15.2px] leading-relaxed font-bold shadow-md
+                                <div className={`py-4 px-6 rounded-2xl rounded-tr-sm text-[16.5px] leading-relaxed font-bold shadow-md
                                     ${isDarkMode
                                         ? "bg-gradient-to-br from-fuchsia-600 to-violet-700 text-white shadow-fuchsia-600/20"
                                         : "bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-indigo-600/20"}`}>
@@ -405,24 +405,24 @@ export default function ChatPane({
                                     </div>
 
                                     {m.reasoning && (
-                                        <div className={`mx-3 mt-3 p-3 rounded-xl text-[10px] leading-relaxed font-mono
-                                            ${isDarkMode ? "bg-amber-500/5 border border-amber-500/10 text-amber-300/60" : "bg-amber-50 border border-amber-100 text-amber-700/50"}`}>
+                                        <div className={`mx-3 mt-3 p-4 rounded-xl text-[14px] leading-relaxed font-mono
+                                            ${isDarkMode ? "bg-amber-500/5 border border-amber-500/10 text-amber-300/80" : "bg-amber-50 border border-amber-100 text-amber-800"}`}>
                                             <div className="flex items-center gap-1.5 mb-1.5 opacity-60">
-                                                <Activity size={9} className="animate-pulse" />
-                                                <span className="font-black uppercase tracking-[0.2em] text-[8px]">Neural Synthesis</span>
+                                                <Activity size={10} className="animate-pulse" />
+                                                <span className="font-black uppercase tracking-[0.2em] text-[10px]">Neural Synthesis</span>
                                             </div>
                                             <div className="whitespace-pre-wrap">{m.reasoning}</div>
                                         </div>
                                     )}
 
-                                    <div className={`px-4 py-3 text-[15.2px] leading-[1.8] group
+                                    <div className={`px-6 py-5 text-[18px] leading-[1.8] group
                                         prose prose-base max-w-full break-normal
                                         ${isDarkMode ? "prose-invert" : "prose-zinc"}
-                                        prose-p:mb-4 last:prose-p:mb-0
-                                        prose-headings:font-black prose-headings:tracking-tight
+                                        prose-p:mb-5 last:prose-p:mb-0
+                                        prose-headings:font-black prose-headings:tracking-tight prose-headings:mb-4
                                         prose-strong:font-extrabold
-                                        prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded-md prose-code:font-mono prose-code:text-[11px]
-                                        prose-table:text-[11px]
+                                        prose-code:px-2 prose-code:py-1 prose-code:rounded-md prose-code:font-mono prose-code:text-[14px]
+                                        prose-table:text-[14px]
                                         prose-th:px-3 prose-th:py-2 prose-td:px-3 prose-td:py-1.5
                                         prose-a:text-accent prose-a:no-underline prose-a:font-bold hover:prose-a:underline
                                         ${isDarkMode
@@ -500,7 +500,7 @@ export default function ChatPane({
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         onKeyDown={(e) => e.key === "Enter" && !isLoading && handleSend()}
-                        className={`w-full bg-transparent py-3.5 px-5 text-[16.5px] font-medium focus:outline-none
+                        className={`w-full bg-transparent py-4 px-6 text-[18px] font-medium focus:outline-none
                             ${isDarkMode ? "text-white placeholder:text-zinc-700" : "text-zinc-900 placeholder:text-zinc-400"}`}
                         placeholder={`Type a directive for ${session.title}…`}
                         disabled={isLoading}
