@@ -11,7 +11,11 @@ import {
     ExternalLink as ExternalLinkIcon,
     FileTerminal,
     Loader2,
+    PieChart,
     Play,
+    ShieldCheck,
+    Target,
+    TrendingDown,
     TriangleAlert,
     Zap,
 } from "lucide-react";
@@ -236,7 +240,7 @@ function buildHistogramData(samples: number[], bins = 18) {
     return histogram.map((bucket) => ({
         label: bucket.from.toFixed(0),
         count: bucket.count,
-        color: (bucket.from + bucket.to) / 2 >= 0 ? "#22c55e" : "#ef4444",
+        color: (bucket.from + bucket.to) / 2 >= 0 ? "#00ffa3" : "#ff2e2e",
     }));
 }
 
@@ -261,7 +265,7 @@ type RegimeData = {
     next_probs: Record<string, number>;
 };
 
-const REGIME_FILL: Record<number, string> = { 0: "#22c55e", 1: "#eab308", 2: "#ef4444" };
+const REGIME_FILL: Record<number, string> = { 0: "#00ffa3", 1: "#ffa300", 2: "#ff2e2e" };
 
 // ─── IV Smile types ──────────────────────────────────────────────────────────
 type IvContract = {
@@ -314,23 +318,23 @@ function IvSmilePanel({ data }: { data: IvSmileData }) {
     }));
 
     return (
-        <div className="bg-background rounded-2xl border border-border p-4">
+        <div className="bg-[#050505] rounded-3xl border border-white/10 p-6 shadow-2xl">
             {/* Header */}
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
                 <div>
-                    <p className="text-sm font-semibold">Implied Volatility Smile — {data.symbol}</p>
-                    <p className="text-xs text-muted">Black-Scholes inversion · σ(K) curve · spot ${data.spot.toFixed(2)}</p>
+                    <p className="text-[10px] font-black uppercase tracking-[0.3em] text-white/50">Implied Volatility Smile — {data.symbol}</p>
+                    <p className="text-[9px] font-bold text-white/20 mt-1 uppercase tracking-widest">Black-Scholes inversion · σ(K) curve · spot ${data.spot.toFixed(2)}</p>
                 </div>
                 <div className="flex items-center gap-3">
                     {exp.atm_iv != null && (
-                        <div className="px-3 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/30 text-xs font-mono font-bold text-purple-300">
+                        <div className="px-3 py-1.5 rounded-xl bg-[#d1ff00]/5 border border-[#d1ff00]/20 text-[10px] font-black uppercase tracking-widest text-[#d1ff00]">
                             ATM IV {exp.atm_iv.toFixed(1)}%
                         </div>
                     )}
                     <select
                         value={selectedIdx}
                         onChange={e => setSelectedIdx(Number(e.target.value))}
-                        className="bg-card border border-border rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-accent/30 text-muted"
+                        className="bg-black border border-white/10 rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest focus:outline-none focus:ring-1 focus:ring-[#00ffa3]/30 text-white/50"
                     >
                         {data.expirations.map((ex, i) => (
                             <option key={ex.exp_date} value={i}>
@@ -342,12 +346,12 @@ function IvSmilePanel({ data }: { data: IvSmileData }) {
             </div>
 
             {/* Legend */}
-            <div className="flex items-center gap-5 mb-3 text-[10px] font-mono text-muted/70">
-                <span className="flex items-center gap-1.5"><span className="inline-block w-5 h-0.5 bg-cyan-400" /> IV Calls</span>
-                <span className="flex items-center gap-1.5"><span className="inline-block w-5 h-0.5 bg-amber-400" /> IV Puts</span>
-                <span className="flex items-center gap-1.5 ml-2">|</span>
+            <div className="flex items-center gap-5 mb-5 text-[9px] font-bold text-white/20 uppercase tracking-[0.15em]">
+                <span className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-sm bg-[#00ffa3]/20 border border-[#00ffa3]/40" /> IV Calls</span>
+                <span className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-sm bg-[#ffa300]/20 border border-[#ffa300]/40" /> IV Puts</span>
+                <span className="flex items-center gap-1.5 ml-2 text-white/5">|</span>
                 <span className="flex items-center gap-1.5">Spot ≈ ${data.spot.toFixed(0)}</span>
-                <span className="flex items-center gap-1.5">r = {(data.rf * 100).toFixed(1)}%</span>
+                <span className="flex items-center gap-1.5 font-black text-[#00ffa3]">r = {(data.rf * 100).toFixed(1)}%</span>
             </div>
 
             {/* Chart */}
@@ -371,11 +375,11 @@ function IvSmilePanel({ data }: { data: IvSmileData }) {
                                 if (!active || !payload?.length) return null;
                                 const d: any = payload[0]?.payload;
                                 return (
-                                    <div className="bg-card border border-border rounded-xl px-3 py-2 text-[10px] font-mono shadow-xl space-y-0.5">
-                                        <p className="font-bold text-foreground">{label}</p>
-                                        <p className="text-muted">Moneyness: {d.moneyness > 0 ? "+" : ""}{d.moneyness?.toFixed(1)}%</p>
-                                        {d.callIv != null && <p className="text-cyan-400">CALL IV: {d.callIv.toFixed(1)}%  ·  ${d.callPrice?.toFixed(2)}</p>}
-                                        {d.putIv != null && <p className="text-amber-400">PUT  IV: {d.putIv.toFixed(1)}%  ·  ${d.putPrice?.toFixed(2)}</p>}
+                                    <div className="bg-black border border-white/10 rounded-xl px-4 py-3 text-[10px] font-black uppercase tracking-widest shadow-2xl space-y-2">
+                                        <p className="text-white border-b border-white/5 pb-2 mb-2">{label}</p>
+                                        <p className="text-white/30">Moneyness: {d.moneyness > 0 ? "+" : ""}{d.moneyness?.toFixed(1)}%</p>
+                                        {d.callIv != null && <p className="text-[#00ffa3]">CALL IV: {d.callIv.toFixed(1)}%  ·  ${d.callPrice?.toFixed(2)}</p>}
+                                        {d.putIv != null && <p className="text-[#ffa300]">PUT  IV: {d.putIv.toFixed(1)}%  ·  ${d.putPrice?.toFixed(2)}</p>}
                                     </div>
                                 );
                             }}
@@ -388,8 +392,8 @@ function IvSmilePanel({ data }: { data: IvSmileData }) {
                             stroke="rgba(99,102,241,0.4)"
                             strokeWidth={1}
                         />
-                        <Line type="monotone" dataKey="callIv" name="CALL IV" stroke="#22d3ee" strokeWidth={1.5} dot={false} connectNulls isAnimationActive={false} />
-                        <Line type="monotone" dataKey="putIv" name="PUT IV" stroke="#f59e0b" strokeWidth={1.5} dot={false} connectNulls isAnimationActive={false} />
+                        <Line type="monotone" dataKey="callIv" name="CALL IV" stroke="#00ffa3" strokeWidth={3} dot={false} connectNulls isAnimationActive={false} />
+                        <Line type="monotone" dataKey="putIv" name="PUT IV" stroke="#ffa300" strokeWidth={2} strokeDasharray="5 5" dot={false} connectNulls isAnimationActive={false} />
                     </ComposedChart>
                 </ResponsiveContainer>
             </div>
@@ -571,13 +575,12 @@ function ArchVolPanel({ data }: { data: ArchVolData }) {
             : { label: "ARCH effects remain (p=" + data.arch_lm_test.p_value + ")", cls: "bg-amber-500/10 border-amber-500/30 text-amber-300" };
 
     return (
-        <div className="bg-background rounded-2xl border border-border p-4 mt-3">
-            {/* Header */}
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="bg-[#050505] rounded-3xl border border-white/10 p-6 shadow-2xl">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
                 <div>
-                    <p className="text-sm font-semibold">GARCH(1,1) Conditional Volatility — {data.symbol}</p>
-                    <p className="text-xs text-muted">
-                        σ²_t = ω + α·ε²_(t-1) + β·σ²_(t-1) &nbsp;·&nbsp; {data.n_obs.toLocaleString()} observations
+                    <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-white/50">{data.model} Dynamic Volatility — {data.symbol}</h3>
+                    <p className="text-[9px] font-bold text-white/20 mt-1 uppercase tracking-widest">
+                        MLE parameter audit · α={data.params.alpha.toFixed(3)} β={data.params.beta.toFixed(3)} · persistence {(data.params.persistence * 100).toFixed(1)}%
                     </p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
@@ -595,9 +598,9 @@ function ArchVolPanel({ data }: { data: ArchVolData }) {
                 <ResponsiveContainer width="100%" height="100%">
                     <AreaChart data={thinned} margin={{ top: 4, right: 8, bottom: 0, left: 32 }}>
                         <defs>
-                            <linearGradient id="garchGrad" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#a78bfa" stopOpacity={0.35} />
-                                <stop offset="95%" stopColor="#a78bfa" stopOpacity={0.02} />
+                            <linearGradient id="volGradient" x1="0" y1="0" x2="0" y2="1">
+                                <stop offset="5%" stopColor="#00ffa3" stopOpacity={0.2} />
+                                <stop offset="95%" stopColor="#00ffa3" stopOpacity={0} />
                             </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
@@ -609,9 +612,20 @@ function ArchVolPanel({ data }: { data: ArchVolData }) {
                             contentStyle={{ background: "#1a1a2e", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 11 }}
                             formatter={(value: number | string | undefined) => [`${Number(value ?? 0).toFixed(2)}%`, "Ann. Vol σ"]}
                             labelFormatter={(label) => `Date: ${String(label ?? "")}`}
+                            content={({ active, payload }) => {
+                                if (!active || !payload?.length) return null;
+                                const d = payload[0].payload;
+                                return (
+                                    <div className="bg-black border border-white/10 rounded-xl px-4 py-3 text-[10px] font-black uppercase tracking-widest shadow-2xl space-y-2">
+                                        <p className="text-white border-b border-white/5 pb-2 mb-2">{d.date}</p>
+                                        <p className="text-[#00ffa3]">ANN VOL: {d.sigma_ann_pct.toFixed(2)}%</p>
+                                        <p className="text-white/40">DAILY σ: {d.sigma_pct.toFixed(2)}%</p>
+                                        <p className={d.ret_pct >= 0 ? "text-[#00ffa3]" : "text-[#ff2e2e]"}>RETURN: {d.ret_pct.toFixed(2)}%</p>
+                                    </div>
+                                );
+                            }}
                         />
-                        <Area type="monotone" dataKey="sigma_ann_pct" stroke="#a78bfa" strokeWidth={1.5}
-                            fill="url(#garchGrad)" dot={false} name="Ann. Vol σ" />
+                        <Area type="monotone" dataKey="sigma_ann_pct" stroke="#00ffa3" strokeWidth={3} fill="url(#volGradient)" isAnimationActive={false} />
                     </AreaChart>
                 </ResponsiveContainer>
             </div>
@@ -678,11 +692,11 @@ function KalmanFilterPanel({ data }: { data: KalmanFilterData }) {
             : "text-zinc-300";
 
     return (
-        <div className="bg-background rounded-2xl border border-border p-4 mt-3">
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="bg-[#050505] rounded-3xl border border-white/10 p-6 shadow-2xl">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
                 <div>
-                    <p className="text-sm font-semibold">Kalman State Filter — {data.symbol}</p>
-                    <p className="text-xs text-muted">
+                    <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-white/50">Kalman State Filter — {data.symbol}</h3>
+                    <p className="text-[9px] font-bold text-white/20 mt-1 uppercase tracking-widest">
                         AR(1) latent state on closes · {data.n_obs.toLocaleString()} observations · best interpreted on mean-reverting instruments
                     </p>
                 </div>
@@ -885,7 +899,7 @@ function BacktestPriceChart({
         if (!payload || payload.entryPrice == null || cx == null || cy == null) return null;
         const isLong = payload._entryDir === "LONG";
         const won = payload._entryOutcome === "win_tp";
-        const fill = won ? "#22c55e" : "#ef4444";
+        const fill = won ? "#00ffa3" : "#ff2e2e"; // Neon green for win, neon red for loss
         return isLong
             ? <polygon key={payload._entryId} points={`${cx},${cy - 10} ${cx - 6},${cy + 2} ${cx + 6},${cy + 2}`} fill={fill} stroke="#0f172a" strokeWidth={0.8} opacity={0.95} />
             : <polygon key={payload._entryId} points={`${cx},${cy + 10} ${cx - 6},${cy - 2} ${cx + 6},${cy - 2}`} fill={fill} stroke="#0f172a" strokeWidth={0.8} opacity={0.95} />;
@@ -895,65 +909,59 @@ function BacktestPriceChart({
         const { cx, cy, payload } = props;
         if (!payload || payload.exitPrice == null || cx == null || cy == null) return null;
         const won = payload._exitOutcome === "win_tp";
-        const fill = won ? "#22c55e" : "#ef4444";
+        const fill = won ? "#00ffa3" : "#ff2e2e"; // Neon green for win, neon red for loss
         return <rect key={payload._entryId + "_exit"} x={cx - 4} y={cy - 4} width={8} height={8} fill={fill} stroke="#0f172a" strokeWidth={0.8} opacity={0.9} />;
     };
 
     return (
-        <div>
-            {/* ── Legend ─────────────────────────────────────────────────── */}
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-1 mb-3 text-[10px] font-mono text-muted/70">
-                <span className="flex items-center gap-1.5"><span className="inline-block w-5 h-0.5 bg-cyan-400" /> Price</span>
-                <span className="flex items-center gap-1.5"><span className="inline-block w-5 h-0.5 border-t border-dashed border-yellow-400/70" /> SMA 20</span>
-                <span className="flex items-center gap-1.5 text-emerald-400 font-bold">▲ Long (Win)</span>
-                <span className="flex items-center gap-1.5 text-red-400 font-bold">▲ Long (Loss)</span>
-                <span className="flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 bg-green" /> Exit Win ({wins})</span>
-                <span className="flex items-center gap-1.5"><span className="inline-block w-2.5 h-2.5 bg-red" /> Exit Loss ({losses})</span>
-                {/* regime legend */}
-                <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ background: "rgba(34,197,94,0.25)" }} /> Low Vol</span>
-                <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ background: "rgba(234,179,8,0.25)" }} /> Med Vol</span>
-                <span className="flex items-center gap-1.5"><span className="inline-block w-3 h-3 rounded-sm" style={{ background: "rgba(239,68,68,0.25)" }} /> High Vol</span>
+        <div className="bg-[#050505] rounded-3xl border border-white/10 p-6 shadow-2xl overflow-hidden min-h-[420px]">
+            <div className="flex items-center justify-between mb-8 pb-6 border-b border-white/5">
+                <div>
+                    <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-white/50">Mechanical Precision Audit — {symbol}</h3>
+                    <p className="text-[9px] font-bold text-white/20 mt-1 uppercase tracking-widest">
+                        Daily close propagation · SMA(20) baseline · Signal Magnitude Analysis
+                    </p>
+                </div>
+                <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest">
+                        <span className="h-2 w-2 rounded-full bg-[#00ffa3] shadow-[0_0_8px_#00ffa3]" />
+                        <span className="text-white/60">Long Entry</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest">
+                        <span className="h-2 w-2 rounded-full bg-[#ff2e2e] shadow-[0_0_8px_#ff2e2e]" />
+                        <span className="text-white/60">Short Entry</span>
+                    </div>
+                </div>
             </div>
 
-            {/* ── Price chart ─────────────────────────────────────────────── */}
-            <div className="h-72">
+            <div className="h-80">
                 <ResponsiveContainer width="100%" height="100%">
                     <ComposedChart data={chartData} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                        <XAxis dataKey="label" tick={{ fill: "#9ca3af", fontSize: 9 }} minTickGap={30} />
+                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" vertical={false} />
+                        <XAxis
+                            dataKey="label"
+                            tick={{ fill: "#ffffff", fontSize: 9, opacity: 0.3 }}
+                            minTickGap={40}
+                            axisLine={false}
+                            tickLine={false}
+                        />
                         <YAxis
+                            tick={{ fill: "#ffffff", fontSize: 9, opacity: 0.3 }}
+                            tickFormatter={(v) => `$${v.toFixed(0)}`}
+                            width={50}
                             domain={["auto", "auto"]}
-                            tick={{ fill: "#9ca3af", fontSize: 9 }}
-                            tickFormatter={v => `$${Number(v).toFixed(0)}`}
-                            width={55}
+                            axisLine={false}
+                            tickLine={false}
                         />
                         <Tooltip
                             content={({ active, payload }) => {
                                 if (!active || !payload?.length) return null;
-                                const d = payload[0]?.payload;
-                                // find regime for this date
-                                const rp = regimeData?.regime_sequence.find(r => r.date === d.date);
-                                const regimeLabel = rp != null ? (regimeData?.state_labels?.[String(rp.state)] ?? "") : null;
-                                const regimeColor = rp != null ? REGIME_FILL[rp.state] : "#9ca3af";
+                                const d = payload[0].payload;
                                 return (
-                                    <div className="bg-card border border-border rounded-xl px-3 py-2 text-[10px] font-mono shadow-xl space-y-0.5">
-                                        <p className="font-bold text-foreground">{d.date}</p>
-                                        <p>Close: <span className="text-accent">${d.close?.toFixed(2)}</span></p>
-                                        {regimeLabel && (
-                                            <p style={{ color: regimeColor }}>
-                                                Regime: {regimeLabel}{rp ? ` · σ={${(rp.vol * 100).toFixed(1)}%}` : ""}
-                                            </p>
-                                        )}
-                                        {d.entryPrice != null && (
-                                            <p className={d._entryDir === "LONG" ? "text-emerald-400" : "text-red-400"}>
-                                                Entry ({d._entryDir}) @ ${d.entryPrice?.toFixed(2)} — {d._entryOutcome}
-                                            </p>
-                                        )}
-                                        {d.exitPrice != null && (
-                                            <p className={d._exitOutcome === "win_tp" ? "text-emerald-400" : "text-red-400"}>
-                                                Exit @ ${d.exitPrice?.toFixed(2)}
-                                            </p>
-                                        )}
+                                    <div className="bg-black border border-white/10 rounded-xl px-4 py-3 text-[10px] font-black uppercase tracking-widest shadow-2xl space-y-2">
+                                        <p className="text-white border-b border-white/5 pb-2 mb-2">{d.label}</p>
+                                        <p className="text-white/40">CLOSE: <span className="text-white">${d.close.toFixed(2)}</span></p>
+                                        <p className="text-white/40">SMA20: <span className="text-white/60">${d.sma20.toFixed(2)}</span></p>
                                     </div>
                                 );
                             }}
@@ -970,29 +978,29 @@ function BacktestPriceChart({
                                 ifOverflow="visible"
                             />
                         ))}
-                        {/* Price line */}
-                        <Line type="monotone" dataKey="close" stroke="#22d3ee" strokeWidth={1.5} dot={false} isAnimationActive={false} />
-                        {/* SMA 20 */}
-                        <Line type="monotone" dataKey="sma20" stroke="rgba(234,179,8,0.55)" strokeWidth={1} strokeDasharray="4 3" dot={false} isAnimationActive={false} />
-                        {/* Entry markers */}
+                        <Line type="monotone" dataKey="close" stroke="#ffffff" strokeOpacity={0.1} strokeWidth={1} dot={false} isAnimationActive={false} />
+                        <Line type="monotone" dataKey="sma20" stroke="#ffffff" strokeOpacity={0.05} strokeWidth={1} strokeDasharray="3 3" dot={false} isAnimationActive={false} />
                         <Line
-                            type="monotone" dataKey="entryPrice"
-                            stroke="transparent" strokeWidth={0}
-                            dot={<EntryDot />} activeDot={false}
-                            isAnimationActive={false} connectNulls={false}
+                            type="monotone"
+                            dataKey="entryPrice"
+                            stroke="transparent"
+                            dot={<EntryDot />}
+                            isAnimationActive={false}
+                            connectNulls={false}
                         />
-                        {/* Exit markers */}
                         <Line
-                            type="monotone" dataKey="exitPrice"
-                            stroke="transparent" strokeWidth={0}
-                            dot={<ExitDot />} activeDot={false}
-                            isAnimationActive={false} connectNulls={false}
+                            type="monotone"
+                            dataKey="exitPrice"
+                            stroke="transparent"
+                            dot={<ExitDot />}
+                            isAnimationActive={false}
+                            connectNulls={false}
                         />
                     </ComposedChart>
                 </ResponsiveContainer>
             </div>
 
-            {/* ── Regime distribution summary ──────────────────────────────── */}
+            {/* Regime distribution summary */}
             {Object.keys(dists).length > 0 && (
                 <div className="mt-4 grid grid-cols-3 gap-2">
                     {[0, 1, 2].map(s => {
@@ -1355,17 +1363,19 @@ export default function BacktestLab() {
             <div className="p-6 lg:p-8 space-y-6 animate-fade-in relative">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                        <div className="h-10 w-10 rounded-xl bg-accent/10 flex items-center justify-center">
-                            <CandlestickChart size={20} className="text-accent" />
+                        <div className="h-10 w-10 rounded-xl bg-[#00ffa3]/10 flex items-center justify-center border border-[#00ffa3]/20">
+                            <CandlestickChart size={20} className="text-[#00ffa3]" />
                         </div>
                         <div>
-                            <h1 className="text-2xl font-bold tracking-tight">Backtest Lab</h1>
-                            <p className="text-sm text-muted">
-                                {labView === "strategy"
-                                    ? "Live strategy simulation monitor + PDF reporting"
-                                    : "Portfolio buy-in backtests with remote C++ routing"
-                                }
-                            </p>
+                            <h1 className="text-2xl font-black uppercase tracking-[0.25em] text-white">Advanced Simulation</h1>
+                            <div className="flex items-center gap-3 mt-1">
+                                <span className="text-[10px] font-bold text-[#00ffa3]/60 uppercase tracking-widest">Stable v2.4</span>
+                                <div className="h-1 w-1 rounded-full bg-white/20" />
+                                <div className="flex items-center gap-1.5">
+                                    <div className="h-1.5 w-1.5 rounded-full bg-[#00ffa3] animate-pulse" />
+                                    <span className="text-[10px] font-bold text-white/50 uppercase tracking-widest">Engine Connected</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-semibold ${connected ? "text-green border-green/30 bg-green/10" : "text-yellow-300 border-yellow-500/30 bg-yellow-500/10"}`}>
@@ -1405,298 +1415,303 @@ export default function BacktestLab() {
                 </div>
 
                 {labView === "strategy" ? (
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                    <div className="lg:col-span-4 bg-card border border-border rounded-2xl p-6 h-fit shadow-sm relative overflow-hidden">
-                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-accent to-purple-500" />
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                        <div className="lg:col-span-4 space-y-6">
+                            <div className="bg-[#050505] border border-white/10 rounded-[2rem] p-8 relative overflow-hidden shadow-2xl">
+                                <div className="absolute top-0 right-0 w-64 h-64 bg-[#00ffa3]/5 rounded-full blur-[100px] -mr-32 -mt-32" />
 
-                        <h2 className="text-lg font-semibold flex items-center gap-2 mb-6">
-                            <FileTerminal size={18} className="text-accent" />
-                            Simulation Parameters
-                        </h2>
-
-                        <div className="space-y-5">
-                            <div>
-                                <label className="text-[10px] text-muted uppercase tracking-widest font-semibold block mb-2">Asset Symbol</label>
-                                <input
-                                    type="text"
-                                    value={symbol}
-                                    onChange={(event) => setSymbol(event.target.value.toUpperCase())}
-                                    className="w-full bg-background border border-border rounded-xl p-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-accent/30 transition-all uppercase"
-                                    placeholder="AAPL"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="text-[10px] text-muted uppercase tracking-widest font-semibold block mb-2">Strategy</label>
-                                <select
-                                    value={strategyName}
-                                    onChange={(e) => setStrategyName(e.target.value)}
-                                    className="w-full bg-background border border-border rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 transition-all"
-                                >
-                                    <option value="ORB_FVG_ENGULFING">ORB FVG Engulfing (M1/M5)</option>
-                                    <option value="ICT_VP">ICT Liquidity + Volume Profile</option>
-                                    <option value="IV_REGIME">IV Regime (Daily · BS Implied Vol)</option>
-                                </select>
-                            </div>
-
-                            {strategyName === "IV_REGIME" && (
-                                <div className="p-4 rounded-xl border border-cyan-500/20 bg-cyan-500/5 space-y-3 animate-fade-in">
-                                    <p className="text-[10px] font-bold uppercase tracking-widest text-cyan-400 flex items-center gap-1.5">
-                                        <CandlestickChart size={12} /> IV Regime Parameters
-                                    </p>
-
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div>
-                                            <label className="text-[10px] text-muted uppercase tracking-wider block mb-1">IV Rank Low %</label>
-                                            <input type="number" value={ivrLow} onChange={e => setIvrLow(e.target.value)} min="0" max="50"
-                                                className="w-full bg-background border border-border rounded-lg p-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-cyan-400/40" />
-                                        </div>
-                                        <div>
-                                            <label className="text-[10px] text-muted uppercase tracking-wider block mb-1">IV Rank High %</label>
-                                            <input type="number" value={ivrHigh} onChange={e => setIvrHigh(e.target.value)} min="50" max="100"
-                                                className="w-full bg-background border border-border rounded-lg p-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-cyan-400/40" />
-                                        </div>
-                                        <div>
-                                            <label className="text-[10px] text-muted uppercase tracking-wider block mb-1">Momentum (days)</label>
-                                            <input type="number" value={ivrMom} onChange={e => setIvrMom(e.target.value)} min="1" max="60"
-                                                className="w-full bg-background border border-border rounded-lg p-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-cyan-400/40" />
-                                        </div>
-                                        <div>
-                                            <label className="text-[10px] text-muted uppercase tracking-wider block mb-1">Max Hold (days)</label>
-                                            <input type="number" value={ivrHold} onChange={e => setIvrHold(e.target.value)} min="1" max="60"
-                                                className="w-full bg-background border border-border rounded-lg p-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-cyan-400/40" />
-                                        </div>
-                                        <div>
-                                            <label className="text-[10px] text-muted uppercase tracking-wider block mb-1">SL Vol Mult ×</label>
-                                            <input type="number" value={ivrSlMult} onChange={e => setIvrSlMult(e.target.value)} min="0.5" max="10" step="0.5"
-                                                className="w-full bg-background border border-border rounded-lg p-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-cyan-400/40" />
-                                        </div>
-                                        <div>
-                                            <label className="text-[10px] text-muted uppercase tracking-wider block mb-1">R:R Target</label>
-                                            <input type="number" value={ivrRR} onChange={e => setIvrRR(e.target.value)} min="0.5" max="10" step="0.5"
-                                                className="w-full bg-background border border-border rounded-lg p-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-cyan-400/40" />
-                                        </div>
-                                        <div className="col-span-2">
-                                            <label className="text-[10px] text-muted uppercase tracking-wider block mb-1">Risk per Trade %</label>
-                                            <input type="number" value={ivrRisk} onChange={e => setIvrRisk(e.target.value)} min="0.1" max="25" step="0.1"
-                                                className="w-full bg-background border border-border rounded-lg p-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-cyan-400/40" />
-                                        </div>
+                                <div className="relative space-y-8">
+                                    <div className="flex items-center gap-3 pb-6 border-b border-white/5">
+                                        <FileTerminal size={18} className="text-[#00ffa3]" />
+                                        <h2 className="text-xs font-black uppercase tracking-[0.3em] text-white/90">System Parameters</h2>
                                     </div>
 
-                                    <div className="flex flex-col gap-2 pt-1">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-[10px] text-muted uppercase tracking-wider">Markov State Filter</span>
-                                            <button onClick={() => setIvrMarkov(!ivrMarkov)}
-                                                className={`w-8 h-4 rounded-full relative transition-colors ${ivrMarkov ? "bg-cyan-500" : "bg-border"}`}>
-                                                <div className={`w-3 h-3 rounded-full bg-white absolute top-0.5 transition-all ${ivrMarkov ? "left-4" : "left-0.5"}`} />
-                                            </button>
+                                    <div className="space-y-5">
+                                        <div>
+                                            <label className="text-[10px] text-muted uppercase tracking-widest font-semibold block mb-2">Asset Symbol</label>
+                                            <input
+                                                type="text"
+                                                value={symbol}
+                                                onChange={(event) => setSymbol(event.target.value.toUpperCase())}
+                                                className="w-full bg-background border border-border rounded-xl p-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-accent/30 transition-all uppercase"
+                                                placeholder="AAPL"
+                                            />
                                         </div>
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-[10px] text-muted uppercase tracking-wider">Allow Short</span>
-                                            <button onClick={() => setIvrShort(!ivrShort)}
-                                                className={`w-8 h-4 rounded-full relative transition-colors ${ivrShort ? "bg-cyan-500" : "bg-border"}`}>
-                                                <div className={`w-3 h-3 rounded-full bg-white absolute top-0.5 transition-all ${ivrShort ? "left-4" : "left-0.5"}`} />
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            )}
 
-                            <div className="space-y-4 pt-2 border-t border-border/40">
-                                <div className="flex items-center justify-between">
-                                    <label className="text-[10px] text-muted uppercase tracking-widest font-bold">Time Window</label>
-                                    <div className="flex gap-1.5">
-                                        {[
-                                            { label: "1M", value: 1 },
-                                            { label: "3M", value: 3 },
-                                            { label: "6M", value: 6 },
-                                            { label: "1Y", value: 12 },
-                                            { label: "YTD", value: 'ytd' as const }
-                                        ].map(range => (
-                                            <button
-                                                key={range.label}
-                                                onClick={() => handleQuickDate(range.value)}
-                                                className="px-2 py-1 text-[9px] font-bold bg-muted/10 border border-border/50 rounded-md hover:bg-accent/20 hover:border-accent/40 hover:text-accent transition-all text-muted/70 uppercase"
+                                        <div>
+                                            <label className="text-[10px] text-muted uppercase tracking-widest font-semibold block mb-2">Strategy</label>
+                                            <select
+                                                value={strategyName}
+                                                onChange={(e) => setStrategyName(e.target.value)}
+                                                className="w-full bg-background border border-border rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 transition-all"
                                             >
-                                                {range.label}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="text-[10px] text-muted uppercase tracking-widest font-semibold block mb-2 flex items-center gap-1">
-                                            <Calendar size={10} /> Start Date
-                                        </label>
-                                        <input
-                                            type="date"
-                                            value={startDate}
-                                            onChange={(event) => setStartDate(event.target.value)}
-                                            className="w-full bg-background border border-border rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 transition-all text-muted"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-[10px] text-muted uppercase tracking-widest font-semibold block mb-2 flex items-center gap-1">
-                                            <Calendar size={10} /> End Date
-                                        </label>
-                                        <input
-                                            type="date"
-                                            value={endDate}
-                                            onChange={(event) => setEndDate(event.target.value)}
-                                            className="w-full bg-background border border-border rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 transition-all text-muted"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
+                                                <option value="ORB_FVG_ENGULFING">ORB FVG Engulfing (M1/M5)</option>
+                                                <option value="ICT_VP">ICT Liquidity + Volume Profile</option>
+                                                <option value="IV_REGIME">IV Regime (Daily · BS Implied Vol)</option>
+                                            </select>
+                                        </div>
 
-                            <div>
-                                <label className="text-[10px] text-muted uppercase tracking-widest font-semibold block mb-2">Initial Capital ($)</label>
-                                <input
-                                    type="number"
-                                    min="100"
-                                    value={account}
-                                    onChange={(event) => setAccount(event.target.value)}
-                                    className="w-full bg-background border border-border rounded-xl p-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-accent/30 transition-all"
-                                />
-                            </div>
+                                        {strategyName === "IV_REGIME" && (
+                                            <div className="p-4 rounded-xl border border-cyan-500/20 bg-cyan-500/5 space-y-3 animate-fade-in">
+                                                <p className="text-[10px] font-bold uppercase tracking-widest text-cyan-400 flex items-center gap-1.5">
+                                                    <CandlestickChart size={12} /> IV Regime Parameters
+                                                </p>
 
-                            <div className="p-4 rounded-xl border border-accent/20 bg-accent/5 space-y-4">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                        <Zap size={14} className="text-yellow-400" />
-                                        <label className="text-sm font-semibold">Bootstrap Resampling</label>
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    <div>
+                                                        <label className="text-[10px] text-muted uppercase tracking-wider block mb-1">IV Rank Low %</label>
+                                                        <input type="number" value={ivrLow} onChange={e => setIvrLow(e.target.value)} min="0" max="50"
+                                                            className="w-full bg-background border border-border rounded-lg p-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-cyan-400/40" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[10px] text-muted uppercase tracking-wider block mb-1">IV Rank High %</label>
+                                                        <input type="number" value={ivrHigh} onChange={e => setIvrHigh(e.target.value)} min="50" max="100"
+                                                            className="w-full bg-background border border-border rounded-lg p-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-cyan-400/40" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[10px] text-muted uppercase tracking-wider block mb-1">Momentum (days)</label>
+                                                        <input type="number" value={ivrMom} onChange={e => setIvrMom(e.target.value)} min="1" max="60"
+                                                            className="w-full bg-background border border-border rounded-lg p-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-cyan-400/40" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[10px] text-muted uppercase tracking-wider block mb-1">Max Hold (days)</label>
+                                                        <input type="number" value={ivrHold} onChange={e => setIvrHold(e.target.value)} min="1" max="60"
+                                                            className="w-full bg-background border border-border rounded-lg p-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-cyan-400/40" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[10px] text-muted uppercase tracking-wider block mb-1">SL Vol Mult ×</label>
+                                                        <input type="number" value={ivrSlMult} onChange={e => setIvrSlMult(e.target.value)} min="0.5" max="10" step="0.5"
+                                                            className="w-full bg-background border border-border rounded-lg p-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-cyan-400/40" />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-[10px] text-muted uppercase tracking-wider block mb-1">R:R Target</label>
+                                                        <input type="number" value={ivrRR} onChange={e => setIvrRR(e.target.value)} min="0.5" max="10" step="0.5"
+                                                            className="w-full bg-background border border-border rounded-lg p-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-cyan-400/40" />
+                                                    </div>
+                                                    <div className="col-span-2">
+                                                        <label className="text-[10px] text-muted uppercase tracking-wider block mb-1">Risk per Trade %</label>
+                                                        <input type="number" value={ivrRisk} onChange={e => setIvrRisk(e.target.value)} min="0.1" max="25" step="0.1"
+                                                            className="w-full bg-background border border-border rounded-lg p-2 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-cyan-400/40" />
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex flex-col gap-2 pt-1">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-[10px] text-muted uppercase tracking-wider">Markov State Filter</span>
+                                                        <button onClick={() => setIvrMarkov(!ivrMarkov)}
+                                                            className={`w-8 h-4 rounded-full relative transition-colors ${ivrMarkov ? "bg-cyan-500" : "bg-border"}`}>
+                                                            <div className={`w-3 h-3 rounded-full bg-white absolute top-0.5 transition-all ${ivrMarkov ? "left-4" : "left-0.5"}`} />
+                                                        </button>
+                                                    </div>
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-[10px] text-muted uppercase tracking-wider">Allow Short</span>
+                                                        <button onClick={() => setIvrShort(!ivrShort)}
+                                                            className={`w-8 h-4 rounded-full relative transition-colors ${ivrShort ? "bg-cyan-500" : "bg-border"}`}>
+                                                            <div className={`w-3 h-3 rounded-full bg-white absolute top-0.5 transition-all ${ivrShort ? "left-4" : "left-0.5"}`} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="space-y-4 pt-2 border-t border-border/40">
+                                            <div className="flex items-center justify-between">
+                                                <label className="text-[10px] text-muted uppercase tracking-widest font-bold">Time Window</label>
+                                                <div className="flex gap-1.5">
+                                                    {[
+                                                        { label: "1M", value: 1 },
+                                                        { label: "3M", value: 3 },
+                                                        { label: "6M", value: 6 },
+                                                        { label: "1Y", value: 12 },
+                                                        { label: "YTD", value: 'ytd' as const }
+                                                    ].map(range => (
+                                                        <button
+                                                            key={range.label}
+                                                            onClick={() => handleQuickDate(range.value)}
+                                                            className="px-2 py-1 text-[9px] font-bold bg-muted/10 border border-border/50 rounded-md hover:bg-accent/20 hover:border-accent/40 hover:text-accent transition-all text-muted/70 uppercase"
+                                                        >
+                                                            {range.label}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="text-[10px] text-muted uppercase tracking-widest font-semibold block mb-2 flex items-center gap-1">
+                                                        <Calendar size={10} /> Start Date
+                                                    </label>
+                                                    <input
+                                                        type="date"
+                                                        value={startDate}
+                                                        onChange={(event) => setStartDate(event.target.value)}
+                                                        className="w-full bg-background border border-border rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 transition-all text-muted"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="text-[10px] text-muted uppercase tracking-widest font-semibold block mb-2 flex items-center gap-1">
+                                                        <Calendar size={10} /> End Date
+                                                    </label>
+                                                    <input
+                                                        type="date"
+                                                        value={endDate}
+                                                        onChange={(event) => setEndDate(event.target.value)}
+                                                        className="w-full bg-background border border-border rounded-xl p-3 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 transition-all text-muted"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label className="text-[10px] text-muted uppercase tracking-widest font-semibold block mb-2">Initial Capital ($)</label>
+                                            <input
+                                                type="number"
+                                                min="100"
+                                                value={account}
+                                                onChange={(event) => setAccount(event.target.value)}
+                                                className="w-full bg-background border border-border rounded-xl p-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-accent/30 transition-all"
+                                            />
+                                        </div>
+
+                                        <div className="p-4 rounded-xl border border-accent/20 bg-accent/5 space-y-4">
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2">
+                                                    <Zap size={14} className="text-yellow-400" />
+                                                    <label className="text-sm font-semibold">Bootstrap Resampling</label>
+                                                </div>
+                                                <button
+                                                    onClick={() => setBootstrap(!bootstrap)}
+                                                    className={`w-10 h-5 rounded-full relative transition-colors ${bootstrap ? "bg-accent" : "bg-card-hover"}`}
+                                                >
+                                                    <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 transition-all ${bootstrap ? "left-5" : "left-0.5"}`} />
+                                                </button>
+                                            </div>
+
+                                            {bootstrap && (
+                                                <div className="animate-fade-in space-y-2">
+                                                    <label className="text-[10px] text-accent uppercase tracking-widest font-bold block">Monte Carlo Iterations</label>
+                                                    <select
+                                                        value={iterations}
+                                                        onChange={(event) => setIterations(event.target.value)}
+                                                        className="w-full bg-background border border-border rounded-xl p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 text-muted"
+                                                    >
+                                                        <option value="1000">1,000 (Fast)</option>
+                                                        <option value="5000">5,000 (Detailed)</option>
+                                                        <option value="10000">10,000 (Deep Analysis)</option>
+                                                    </select>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
+
                                     <button
-                                        onClick={() => setBootstrap(!bootstrap)}
-                                        className={`w-10 h-5 rounded-full relative transition-colors ${bootstrap ? "bg-accent" : "bg-card-hover"}`}
+                                        onClick={strategyName === "IV_REGIME" ? handleRunIVRegime : handleRunBacktest}
+                                        disabled={launching || isRunning}
+                                        className="w-full py-5 rounded-2xl bg-[#00ffa3] text-black font-black uppercase tracking-[0.3em] text-sm hover:scale-[1.02] active:scale-[0.98] transition-all shadow-[0_0_30px_rgba(0,255,163,0.3)] disabled:opacity-50 disabled:hover:scale-100 flex items-center justify-center gap-3"
                                     >
-                                        <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 transition-all ${bootstrap ? "left-5" : "left-0.5"}`} />
+                                        {launching || isRunning ? <Loader2 className="animate-spin" size={20} /> : <Play size={18} className="fill-current" />}
+                                        {launching ? "Starting..." : isRunning ? "Running..." : strategyName === "IV_REGIME" ? "Execute IV Regime" : "Launch Engine"}
                                     </button>
                                 </div>
-
-                                {bootstrap && (
-                                    <div className="animate-fade-in space-y-2">
-                                        <label className="text-[10px] text-accent uppercase tracking-widest font-bold block">Monte Carlo Iterations</label>
-                                        <select
-                                            value={iterations}
-                                            onChange={(event) => setIterations(event.target.value)}
-                                            className="w-full bg-background border border-border rounded-xl p-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent/30 text-muted"
-                                        >
-                                            <option value="1000">1,000 (Fast)</option>
-                                            <option value="5000">5,000 (Detailed)</option>
-                                            <option value="10000">10,000 (Deep Analysis)</option>
-                                        </select>
-                                    </div>
-                                )}
                             </div>
                         </div>
 
-                        <button
-                            onClick={strategyName === "IV_REGIME" ? handleRunIVRegime : handleRunBacktest}
-                            disabled={launching || isRunning || !symbol || !startDate || !endDate}
-                            className={`w-full py-3.5 mt-6 rounded-xl font-bold text-sm transition-all shadow-lg flex justify-center items-center gap-2 ${launching || isRunning ? "bg-accent/50 cursor-not-allowed text-white"
-                                : strategyName === "IV_REGIME" ? "bg-cyan-600 hover:bg-cyan-500 text-white shadow-cyan-600/20"
-                                    : "bg-accent hover:bg-accent-hover text-white shadow-accent/20"
-                                }`}
-                        >
-                            {launching || isRunning ? <Loader2 size={16} className="animate-spin" /> : <Play fill="currentColor" size={14} />}
-                            {launching ? "Starting..." : isRunning ? "Running..." : strategyName === "IV_REGIME" ? "Run IV Regime Backtest" : "Run Backtest Analysis"}
-                        </button>
-                    </div>
-
-                    <div className="lg:col-span-8 flex flex-col gap-6">
-                        {!launching && !isRunning && !completedResult && !errorMessage && (
-                            <div className="flex-1 bg-card border border-border border-dashed rounded-2xl flex flex-col items-center justify-center text-muted p-10 min-h-[520px]">
-                                <Activity size={48} className="text-muted/30 mb-4" />
-                                <h3 className="text-lg font-semibold text-foreground">Awaiting Simulation</h3>
-                                <p className="text-sm mt-2 max-w-sm text-center">Launch a backtest to watch equity, trades, KPI drift and bootstrap distributions update in real time.</p>
-                            </div>
-                        )}
-
-                        {(launching || isRunning || completedResult || errorMessage) && (
-                            <>
-                                {errorMessage && (
-                                    <div className="bg-red/10 border border-red/30 rounded-2xl p-4 flex items-start gap-3 text-red-100">
-                                        <TriangleAlert size={18} className="mt-0.5 text-red-300" />
-                                        <div>
-                                            <p className="font-semibold">Simulation error</p>
-                                            <p className="text-sm text-red-100/80 mt-1">{errorMessage}</p>
-                                        </div>
-                                    </div>
-                                )}
-
-                                <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-                                    <div className="bg-card border border-border rounded-xl p-4">
-                                        <p className="text-[10px] text-muted uppercase tracking-wider font-semibold">Net Profit</p>
-                                        <p className={`text-xl font-mono font-bold mt-1 ${netProfit >= 0 ? "text-green" : "text-red"}`}>
-                                            ${formatCurrency(netProfit)}
-                                        </p>
-                                    </div>
-                                    <div className="bg-card border border-border rounded-xl p-4">
-                                        <p className="text-[10px] text-muted uppercase tracking-wider font-semibold">Win Rate</p>
-                                        <p className="text-xl font-mono font-bold mt-1 text-white">{formatFractionPercent(displayKpis.win_rate)}</p>
-                                        <p className="text-xs text-muted mt-1">{displayKpis.wins}W / {displayKpis.losses}L</p>
-                                    </div>
-                                    <div className="bg-card border border-border rounded-xl p-4">
-                                        <p className="text-[10px] text-muted uppercase tracking-wider font-semibold">Profit Factor</p>
-                                        <p className="text-xl font-mono font-bold mt-1 text-purple-400">{formatRatio(displayKpis.profit_factor)}</p>
-                                    </div>
-                                    <div className="bg-card border border-border rounded-xl p-4">
-                                        <p className="text-[10px] text-muted uppercase tracking-wider font-semibold">Max Drawdown</p>
-                                        <p className="text-xl font-mono font-bold mt-1 text-red">{formatFractionPercent(displayKpis.max_drawdown_pct)}</p>
-                                    </div>
-                                    <div className="bg-card border border-border rounded-xl p-4">
-                                        <p className="text-[10px] text-muted uppercase tracking-wider font-semibold">Expectancy</p>
-                                        <p className="text-xl font-mono font-bold mt-1 text-yellow-300">{displayKpis.expectancy_r.toFixed(2)}R</p>
-                                    </div>
-                                    <div className="bg-card border border-border rounded-xl p-4">
-                                        <p className="text-[10px] text-muted uppercase tracking-wider font-semibold">Trades</p>
-                                        <p className="text-xl font-mono font-bold mt-1 text-white">{displayKpis.total_trades}</p>
-                                        <p className="text-xs text-muted mt-1">Sharpe {formatRatio(displayKpis.sharpe_ratio)}</p>
-                                    </div>
+                        <div className="lg:col-span-8 flex flex-col gap-6">
+                            {!launching && !isRunning && !completedResult && !errorMessage && (
+                                <div className="flex-1 bg-[#050505] border border-white/5 border-dashed rounded-3xl flex flex-col items-center justify-center text-muted p-10 min-h-[520px]">
+                                    <Activity size={48} className="text-white/10 mb-6" />
+                                    <h3 className="text-lg font-black uppercase tracking-[0.2em] text-white/40">Engine Offline</h3>
+                                    <p className="text-[10px] mt-4 max-w-sm text-center font-bold uppercase tracking-widest text-white/20">Awaiting simulation parameters for real-time equity propagation.</p>
                                 </div>
+                            )}
 
-                                <div className="bg-card border border-border rounded-2xl p-6 space-y-6 shadow-sm">
-                                    <div className="flex flex-wrap items-center justify-between gap-3">
-                                        <div>
-                                            <h3 className="text-lg font-semibold">Live Backtest Monitor</h3>
-                                            <p className="text-sm text-muted">
-                                                {activeSim ? `Simulation ${activeSim}` : "Preparing simulation..."}
-                                            </p>
-                                        </div>
-                                        <div className={`px-3 py-1.5 rounded-lg border text-xs font-semibold ${isRunning ? "text-accent border-accent/30 bg-accent/10" : "text-green border-green/30 bg-green/10"}`}>
-                                            {isRunning ? "Running" : completedResult ? "Completed" : launching ? "Launching" : "Idle"}
-                                        </div>
-                                    </div>
-
-                                    {(launching || isRunning) && (
-                                        <div className="space-y-3">
-                                            <div className="flex items-center justify-between text-sm">
-                                                <span className="text-muted">Progress</span>
-                                                <span className="font-mono text-white">{progress.day}/{progress.total || "?"} sessions</span>
-                                            </div>
-                                            <div className="w-full h-3 rounded-full bg-background overflow-hidden border border-border">
-                                                <div className="h-full bg-gradient-to-r from-accent to-cyan-400 transition-all duration-300" style={{ width: `${progress.pct}%` }} />
+                            {(launching || isRunning || completedResult || errorMessage) && (
+                                <>
+                                    {errorMessage && (
+                                        <div className="bg-[#ff2e2e]/5 border border-[#ff2e2e]/20 rounded-2xl p-5 flex items-start gap-4 text-[#ff2e2e]">
+                                            <TriangleAlert size={20} className="mt-0.5" />
+                                            <div>
+                                                <p className="font-black uppercase tracking-widest text-xs">Critical Exception</p>
+                                                <p className="text-[11px] font-bold mt-1 text-[#ff2e2e]/80 uppercase tracking-widest">{errorMessage}</p>
                                             </div>
                                         </div>
                                     )}
 
-                                    <div className="bg-background rounded-2xl border border-border p-4">
-                                        <div className="flex items-center justify-between mb-4">
-                                            <div>
-                                                <p className="text-sm font-semibold">Equity Curve</p>
-                                                <p className="text-xs text-muted">Trade-by-trade capital trajectory</p>
+                                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-6">
+                                        {[
+                                            { label: "Net Pnl", value: `${netProfit >= 0 ? "+" : ""}$${formatCurrency(netProfit)}`, color: netProfit >= 0 ? "text-[#00ffa3] drop-shadow-[0_0_8px_rgba(0,255,163,0.4)]" : "text-[#ff2e2e] drop-shadow-[0_0_8px_rgba(255,46,46,0.4)]", desc: `${displayKpis.total_r.toFixed(1)}R Drift`, icon: Activity },
+                                            { label: "Win Rate", value: formatFractionPercent(displayKpis.win_rate), color: "text-white", desc: `${displayKpis.wins}W / ${displayKpis.losses}L`, icon: PieChart },
+                                            { label: "Profit Factor", value: formatRatio(displayKpis.profit_factor), color: "text-[#d1ff00]", desc: "Gross Ratio", icon: Zap },
+                                            { label: "Max Drawdown", value: formatFractionPercent(displayKpis.max_drawdown_pct), color: "text-[#ff2e2e]", desc: "Equity Risk", icon: TrendingDown },
+                                            { label: "Expectancy", value: `${displayKpis.expectancy_r.toFixed(2)}R`, color: "text-[#ffa300]", desc: "Per Unit Risk", icon: Target },
+                                            { label: "Efficiency", value: formatRatio(displayKpis.sharpe_ratio), color: "text-[#00e0ff]", desc: "Sharpe Ratio", icon: ShieldCheck }
+                                        ].map((kpi, i) => (
+                                            <div key={i} className="bg-[#050505] border border-white/10 rounded-2xl p-5 shadow-2xl group hover:border-[#00ffa3]/30 transition-all">
+                                                <div className="flex items-center justify-between mb-3">
+                                                    <p className="text-[9px] font-black uppercase tracking-[0.3em] text-white/40 group-hover:text-[#00ffa3]/60 transition-colors">{kpi.label}</p>
+                                                    <kpi.icon size={12} className="text-white/20 group-hover:text-[#00ffa3]/40" />
+                                                </div>
+                                                <p className={`text-2xl font-black font-mono tracking-tighter mt-1 ${kpi.color}`}>
+                                                    {kpi.value}
+                                                </p>
+                                                <p className="text-[9px] font-bold text-white/20 mt-2 flex items-center gap-2 uppercase tracking-[0.15em]">
+                                                    <span className={`h-1 w-1 rounded-full ${i === 0 ? (netProfit >= 0 ? "bg-[#00ffa3]" : "bg-[#ff2e2e]") : "bg-white/20"}`} />
+                                                    {kpi.desc}
+                                                </p>
                                             </div>
-                                            <p className="text-xs text-muted">{equityCurve.length} points</p>
+                                        ))}
+                                    </div>
+
+                                    <div className="bg-[#050505] border border-white/10 rounded-2xl p-8 space-y-8 shadow-2xl">
+                                        <div className="flex flex-wrap items-center justify-between gap-4">
+                                            <div>
+                                                <h3 className="text-[10px] font-black uppercase tracking-[0.4em] text-white/90">Live Simulation Status</h3>
+                                                <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest mt-1">
+                                                    {activeSim ? `Identifier: ${activeSim}` : "Awaiting thread assignment..."}
+                                                </p>
+                                            </div>
+                                            <div className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] border shadow-[0_0_15px_rgba(0,0,0,0.5)] ${isRunning ? "text-[#00ffa3] border-[#00ffa3]/30 bg-[#00ffa3]/5" : "text-[#00e0ff] border-[#00e0ff]/30 bg-[#00e0ff]/5"}`}>
+                                                {isRunning ? "Engine Running" : completedResult ? "Audit Completed" : launching ? "Core Initializing" : "System Idle"}
+                                            </div>
+                                        </div>
+
+                                        {(launching || isRunning) && (
+                                            <div className="space-y-4">
+                                                <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-[0.2em]">
+                                                    <span className="text-white/40">Propagation Progress</span>
+                                                    <span className="font-mono text-[#00ffa3]">{progress.day}/{progress.total || "?"} SESSIONS</span>
+                                                </div>
+                                                <div className="w-full h-2 rounded-full bg-black border border-white/10 overflow-hidden">
+                                                    <div className="h-full bg-[#00ffa3] shadow-[0_0_15px_rgba(0,255,163,0.5)] transition-all duration-300" style={{ width: `${progress.pct}%` }} />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="bg-[#050505] rounded-3xl border border-white/10 p-6 shadow-2xl">
+                                        <div className="flex items-center justify-between mb-6">
+                                            <div>
+                                                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-white/50">Equity Trajectory</p>
+                                                <p className="text-[9px] font-bold text-white/20 mt-1 uppercase tracking-widest">Real-time capital propagation audit</p>
+                                            </div>
+                                            <p className="text-[10px] font-mono text-[#00ffa3]/60">{equityCurve.length} DATA_POINTS</p>
                                         </div>
                                         <div className="h-64">
                                             <ResponsiveContainer width="100%" height="100%">
                                                 <AreaChart data={equityCurve} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}>
-                                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                                                    <XAxis dataKey="label" tick={{ fill: "#9ca3af", fontSize: 11 }} minTickGap={24} />
-                                                    <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} tickFormatter={(value) => `$${Number(value).toFixed(0)}`} width={70} />
-                                                    <Tooltip formatter={(value: any) => [`$${formatCurrency(Number(value))}`, "Equity"]} />
-                                                    <Area type="monotone" dataKey="equity" stroke="#22c55e" fill="rgba(34,197,94,0.16)" strokeWidth={2} />
+                                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" vertical={false} />
+                                                    <XAxis dataKey="label" tick={{ fill: "#ffffff", fontSize: 9, opacity: 0.3 }} minTickGap={40} axisLine={false} tickLine={false} />
+                                                    <YAxis tick={{ fill: "#ffffff", fontSize: 9, opacity: 0.3 }} tickFormatter={(value) => `$${Number(value).toFixed(0)}`} width={60} axisLine={false} tickLine={false} />
+                                                    <Tooltip
+                                                        contentStyle={{ backgroundColor: "#000", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px" }}
+                                                        itemStyle={{ color: "#00ffa3", fontSize: "11px", fontWeight: "bold" }}
+                                                    />
+                                                    <Area type="monotone" dataKey="equity" stroke="#00ffa3" fill="url(#neonGradient)" strokeWidth={3} />
+                                                    <defs>
+                                                        <linearGradient id="neonGradient" x1="0" y1="0" x2="0" y2="1">
+                                                            <stop offset="5%" stopColor="#00ffa3" stopOpacity={0.2} />
+                                                            <stop offset="95%" stopColor="#00ffa3" stopOpacity={0} />
+                                                        </linearGradient>
+                                                    </defs>
                                                 </AreaChart>
                                             </ResponsiveContainer>
                                         </div>
@@ -1764,42 +1779,48 @@ export default function BacktestLab() {
                                         </div>
                                     )}
 
-                                    <div className="bg-background rounded-2xl border border-border p-4">
-                                        <div className="flex items-center justify-between mb-4">
+                                    <div className="bg-[#050505] rounded-3xl border border-white/10 p-6 shadow-2xl overflow-hidden">
+                                        <div className="flex items-center justify-between mb-6">
                                             <div>
-                                                <p className="text-sm font-semibold">Trade Log</p>
-                                                <p className="text-xs text-muted">Every resolved trade arrives here in real time</p>
+                                                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-white/50">Execution Audit</p>
+                                                <p className="text-[9px] font-bold text-white/20 mt-1 uppercase tracking-widest">Verifying mechanical entry/exit precision</p>
                                             </div>
-                                            <p className="text-xs text-muted">{trades.length} rows</p>
+                                            <p className="text-[10px] font-mono text-white/40">{trades.length} TRANSACTIONS</p>
                                         </div>
-                                        <div className="max-h-80 overflow-y-auto rounded-xl border border-border">
-                                            <table className="w-full text-sm">
-                                                <thead className="sticky top-0 bg-card z-10">
-                                                    <tr className="text-left text-[10px] uppercase tracking-wider text-muted">
-                                                        <th className="px-3 py-3">Time</th>
-                                                        <th className="px-3 py-3">Dir</th>
-                                                        <th className="px-3 py-3">Entry</th>
-                                                        <th className="px-3 py-3">Exit</th>
-                                                        <th className="px-3 py-3">Outcome</th>
-                                                        <th className="px-3 py-3">R</th>
-                                                        <th className="px-3 py-3 text-right">PnL $</th>
+                                        <div className="max-h-80 overflow-y-auto custom-scrollbar">
+                                            <table className="w-full text-left border-collapse">
+                                                <thead className="sticky top-0 bg-[#000] z-10">
+                                                    <tr className="text-[9px] font-black uppercase tracking-[0.2em] text-white/30 border-b border-white/5">
+                                                        <th className="px-4 py-4">Timestamp</th>
+                                                        <th className="px-4 py-4 text-center">Bias</th>
+                                                        <th className="px-4 py-4">Strike</th>
+                                                        <th className="px-4 py-4">Exit</th>
+                                                        <th className="px-4 py-4">Status</th>
+                                                        <th className="px-4 py-4">Magnitude</th>
+                                                        <th className="px-4 py-4 text-right">PnL_USD</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
                                                     {trades.length === 0 && (
                                                         <tr>
-                                                            <td colSpan={7} className="px-3 py-6 text-center text-sm text-muted">Waiting for the first closed trade...</td>
+                                                            <td colSpan={7} className="px-4 py-12 text-center text-[10px] font-bold uppercase tracking-widest text-white/10">Awaiting initial execution cycle...</td>
                                                         </tr>
                                                     )}
                                                     {trades.map((trade) => (
-                                                        <tr key={`${trade.signal_id}-${trade.exit_timestamp || trade.timestamp}`} className="border-t border-border/60">
-                                                            <td className="px-3 py-2 font-mono text-xs text-muted">{formatTimestampLabel(trade.exit_timestamp || trade.timestamp)}</td>
-                                                            <td className={`px-3 py-2 font-semibold ${trade.direction === "LONG" ? "text-green" : "text-red"}`}>{trade.direction}</td>
-                                                            <td className="px-3 py-2 font-mono">{formatCurrency(trade.entry)}</td>
-                                                            <td className="px-3 py-2 font-mono">{formatCurrency(trade.exit_price ?? trade.tp)}</td>
-                                                            <td className="px-3 py-2 text-xs text-muted">{trade.outcome}</td>
-                                                            <td className={`px-3 py-2 font-mono ${trade.pnl_r >= 0 ? "text-green" : "text-red"}`}>{trade.pnl_r.toFixed(2)}R</td>
-                                                            <td className={`px-3 py-2 font-mono text-right ${trade.pnl_usd >= 0 ? "text-green" : "text-red"}`}>${formatCurrency(trade.pnl_usd)}</td>
+                                                        <tr key={`${trade.signal_id}-${trade.exit_timestamp || trade.timestamp}`} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors group">
+                                                            <td className="px-4 py-4 font-mono text-[10px] text-white/40">{formatTimestampLabel(trade.exit_timestamp || trade.timestamp)}</td>
+                                                            <td className="px-4 py-4 text-center">
+                                                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-sm border ${trade.direction === "LONG" ? "text-[#00ffa3] bg-[#00ffa3]/5 border-[#00ffa3]/20" : "text-[#ff2e2e] bg-[#ff2e2e]/5 border-[#ff2e2e]/20"}`}>
+                                                                    {trade.direction}
+                                                                </span>
+                                                            </td>
+                                                            <td className="px-4 py-4 font-mono text-[11px] text-white/80">${formatCurrency(trade.entry)}</td>
+                                                            <td className="px-4 py-4 font-mono text-[11px] text-white/60">${formatCurrency(trade.exit_price ?? trade.tp)}</td>
+                                                            <td className="px-4 py-4 text-[9px] font-bold uppercase tracking-widest text-white/30">{trade.outcome}</td>
+                                                            <td className={`px-4 py-4 font-mono text-[11px] font-black ${trade.pnl_r >= 0 ? "text-[#00ffa3]" : "text-[#ff2e2e]"}`}>{trade.pnl_r >= 0 ? "+" : ""}{trade.pnl_r.toFixed(2)}R</td>
+                                                            <td className={`px-4 py-4 font-mono text-[11px] text-right font-black ${trade.pnl_usd >= 0 ? "text-[#00ffa3]" : "text-[#ff2e2e]"}`}>
+                                                                {trade.pnl_usd >= 0 ? "+" : ""}${formatCurrency(trade.pnl_usd)}
+                                                            </td>
                                                         </tr>
                                                     ))}
                                                 </tbody>
@@ -1808,217 +1829,161 @@ export default function BacktestLab() {
                                     </div>
 
                                     {displayBootstrap && (
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-background rounded-2xl p-5 border border-border">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-[#050505] rounded-3xl p-6 border border-white/10 shadow-2xl">
                                             <div>
-                                                <p className="text-xs text-muted uppercase tracking-wider mb-1">Expected Profit Range</p>
-                                                <p className="text-lg font-mono font-bold text-white">
+                                                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-white/40 mb-3">Expected Profit Range</p>
+                                                <p className="text-2xl font-black font-mono text-[#00ffa3] drop-shadow-[0_0_8px_rgba(0,255,163,0.3)]">
                                                     ${displayBootstrap.net_profit_95_ci[0].toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                                                    <span className="text-muted mx-2">to</span>
+                                                    <span className="text-white/20 mx-3 font-normal">—</span>
                                                     ${displayBootstrap.net_profit_95_ci[1].toLocaleString(undefined, { maximumFractionDigits: 0 })}
                                                 </p>
                                             </div>
                                             <div>
-                                                <p className="text-xs text-muted uppercase tracking-wider mb-1">Worst Case Drawdown</p>
-                                                <p className="text-lg font-mono font-bold text-red">
-                                                    Up to {displayBootstrap.max_drawdown_95_ci_pct[1].toFixed(2)}%
+                                                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-white/40 mb-3">Mechanical Tail Risk</p>
+                                                <p className="text-2xl font-black font-mono text-[#ff2e2e] drop-shadow-[0_0_8px_rgba(255,46,46,0.3)]">
+                                                    MAX {displayBootstrap.max_drawdown_95_ci_pct[1].toFixed(2)}%
                                                 </p>
                                             </div>
                                         </div>
                                     )}
 
-                                    {/* IV Smile panel — appears after backtest completes */}
                                     {(ivData || ivLoading) && (
-                                        <div>
+                                        <div className="space-y-6">
                                             {ivLoading && (
-                                                <div className="bg-background rounded-2xl border border-border p-4 flex items-center gap-3">
-                                                    <div className="h-4 w-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
-                                                    <span className="text-xs text-muted font-mono uppercase tracking-widest animate-pulse">Computing Implied Volatility Smile…</span>
+                                                <div className="bg-[#050505] rounded-[2rem] border border-white/10 p-8 flex items-center justify-center gap-4 shadow-2xl relative overflow-hidden">
+                                                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.02] to-transparent animate-pulse" />
+                                                    <div className="h-5 w-5 border-3 border-[#00ffa3] border-t-transparent rounded-full animate-spin shadow-[0_0_10px_#00ffa3]" />
+                                                    <span className="text-[11px] font-black uppercase tracking-[0.4em] text-white/40 animate-pulse">Core Engine: Constructing IV Surface Audit…</span>
                                                 </div>
                                             )}
                                             {ivData && <IvSmilePanel data={ivData} />}
                                         </div>
                                     )}
 
-                                    {/* GARCH(1,1) conditional vol panel */}
+                                    {/* ARCH / GARCH Volatility Audit */}
                                     {(archData || archLoading) && (
-                                        <div>
-                                            {archLoading && (
-                                                <div className="bg-background rounded-2xl border border-border p-4 flex items-center gap-3 mt-3">
-                                                    <div className="h-4 w-4 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
-                                                    <span className="text-xs text-muted font-mono uppercase tracking-widest animate-pulse">Fitting GARCH(1,1) model…</span>
+                                        <div className="bg-[#050505] rounded-3xl border border-white/10 p-8 shadow-2xl space-y-6">
+                                            {archLoading ? (
+                                                <div className="flex items-center justify-center py-12 gap-4">
+                                                    <Loader2 className="animate-spin text-[#00ffa3]" size={24} />
+                                                    <span className="text-[11px] font-black uppercase tracking-[0.4em] text-white/30 animate-pulse">Fitting GARCH(1,1) Mechanical Model…</span>
                                                 </div>
-                                            )}
-                                            {archData && <ArchVolPanel data={archData} />}
+                                            ) : archData ? (
+                                                <ArchVolPanel data={archData} />
+                                            ) : null}
                                         </div>
                                     )}
 
+                                    {/* Kalman Filter State Estimation */}
                                     {(kalmanData || kalmanLoading) && (
-                                        <div>
-                                            {kalmanLoading && (
-                                                <div className="bg-background rounded-2xl border border-border p-4 flex items-center gap-3 mt-3">
-                                                    <div className="h-4 w-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-                                                    <span className="text-xs text-muted font-mono uppercase tracking-widest animate-pulse">Running Kalman state filter…</span>
+                                        <div className="bg-[#050505] rounded-3xl border border-white/10 p-8 shadow-2xl space-y-6">
+                                            {kalmanLoading ? (
+                                                <div className="flex items-center justify-center py-12 gap-4">
+                                                    <Loader2 className="animate-spin text-[#00ffa3]" size={24} />
+                                                    <span className="text-[11px] font-black uppercase tracking-[0.4em] text-white/30 animate-pulse">Running Kalman State Audit…</span>
                                                 </div>
-                                            )}
-                                            {kalmanData && <KalmanFilterPanel data={kalmanData} />}
+                                            ) : kalmanData ? (
+                                                <KalmanFilterPanel data={kalmanData} />
+                                            ) : null}
                                         </div>
                                     )}
 
-                                    {/* IV Regime — current signal badge */}
+                                    {/* IV Regime Current Signal Audit */}
                                     {ivCurrentSignal && (
-                                        <div className="bg-background rounded-2xl border border-cyan-500/30 p-4 mt-3">
-                                            <p className="text-[10px] font-bold uppercase tracking-widest text-cyan-400 mb-3">
-                                                IV Regime — Current Signal ({ivCurrentSignal.date})
-                                            </p>
-                                            <p className="text-[10px] text-muted mb-3">
-                                                Historical backtest uses proxy IV rank. Live option context below comes from real option prices inverted through Black-Scholes.
-                                            </p>
-                                            <div className="flex flex-wrap gap-3 items-center">
-                                                <span className={`px-4 py-2 rounded-xl font-bold text-sm border ${ivCurrentSignal.direction === "LONG"
-                                                    ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
-                                                    : ivCurrentSignal.direction === "SHORT"
-                                                        ? "bg-red-500/15 border-red-500/40 text-red-300"
-                                                        : "bg-zinc-700/40 border-zinc-600/30 text-zinc-400"
-                                                    }`}>
-                                                    {ivCurrentSignal.direction}
-                                                </span>
-                                                <div className="bg-muted/10 rounded-xl px-3 py-2 border border-border/50">
-                                                    <p className="text-[9px] text-muted uppercase tracking-wider">Proxy IV Rank</p>
-                                                    <p className="text-sm font-bold font-mono text-cyan-300">{ivCurrentSignal.iv_rank.toFixed(1)}%</p>
+                                        <div className="bg-[#050505] rounded-[2.5rem] p-10 border border-white/10 shadow-[0_0_50px_rgba(0,0,0,0.5)] relative overflow-hidden">
+                                            <div className="absolute top-0 right-0 p-8">
+                                                <div className={`px-5 py-2 rounded-full border text-[10px] font-black uppercase tracking-[0.3em] shadow-lg ${ivCurrentSignal.direction === "LONG" ? "text-[#00ffa3] border-[#00ffa3]/20 bg-[#00ffa3]/5" : ivCurrentSignal.direction === "SHORT" ? "text-[#ff2e2e] border-[#ff2e2e]/20 bg-[#ff2e2e]/5" : "text-white/30 border-white/10"}`}>
+                                                    {ivCurrentSignal.direction} SIGNAL
                                                 </div>
-                                                {ivCurrentSignal.signal_source && (
-                                                    <div className="bg-muted/10 rounded-xl px-3 py-2 border border-border/50">
-                                                        <p className="text-[9px] text-muted uppercase tracking-wider">Signal Source</p>
-                                                        <p className="text-sm font-bold font-mono text-sky-300">{ivCurrentSignal.signal_source.replace(/_/g, " ")}</p>
-                                                    </div>
-                                                )}
-                                                <div className="bg-muted/10 rounded-xl px-3 py-2 border border-border/50">
-                                                    <p className="text-[9px] text-muted uppercase tracking-wider">Regime</p>
-                                                    <p className={`text-sm font-bold font-mono ${ivCurrentSignal.regime === "Low" ? "text-emerald-400"
-                                                        : ivCurrentSignal.regime === "Mid" ? "text-yellow-400"
-                                                            : "text-red-400"
-                                                        }`}>{ivCurrentSignal.regime}</p>
-                                                </div>
-                                                <div className="bg-muted/10 rounded-xl px-3 py-2 border border-border/50">
-                                                    <p className="text-[9px] text-muted uppercase tracking-wider">Momentum</p>
-                                                    <p className={`text-sm font-bold font-mono ${ivCurrentSignal.momentum_pct >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                                                        {ivCurrentSignal.momentum_pct >= 0 ? "+" : ""}{ivCurrentSignal.momentum_pct.toFixed(2)}%
-                                                    </p>
-                                                </div>
-                                                <div className="bg-muted/10 rounded-xl px-3 py-2 border border-border/50">
-                                                    <p className="text-[9px] text-muted uppercase tracking-wider">Close</p>
-                                                    <p className="text-sm font-bold font-mono text-foreground">${ivCurrentSignal.close.toFixed(2)}</p>
-                                                </div>
-                                                {ivCurrentSignal.daily_vol_pct != null && (
-                                                    <div className="bg-muted/10 rounded-xl px-3 py-2 border border-border/50">
-                                                        <p className="text-[9px] text-muted uppercase tracking-wider">Daily Vol σ</p>
-                                                        <p className="text-sm font-bold font-mono text-violet-300">{ivCurrentSignal.daily_vol_pct.toFixed(2)}%</p>
-                                                    </div>
-                                                )}
-                                                {ivCurrentSignal.realized_vol_ann_pct != null && (
-                                                    <div className="bg-muted/10 rounded-xl px-3 py-2 border border-border/50">
-                                                        <p className="text-[9px] text-muted uppercase tracking-wider">Realized Vol Ann.</p>
-                                                        <p className="text-sm font-bold font-mono text-fuchsia-300">{ivCurrentSignal.realized_vol_ann_pct.toFixed(2)}%</p>
-                                                    </div>
-                                                )}
                                             </div>
 
-                                            {ivCurrentSignal.option_context?.available && (
-                                                <div className="mt-4 pt-4 border-t border-border/60">
-                                                    <p className="text-[10px] font-bold uppercase tracking-widest text-amber-400 mb-3">
-                                                        Live Option IV Context
-                                                    </p>
-                                                    <div className="flex flex-wrap gap-3 items-center">
-                                                        {ivCurrentSignal.option_context.direction_bias && (
-                                                            <span className={`px-4 py-2 rounded-xl font-bold text-sm border ${ivCurrentSignal.option_context.direction_bias === "LONG"
-                                                                ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300"
-                                                                : ivCurrentSignal.option_context.direction_bias === "SHORT"
-                                                                    ? "bg-red-500/15 border-red-500/40 text-red-300"
-                                                                    : "bg-zinc-700/40 border-zinc-600/30 text-zinc-400"
-                                                                }`}>
-                                                                Live Bias {ivCurrentSignal.option_context.direction_bias}
-                                                            </span>
-                                                        )}
-                                                        {ivCurrentSignal.option_context.atm_iv_pct != null && (
-                                                            <div className="bg-muted/10 rounded-xl px-3 py-2 border border-border/50">
-                                                                <p className="text-[9px] text-muted uppercase tracking-wider">ATM IV</p>
-                                                                <p className="text-sm font-bold font-mono text-amber-300">{ivCurrentSignal.option_context.atm_iv_pct.toFixed(2)}%</p>
-                                                            </div>
-                                                        )}
-                                                        {ivCurrentSignal.option_context.iv_realized_spread_pct != null && (
-                                                            <div className="bg-muted/10 rounded-xl px-3 py-2 border border-border/50">
-                                                                <p className="text-[9px] text-muted uppercase tracking-wider">IV - RV Spread</p>
-                                                                <p className={`text-sm font-bold font-mono ${ivCurrentSignal.option_context.iv_realized_spread_pct >= 0 ? "text-red-300" : "text-emerald-300"}`}>
-                                                                    {ivCurrentSignal.option_context.iv_realized_spread_pct >= 0 ? "+" : ""}{ivCurrentSignal.option_context.iv_realized_spread_pct.toFixed(2)} pts
-                                                                </p>
-                                                            </div>
-                                                        )}
+                                            <div className="flex items-center gap-6 mb-10 pb-8 border-b border-white/5">
+                                                <div className="h-16 w-16 rounded-[1.5rem] bg-[#00ffa3]/10 border border-[#00ffa3]/20 flex items-center justify-center">
+                                                    <Activity className="text-[#00ffa3]" size={32} />
+                                                </div>
+                                                <div>
+                                                    <h3 className="text-xl font-black uppercase tracking-[0.4em] text-white">Execution Feedback</h3>
+                                                    <p className="text-[10px] font-bold text-white/20 mt-1 uppercase tracking-widest">Mechanical Signal Drift • {ivCurrentSignal.date}</p>
+                                                </div>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
+                                                {[
+                                                    { label: "Close_Snapshot", val: `$${formatCurrency(ivCurrentSignal.close)}`, sub: "Price Level", color: "text-white" },
+                                                    { label: "IV_Rank_Index", val: ivCurrentSignal.iv_rank.toFixed(1), sub: "Volatility Decile", color: "text-[#d1ff00]" },
+                                                    { label: "Equity_Momentum", val: `${ivCurrentSignal.momentum_pct > 0 ? "+" : ""}${ivCurrentSignal.momentum_pct.toFixed(2)}%`, sub: "Trend Magnitude", color: ivCurrentSignal.momentum_pct >= 0 ? "text-[#00ffa3]" : "text-[#ff2e2e]" },
+                                                    { label: "System_Regime", val: ivCurrentSignal.regime, sub: "Market Context", color: "text-[#00e0ff]" }
+                                                ].map((item, i) => (
+                                                    <div key={i} className="space-y-2">
+                                                        <p className="text-[9px] font-black uppercase tracking-[0.3em] text-white/30">{item.label}</p>
+                                                        <p className={`text-2xl font-black font-mono tracking-tighter ${item.color}`}>{item.val}</p>
+                                                        <p className="text-[9px] font-bold text-white/10 uppercase tracking-widest">{item.sub}</p>
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            {ivCurrentSignal.option_context && (
+                                                <div className="mt-12 pt-8 border-t border-white/5">
+                                                    <div className="flex items-center justify-between mb-6">
+                                                        <p className="text-[10px] font-black uppercase tracking-[0.4em] text-white/50">Market Liquidity Audit</p>
+                                                        <p className="text-[9px] font-bold text-[#00ffa3]/60 uppercase tracking-widest">Source: {ivCurrentSignal.option_context.source}</p>
+                                                    </div>
+                                                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                                                         {ivCurrentSignal.option_context.iv_realized_ratio != null && (
-                                                            <div className="bg-muted/10 rounded-xl px-3 py-2 border border-border/50">
-                                                                <p className="text-[9px] text-muted uppercase tracking-wider">IV / RV Ratio</p>
-                                                                <p className="text-sm font-bold font-mono text-sky-300">{ivCurrentSignal.option_context.iv_realized_ratio.toFixed(2)}x</p>
+                                                            <div className="bg-white/5 rounded-2xl p-4 border border-white/5">
+                                                                <p className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-1">IV/RV Ratio</p>
+                                                                <p className="text-base font-black font-mono text-[#00ffa3]">{ivCurrentSignal.option_context.iv_realized_ratio.toFixed(2)}x</p>
                                                             </div>
                                                         )}
                                                         {ivCurrentSignal.option_context.skew_pct != null && (
-                                                            <div className="bg-muted/10 rounded-xl px-3 py-2 border border-border/50">
-                                                                <p className="text-[9px] text-muted uppercase tracking-wider">Put-Call Skew</p>
-                                                                <p className={`text-sm font-bold font-mono ${ivCurrentSignal.option_context.skew_pct >= 0 ? "text-red-300" : "text-emerald-300"}`}>
-                                                                    {ivCurrentSignal.option_context.skew_pct >= 0 ? "+" : ""}{ivCurrentSignal.option_context.skew_pct.toFixed(2)} pts
+                                                            <div className="bg-white/5 rounded-2xl p-4 border border-white/5">
+                                                                <p className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-1">Skew Factor</p>
+                                                                <p className={`text-base font-black font-mono ${ivCurrentSignal.option_context.skew_pct >= 0 ? "text-[#ff2e2e]" : "text-[#00ffa3]"}`}>
+                                                                    {ivCurrentSignal.option_context.skew_pct >= 0 ? "+" : ""}{ivCurrentSignal.option_context.skew_pct.toFixed(2)}pts
                                                                 </p>
                                                             </div>
                                                         )}
                                                         {ivCurrentSignal.option_context.exp_date && (
-                                                            <div className="bg-muted/10 rounded-xl px-3 py-2 border border-border/50">
-                                                                <p className="text-[9px] text-muted uppercase tracking-wider">Expiry</p>
-                                                                <p className="text-sm font-bold font-mono text-foreground">
-                                                                    {ivCurrentSignal.option_context.exp_date}
-                                                                    {ivCurrentSignal.option_context.dte != null ? ` (${ivCurrentSignal.option_context.dte}d)` : ""}
-                                                                </p>
+                                                            <div className="bg-white/5 rounded-2xl p-4 border border-white/5">
+                                                                <p className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-1">Audit Expiry</p>
+                                                                <p className="text-base font-black font-mono text-white/80">{ivCurrentSignal.option_context.exp_date}</p>
                                                             </div>
                                                         )}
                                                     </div>
                                                 </div>
                                             )}
-
-                                            {ivCurrentSignal.option_context && !ivCurrentSignal.option_context.available && (
-                                                <div className="mt-4 pt-4 border-t border-border/60">
-                                                    <p className="text-[10px] text-muted">
-                                                        Live option IV unavailable: {ivCurrentSignal.option_context.error || "No listed options or insufficient chain liquidity."}
-                                                    </p>
-                                                </div>
-                                            )}
                                         </div>
                                     )}
 
-                                    <div className="pt-2 flex flex-wrap items-center gap-3">
+                                    {/* Report Generation Area */}
+                                    <div className="pt-8 flex flex-wrap items-center gap-4">
                                         {reportUrl ? (
                                             <a
                                                 href={reportUrl}
                                                 target="_blank"
                                                 rel="noreferrer"
-                                                className="inline-flex items-center gap-3 px-4 py-3 bg-zinc-800 hover:bg-zinc-700 text-white font-bold rounded-xl transition-all border border-zinc-600 hover:border-accent group"
+                                                className="inline-flex items-center gap-4 px-8 py-4 bg-[#00ffa3] text-black font-black uppercase tracking-[0.3em] rounded-2xl transition-all shadow-[0_0_40px_rgba(0,255,163,0.3)] hover:scale-[1.05] group"
                                             >
-                                                <Download size={18} className="group-hover:text-accent transition-colors" />
-                                                Open PDF Report
-                                                <ExternalLinkIcon size={16} className="text-muted group-hover:text-white" />
+                                                <Download size={20} />
+                                                Export mechanical audit pdf
+                                                <ExternalLinkIcon size={16} className="text-black/40 group-hover:text-black" />
                                             </a>
                                         ) : (
-                                            <div className="text-sm text-muted">
-                                                {isRunning ? "PDF report will appear here when the run completes." : "No PDF generated for this run."}
+                                            <div className="text-[10px] font-bold text-white/20 uppercase tracking-[0.2em] bg-white/5 px-6 py-4 rounded-2xl border border-white/5">
+                                                {isRunning ? "Engine: Finalizing PDF propagation..." : "Mechanical audit unavailable / not generated."}
                                             </div>
                                         )}
                                     </div>
-                                </div>
-                            </>
-                        )}
+                                </>
+                            )}
+                        </div>
                     </div>
-                </div>
                 ) : (
                     <div className="bg-card border border-border rounded-2xl overflow-hidden shadow-sm">
                         <PortfolioBacktestPanel activeHoldings={activeHoldings} totalValue={totalValue} />
                     </div>
                 )}
             </div>
-        </AppLayout >
+        </AppLayout>
     );
 }
