@@ -68,6 +68,22 @@ class BacktestResult:
     report_path: Optional[str] = None
 
     def summary(self) -> dict:
+        # Per-trade position sizing summary (capital-normalized metrics)
+        executed_trades = [t for t in self.trades if t.outcome != "expired"]
+        risk_pct = 0.005  # Default StrategyConfig.risk_per_trade
+        risk_per_trade_usd = round(self.config.account_size * risk_pct, 4)
+
+        lot_sizes = [t.signal.position_size for t in executed_trades if t.signal.position_size > 0]
+        avg_lots = round(sum(lot_sizes) / len(lot_sizes), 4) if lot_sizes else 0.0
+
+        pip_sizes = [t.signal.risk_pips for t in executed_trades if t.signal.risk_pips > 0]
+        avg_risk_pips = round(sum(pip_sizes) / len(pip_sizes), 4) if pip_sizes else 0.0
+
+        # Capital-neutral normalized metrics (independent of account size)
+        # These will be IDENTICAL regardless of starting capital
+        net_pnl_usd = sum(t.pnl_usd for t in self.trades)
+        net_pnl_pct = round((net_pnl_usd / self.config.account_size) * 100, 4) if self.config.account_size else 0.0
+
         summary_dict = {
             "symbol": self.config.symbol,
             "start_date": self.config.start_date,
@@ -77,6 +93,14 @@ class BacktestResult:
             "trading_days": self.trading_days,
             "missing_data_days": self.missing_data_days,
             "report_path": self.report_path,
+            # ── Position Sizing ──────────────────────────────────────────
+            "risk_per_trade_pct": risk_pct * 100,     # e.g. 0.5%
+            "risk_per_trade_usd": risk_per_trade_usd,  # scales with capital
+            "avg_lots_per_trade": avg_lots,            # shares/units per trade
+            "avg_risk_pips": avg_risk_pips,            # avg entry-to-stop distance in price units
+            # ── Capital-Neutral (use for cross-capital comparison) ───────
+            "net_pnl_usd": round(net_pnl_usd, 4),
+            "net_pnl_pct": net_pnl_pct,                # % of initial capital
             **self.kpis.as_dict(),
         }
         if self.bootstrap_stats:
@@ -93,6 +117,7 @@ _SESSION_START_H = 9
 _SESSION_START_M = 30
 _SESSION_END_H   = 11
 _SESSION_END_M   = 0
+_COVERAGE_TOLERANCE_DAYS = 7
 
 
 class BacktestRunner:
@@ -110,12 +135,18 @@ class BacktestRunner:
         strategy: IStrategyEngine,
         repository: IIntradayRepository,
         kpi_calc: IKPICalculator,
+        on_progress_cb=None,
+        on_trade_cb=None,
+        on_bootstrap_cb=None,
     ):
         # DIP: all dependencies are injected as abstractions
         self._strategy   = strategy
         self._repository = repository
         self._kpi_calc   = kpi_calc
         self._stop_flag  = False
+        self._on_progress_cb  = on_progress_cb   # (day: int, total: int) -> None
+        self._on_trade_cb     = on_trade_cb       # (record: TradeRecord, equity: float) -> None
+        self._on_bootstrap_cb = on_bootstrap_cb   # (stats: dict) -> None
 
     # ================================================================== #
     #  Public entry point                                                 #
@@ -143,67 +174,26 @@ class BacktestRunner:
             # --- Group into sessions ---
             sessions = self._split_into_sessions(m1_candles, m5_candles)
 
-            # --- Run session loop ---
-            trades, trading_days, missing_days = self._run_session_loop(
-                sessions, strategy_cfg, config
+            # --- Run session loop (CPU-heavy sync — offloaded to thread pool) ---
+            trades, trading_days, missing_days = await asyncio.to_thread(
+                self._run_session_loop, sessions, strategy_cfg, config
             )
 
             # --- Compute KPIs ---
             kpis = self._kpi_calc.compute(trades, config.account_size, trading_days)
 
-            # --- Bootstrap Resampling (Optional) ---
+            # --- Bootstrap Resampling (Optional, CPU-heavy — offloaded to thread pool) ---
             bootstrap_stats = None
             if config.run_bootstrap and len(trades) > 0:
-                from .engine.stationary_bootstrap import StationaryBootstrap, recommend_block_length
-                # Stationary Bootstrap (Politis & Romano, 1994):
-                # Resample BLOCKS of consecutive trades (not individual trades)
-                # to preserve the temporal autocorrelation structure.
-                # Block length ~ N^(1/3) is the optimal rule of thumb.
-                block_len = recommend_block_length(len(trades))
-                sb = StationaryBootstrap(block_length=block_len)
-                _need_samples = True  # needed for HTML report charts
-                bootstrap_stats = sb.run(
-                    trades,
-                    config.account_size,
-                    config.bootstrap_iterations,
-                    return_samples=_need_samples,
+                bootstrap_stats = await asyncio.to_thread(
+                    self._compute_bootstrap, trades, config
                 )
+                if self._on_bootstrap_cb:
+                    self._on_bootstrap_cb(bootstrap_stats)
 
             logfire.info("Backtest completed",
                          symbol=config.symbol, trades=len(trades),
                          win_rate=kpis.win_rate, profit_factor=kpis.profit_factor)
-
-            result = BacktestResult(
-                config=config,
-                trades=trades,
-                kpis=kpis,
-                trading_days=trading_days,
-                missing_data_days=missing_days,
-                bootstrap_stats=bootstrap_stats
-            )
-
-            # --- Generate Visual Report if Bootstrap is active ---
-            report_path = None
-            if bootstrap_stats is not None:
-                try:
-                    from .report_generator import generate_html_report
-                    import os
-                    from datetime import datetime
-                    
-                    reports_dir = os.path.join(os.getcwd(), "reports")
-                    os.makedirs(reports_dir, exist_ok=True)
-                    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    report_filename = f"bootstrap_report_{config.symbol}_{stamp}.html"
-                    full_report_path = os.path.join(reports_dir, report_filename)
-                    
-                    generate_html_report(
-                        BacktestResult(config, trades, kpis, trading_days, missing_days, bootstrap_stats), 
-                        full_report_path
-                    )
-                    report_path = report_filename # Store only filename for URL construction
-                    logfire.info(f"Visual Bootstrap Report generated: {full_report_path}")
-                except Exception as e:
-                    logfire.error(f"Failed to generate HTML report: {e}")
 
             return BacktestResult(
                 config=config,
@@ -212,8 +202,23 @@ class BacktestRunner:
                 trading_days=trading_days,
                 missing_data_days=missing_days,
                 bootstrap_stats=bootstrap_stats,
-                report_path=report_path
             )
+
+    # ================================================================== #
+    #  Bootstrap helper (synchronous, run via asyncio.to_thread)         #
+    # ================================================================== #
+
+    def _compute_bootstrap(self, trades: List[TradeRecord], config: BacktestConfig) -> dict:
+        """Run stationary bootstrap resampling. Called in a thread pool."""
+        from .engine.stationary_bootstrap import StationaryBootstrap, recommend_block_length
+        block_len = recommend_block_length(len(trades))
+        sb = StationaryBootstrap(block_length=block_len)
+        return sb.run(
+            trades,
+            config.account_size,
+            config.bootstrap_iterations,
+            return_samples=True,
+        )
 
     # ================================================================== #
     #  PurgedKFold Cross-Validation                                       #
@@ -374,7 +379,12 @@ class BacktestRunner:
         )
         breaker.on_trip(lambda reason: logfire.warning(f"[Backtest] CircuitBreaker: {reason}"))
 
-        for session in sessions:
+        total_sessions = len(sessions)
+
+        for day_idx, session in enumerate(sessions):
+            if self._on_progress_cb:
+                self._on_progress_cb(day_idx + 1, total_sessions)
+
             session_date: date = session["date"]
             m5 = session["m5"]
             m1 = session["m1"]
@@ -433,6 +443,8 @@ class BacktestRunner:
                 breaker.record_win(gain_pct)
 
             self._on_trade_close(record, current_equity)
+            if self._on_trade_cb:
+                self._on_trade_cb(record, current_equity)
 
         return trades, trading_days, missing_days
 
@@ -472,47 +484,45 @@ class BacktestRunner:
             h = candle["high"]
             l = candle["low"]
 
+            # risk_amount = lots × risk_pips × pip_value  (= account × risk_pct, by construction)
+            risk_amount = signal.position_size * signal.risk_pips * pip_value
+
             if signal.direction == "SHORT":
                 if l <= signal.tp:        # TP hit first (price moved down)
-                    pnl_r    = signal.tp / signal.risk_pips if signal.risk_pips else 0
-                    pnl_usd  = signal.risk_pips * pip_value * 3.0  # 3R
                     return TradeRecord(
                         signal=signal, outcome="win_tp",
                         exit_price=signal.tp,
                         exit_timestamp=candle["timestamp"],
                         pnl_r=3.0,
-                        pnl_usd=pnl_usd,
+                        pnl_usd=risk_amount * 3.0,
                         slippage_pips=slippage_pips,
                     )
                 if h >= signal.stop:      # SL hit
-                    pnl_usd = -(signal.risk_pips * pip_value * 1.0)  # -1R
                     return TradeRecord(
                         signal=signal, outcome="loss_sl",
                         exit_price=signal.stop + slippage_pips,
                         exit_timestamp=candle["timestamp"],
                         pnl_r=-1.0,
-                        pnl_usd=pnl_usd,
+                        pnl_usd=-risk_amount * 1.0,
                         slippage_pips=slippage_pips,
                     )
             else:  # LONG
                 if h >= signal.tp:        # TP hit
-                    pnl_usd = signal.risk_pips * pip_value * 3.0
                     return TradeRecord(
                         signal=signal, outcome="win_tp",
                         exit_price=signal.tp,
                         exit_timestamp=candle["timestamp"],
                         pnl_r=3.0,
-                        pnl_usd=pnl_usd,
+                        pnl_usd=risk_amount * 3.0,
                         slippage_pips=slippage_pips,
                     )
                 if l <= signal.stop:      # SL hit
-                    pnl_usd = -(signal.risk_pips * pip_value * 1.0)
                     return TradeRecord(
                         signal=signal, outcome="loss_sl",
                         exit_price=signal.stop - slippage_pips,
                         exit_timestamp=candle["timestamp"],
                         pnl_r=-1.0,
-                        pnl_usd=pnl_usd,
+                        pnl_usd=-risk_amount * 1.0,
                         slippage_pips=slippage_pips,
                     )
 
@@ -537,6 +547,28 @@ class BacktestRunner:
         """
         from ...services.market_data import market_data_service
 
+        try:
+            requested_days = (date.fromisoformat(config.end_date) - date.fromisoformat(config.start_date)).days
+        except ValueError:
+            requested_days = 0
+
+        if requested_days > 7:
+            await market_data_service.backfill_intraday_range(
+                config.symbol,
+                config.start_date,
+                config.end_date,
+                intervals=("1m", "5m"),
+            )
+
+            start_ts = f"{config.start_date} 00:00:00"
+            end_ts = f"{config.end_date} 23:59:59"
+            m1_candles = self._repository.get(config.symbol, "1m", start_ts, end_ts)
+            m5_candles = self._repository.get(config.symbol, "5m", start_ts, end_ts)
+
+            self._validate_candle_coverage(m1_candles, config.start_date, config.end_date, "1m")
+            self._validate_candle_coverage(m5_candles, config.start_date, config.end_date, "5m")
+            return m1_candles, m5_candles
+
         # Yahoo finance period ~ '5d', '1mo', '3mo' (limited to 7 days for 1m)
         # For backtests > 7 days, we rely on DuckDB if pre-populated.
         # period="1mo" returns 5m data for months; "7d" returns 1m data.
@@ -556,7 +588,51 @@ class BacktestRunner:
         m1_candles: List[CandleRow] = m1_result.get("candles", []) if "candles" in m1_result else []
         m5_candles: List[CandleRow] = m5_result.get("candles", []) if "candles" in m5_result else []
 
+        self._validate_candle_coverage(m1_candles, config.start_date, config.end_date, "1m")
+        self._validate_candle_coverage(m5_candles, config.start_date, config.end_date, "5m")
+
         return m1_candles, m5_candles
+
+    @staticmethod
+    def _validate_candle_coverage(
+        candles: List[CandleRow],
+        start_date: str,
+        end_date: str,
+        interval: str,
+    ) -> None:
+        """
+        Reject partial intraday datasets for long backtests.
+
+        Yahoo Finance can silently return a short recent slice (for example 7 days of 1m)
+        even when the requested backtest range is much larger. Running the strategy on that
+        subset produces misleading KPI/trade counts, so fail explicitly instead.
+        """
+        if not candles:
+            raise ValueError(
+                f"No {interval} candles available for {start_date} -> {end_date}."
+            )
+
+        try:
+            requested_start = date.fromisoformat(start_date)
+            requested_end = date.fromisoformat(end_date)
+            available_start = datetime.fromisoformat(candles[0]["timestamp"].replace("Z", "")).date()
+            available_end = datetime.fromisoformat(candles[-1]["timestamp"].replace("Z", "")).date()
+        except (ValueError, KeyError, TypeError, IndexError):
+            return
+
+        tolerance = timedelta(days=_COVERAGE_TOLERANCE_DAYS)
+        starts_too_late = available_start > (requested_start + tolerance)
+        ends_too_early = available_end < (requested_end - tolerance)
+
+        if starts_too_late or ends_too_early:
+            provider_hint = (
+                "Yahoo Finance only exposes about 7 days of 1m candles and about 1 month of 5m candles. "
+                "Load longer intraday history into DuckDB first or use a provider like Polygon for the full range."
+            )
+            raise ValueError(
+                f"Insufficient {interval} coverage for backtest {start_date} -> {end_date}. "
+                f"Available {interval} data spans {available_start} -> {available_end}. {provider_hint}"
+            )
 
     @staticmethod
     def _split_into_sessions(

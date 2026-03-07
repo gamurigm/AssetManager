@@ -15,9 +15,22 @@ echo %Yellow%==========================================%Reset%
 echo %Cyan%   AssetManager: Sistema Inteligente      %Reset%
 echo %Yellow%==========================================%Reset%
 
+set "PORTFOLIO_CPP_SERVICE_URL="
+
+:: --- Portfolio C++ Service (Puerto 9092) ---
+echo.
+echo %White%[1/3] Verificando Portfolio C++ Service (Puerto 9092)...%Reset%
+powershell -ExecutionPolicy Bypass -File "%~dp0run_portfolio_cpp_service.ps1" -Port 9092 -WindowStyle Minimized >nul
+if %errorlevel% equ 0 (
+    set "PORTFOLIO_CPP_SERVICE_URL=http://127.0.0.1:9092"
+    echo %Green% - Portfolio C++ listo en %PORTFOLIO_CPP_SERVICE_URL%%Reset%
+) else (
+    echo %Yellow% - AVISO: No se pudo iniciar portfolio_cpp_service. Se usara fallback embebido o Python.%Reset%
+)
+
 :: --- Backend (Puerto 8282) ---
 echo.
-echo %White%[1/2] Verificando Backend (Puerto 8282)...%Reset%
+echo %White%[2/3] Verificando Backend (Puerto 8282)...%Reset%
 netstat -ano | findstr :8282 | findstr LISTENING >nul
 if %errorlevel% equ 0 (
     echo %Red% - ¡Puerto 8282 ocupado! Matando proceso anterior...%Reset%
@@ -26,15 +39,15 @@ if %errorlevel% equ 0 (
 )
 
 echo %Green% - Iniciando Backend (FastAPI)...%Reset%
-if exist "backend\venv\Scripts\activate.bat" (
-    start "AssetManager Backend" cmd /k "cd backend && venv\Scripts\activate && uvicorn app.main:sio_app --reload --host 0.0.0.0 --port 8282"
+if exist "backend\venv\Scripts\python.exe" (
+    start "AssetManager Backend" cmd /k "cd backend && set PORTFOLIO_CPP_SERVICE_URL=%PORTFOLIO_CPP_SERVICE_URL% && venv\Scripts\python.exe -m uvicorn app.main:sio_app --reload --host 0.0.0.0 --port 8282"
 ) else (
-    echo %Red% - ERROR: No se encontró el entorno virtual en backend\venv%Reset%
+    echo %Red% - ERROR: No se encontró backend\venv\Scripts\python.exe%Reset%
 )
 
 :: --- Frontend (Puerto 3309) ---
 echo.
-echo %White%[2/2] Verificando Frontend (Puerto 3309)...%Reset%
+echo %White%[3/3] Verificando Frontend (Puerto 3309)...%Reset%
 netstat -ano | findstr :3309 | findstr LISTENING >nul
 if %errorlevel% equ 0 (
     echo %Red% - ¡Puerto 3309 ocupado! Matando proceso anterior...%Reset%
@@ -68,6 +81,11 @@ if exist "frontend" (
 echo.
 echo %Yellow%¡Chequeo completado!%Reset%
 echo ------------------------------------------
+if defined PORTFOLIO_CPP_SERVICE_URL (
+    echo %Cyan%Portfolio C++: %PORTFOLIO_CPP_SERVICE_URL%%Reset%
+) else (
+    echo %Yellow%Portfolio C++: fallback a C++ embebido / Python%Reset%
+)
 echo %Cyan%Backend: http://localhost:8282%Reset%
 echo %Cyan%Frontend: http://localhost:3309%Reset%
 echo ------------------------------------------

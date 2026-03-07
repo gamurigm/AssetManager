@@ -185,6 +185,24 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
             conn.execute("CREATE INDEX IF NOT EXISTS idx_insider_ticker ON insider_trading(ticker)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_insider_date ON insider_trading(trade_date)")
 
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS asset_classifications (
+                    symbol VARCHAR NOT NULL,
+                    benchmark VARCHAR DEFAULT 'SPY',
+                    asset_type VARCHAR,
+                    sector VARCHAR,
+                    sector_etf VARCHAR,
+                    industry_group VARCHAR,
+                    industry VARCHAR,
+                    sub_industry VARCHAR,
+                    company_name VARCHAR,
+                    source VARCHAR,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (symbol, benchmark)
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_asset_classifications_symbol ON asset_classifications(symbol)")
+
             # Initial Seed: If empty, start with 1200 from 2 years ago for 'main'
             res = conn.execute("SELECT COUNT(*) FROM equity_snapshots").fetchone()
             if res[0] == 0:
@@ -219,6 +237,26 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
         return [
             Candle(date=str(r[0]), open=r[1], high=r[2], low=r[3], close=r[4], volume=r[5] or 0)
             for r in reversed(rows)
+        ]
+
+    def get_history_range(self, symbol: str, start_date: str, end_date: str) -> List[Candle]:
+        """Return daily candles for a symbol within an inclusive date range."""
+        conn = self._connect(read_only=True)
+        try:
+            rows = conn.execute("""
+                SELECT date, open, high, low, close, volume
+                FROM ohlcv
+                WHERE symbol = ?
+                  AND date >= ?
+                  AND date <= ?
+                ORDER BY date ASC
+            """, [symbol, start_date, end_date]).fetchall()
+        finally:
+            conn.close()
+
+        return [
+            Candle(date=str(r[0]), open=r[1], high=r[2], low=r[3], close=r[4], volume=r[5] or 0)
+            for r in rows
         ]
 
     def upsert_candles(self, symbol: str, candles: List[Candle], source: str = "unknown") -> int:
@@ -438,6 +476,78 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
             return []
         finally:
             conn.close()
+
+    # --- Asset Classification Persistence ---
+
+    def get_asset_classification(self, symbol: str, benchmark: str = "SPY") -> Optional[Dict[str, Any]]:
+        conn = self._connect(read_only=True)
+        try:
+            row = conn.execute(
+                """
+                SELECT symbol, asset_type, sector, sector_etf, industry_group,
+                       industry, sub_industry, company_name, source
+                FROM asset_classifications
+                WHERE symbol = ? AND benchmark = ?
+                """,
+                [symbol.upper(), benchmark.upper()],
+            ).fetchone()
+            if not row:
+                return None
+            return {
+                "ticker": row[0],
+                "asset_type": row[1] or "equity",
+                "sector": row[2] or "Unclassified",
+                "sector_etf": row[3] or benchmark.upper(),
+                "industry_group": row[4] or "Unclassified",
+                "industry": row[5] or "Unclassified",
+                "sub_industry": row[6] or "Unclassified",
+                "company_name": row[7] or "",
+                "source": row[8] or "database",
+            }
+        except Exception as e:
+            print(f"[DuckDB] Asset classification load error for {symbol}: {e}")
+            return None
+        finally:
+            conn.close()
+
+    def upsert_asset_classifications(self, classifications: List[Dict[str, Any]], benchmark: str = "SPY") -> int:
+        if not classifications:
+            return 0
+
+        with self._write_lock:
+            conn = self._connect(read_only=False)
+            try:
+                rows = [
+                    (
+                        classification["ticker"],
+                        benchmark.upper(),
+                        classification.get("asset_type", "equity"),
+                        classification.get("sector", "Unclassified"),
+                        classification.get("sector_etf", benchmark.upper()),
+                        classification.get("industry_group", "Unclassified"),
+                        classification.get("industry", "Unclassified"),
+                        classification.get("sub_industry", "Unclassified"),
+                        classification.get("company_name", ""),
+                        classification.get("source", "backend"),
+                    )
+                    for classification in classifications
+                ]
+                conn.executemany(
+                    """
+                    INSERT OR REPLACE INTO asset_classifications (
+                        symbol, benchmark, asset_type, sector, sector_etf,
+                        industry_group, industry, sub_industry, company_name,
+                        source, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    """,
+                    rows,
+                )
+                return len(rows)
+            except Exception as e:
+                print(f"[DuckDB] Asset classification save error: {e}")
+                return 0
+            finally:
+                conn.close()
 
     # --- Insider Trading Persistence ---
 

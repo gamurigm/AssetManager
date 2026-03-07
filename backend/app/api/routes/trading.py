@@ -1,9 +1,56 @@
-from fastapi import APIRouter, Body
+from fastapi import APIRouter, Body, HTTPException
 from typing import List, Dict, Any
 from datetime import datetime
 from ...core.container import duckdb_repo, get_quote
+from ...services.ibkr_service import ibkr_service
 
 router = APIRouter()
+
+@router.post("/order/ibkr")
+async def place_ibkr_order(
+    symbol: str = Body(...),
+    quantity: float = Body(...),
+    side: str = Body(...), # 'BUY' or 'SELL'
+    portfolio_id: str = Body("main")
+):
+    """Place a real market order on IBKR TWS/Gateway and record it if successful."""
+    try:
+        # 1. Execute the real order
+        result = await ibkr_service.place_market_order(symbol, quantity, side)
+        
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+            
+        # 2. If successful, record it in our local database
+        final_price = result.get("avgFillPrice", 0.0)
+        
+        success_record = duckdb_repo.add_transaction(
+            type_str=side.upper(),
+            symbol=symbol.upper(),
+            shares=quantity,
+            price=final_price,
+            realized_pnl=0.0,
+            custom_date=datetime.now().strftime("%Y-%m-%d"),
+            portfolio_id=portfolio_id
+        )
+        
+        if success_record:
+            _sync_portfolio_entry(symbol, portfolio_id)
+            
+        return {
+            "status": "success",
+            "ibkr_result": result,
+            "recorded": success_record,
+            "recorded_price": final_price
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/status/ibkr")
+async def get_ibkr_status():
+    """Check connectivity status with IBKR."""
+    return ibkr_service.get_status()
 
 @router.get("/history")
 async def get_trading_history(portfolio_id: str = "main"):

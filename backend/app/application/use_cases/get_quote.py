@@ -17,7 +17,7 @@ from ...core.rate_limiter import get_bucket
 
 CACHE_DIR = os.path.join(os.path.dirname(__file__), "../../../.cache")
 _cache = Cache(CACHE_DIR)
-QUOTE_TTL = 60  # seconds
+QUOTE_TTL = 1  # 1 second for real-time accuracy
 
 
 class GetQuoteUseCase:

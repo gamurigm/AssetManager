@@ -53,13 +53,27 @@ sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
 
 from .services.scheduler_service import start_scheduler, stop_scheduler, broadcast_prices_job
 from .services.realtime_service import realtime_service
+from .services.ctrader_service import ctrader_service
+from .services.simulation_service import simulation_service
+from .services.portfolio_policy_realtime_service import portfolio_policy_realtime_service
+
+# Suppress Twisted retry noise at module load (cTrader uses Twisted internally)
+import logging as _logging
+_logging.getLogger("twisted").setLevel(_logging.CRITICAL)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
+    realtime_service.configure_streaming(sio)
+    portfolio_policy_realtime_service.configure(sio)
+    realtime_service.add_tick_listener(portfolio_policy_realtime_service.handle_price_update)
+    simulation_service.configure_realtime(sio)
     start_scheduler(sio) # Pass SIO to scheduler for broadcasting
+    ctrader_service.start()
     yield
     # Shutdown
+    realtime_service.remove_tick_listener(portfolio_policy_realtime_service.handle_price_update)
+    realtime_service.shutdown_streaming()
     stop_scheduler()
 
 # FastAPI app
@@ -129,18 +143,31 @@ async def connect(sid, environ):
 async def disconnect(sid):
     logger.info(f"Socket Client disconnected: {sid}")
     realtime_service.clear_client(sid)
+    portfolio_policy_realtime_service.clear_client(sid)
 
 @sio.on("join_symbol")
 async def join_symbol(sid, symbol: str):
-    logger.info(f"[Socket] Client {sid} joining room: {symbol}")
-    await sio.enter_room(sid, symbol)
-    realtime_service.subscribe(sid, symbol)
+    normalized_symbol = symbol.upper()
+    logger.info(f"[Socket] Client {sid} joining room: {normalized_symbol}")
+    await sio.enter_room(sid, normalized_symbol)
+    realtime_service.subscribe(sid, normalized_symbol)
 
 @sio.on("leave_symbol")
 async def leave_symbol(sid, symbol: str):
-    logger.info(f"[Socket] Client {sid} leaving room: {symbol}")
-    await sio.leave_room(sid, symbol)
-    realtime_service.unsubscribe(sid, symbol)
+    normalized_symbol = symbol.upper()
+    logger.info(f"[Socket] Client {sid} leaving room: {normalized_symbol}")
+    await sio.leave_room(sid, normalized_symbol)
+    realtime_service.unsubscribe(sid, normalized_symbol)
+
+
+@sio.on("subscribe_portfolio_policy")
+async def subscribe_portfolio_policy(sid, payload=None):
+    await portfolio_policy_realtime_service.subscribe(sid, payload or {})
+
+
+@sio.on("unsubscribe_portfolio_policy")
+async def unsubscribe_portfolio_policy(sid):
+    await portfolio_policy_realtime_service.unsubscribe(sid)
 
 # Store sio reference for use in routes
 app.state.sio = sio

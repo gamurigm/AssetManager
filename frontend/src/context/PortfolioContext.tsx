@@ -1,6 +1,7 @@
 "use client"
 
 import React, { createContext, useContext, useState, ReactNode, useCallback } from "react";
+import { useSocket } from "@/context/SocketContext";
 
 interface Holding {
     symbol: string;
@@ -39,6 +40,7 @@ interface PortfolioContextType {
 const PortfolioContext = createContext<PortfolioContextType | undefined>(undefined);
 
 export function PortfolioProvider({ children }: { children: ReactNode }) {
+    const { socket, connected } = useSocket();
     const [activePortfolio, setActivePortfolio] = useState<string>("main");
     const [holdings, setHoldings] = useState<Holding[]>([]);
     const [isInitialized, setIsInitialized] = useState(false);
@@ -88,6 +90,66 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
     React.useEffect(() => {
         refreshPortfolio();
     }, [refreshPortfolio]);
+
+    const subscribedSymbolsKey = React.useMemo(
+        () => Array.from(new Set(holdings.map(h => h.symbol).filter(Boolean))).sort().join(","),
+        [holdings]
+    );
+
+    React.useEffect(() => {
+        if (!socket || !connected || !subscribedSymbolsKey) return;
+
+        const symbols = subscribedSymbolsKey.split(",").filter(Boolean);
+        symbols.forEach(symbol => socket.emit("join_symbol", symbol));
+
+        const onPriceUpdate = (data: any) => {
+            if (!data || typeof data.price !== "number") return;
+            const incomingSymbol = String(data.symbol || "").toUpperCase();
+            if (!incomingSymbol) return;
+
+            setHoldings(prev => {
+                let changed = false;
+                const next = prev.map(holding => {
+                    if (holding.symbol.toUpperCase() !== incomingSymbol) {
+                        return holding;
+                    }
+
+                    const currentPrice = Number(data.price);
+                    const totalProfit = (currentPrice - holding.entryPrice) * holding.shares * holding.factor;
+                    const changePercent = holding.entryPrice !== 0
+                        ? ((currentPrice - holding.entryPrice) / holding.entryPrice) * 100
+                        : 0;
+
+                    if (
+                        holding.price === currentPrice &&
+                        holding.change === totalProfit &&
+                        holding.changePercent === changePercent &&
+                        holding.source === (data.source || holding.source)
+                    ) {
+                        return holding;
+                    }
+
+                    changed = true;
+                    return {
+                        ...holding,
+                        price: currentPrice,
+                        change: totalProfit,
+                        changePercent,
+                        source: data.source || holding.source,
+                    };
+                });
+
+                return changed ? next : prev;
+            });
+        };
+
+        socket.on("price_update", onPriceUpdate);
+
+        return () => {
+            symbols.forEach(symbol => socket.emit("leave_symbol", symbol));
+            socket.off("price_update", onPriceUpdate);
+        };
+    }, [socket, connected, subscribedSymbolsKey]);
 
     // Persist to Backend on Changes
     React.useEffect(() => {

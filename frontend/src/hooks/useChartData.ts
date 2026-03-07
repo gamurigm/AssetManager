@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import type { CandleData, QuoteData } from "@/types/dashboard";
+import { useSocket } from "@/context/SocketContext";
 
 const API_BASE = "http://127.0.0.1:8282";
 const CACHE_PREFIX = "symbolChart_";
@@ -39,6 +40,7 @@ export function useChartData(symbol: string) {
     const [quote, setQuote] = useState<QuoteData | null>(null);
     const [loading, setLoading] = useState(true);
     const [theme, setTheme] = useState<'light' | 'dark'>('dark');
+    const { socket } = useSocket();
 
     // Theme observer
     useEffect(() => {
@@ -91,6 +93,46 @@ export function useChartData(symbol: string) {
         setLoading(true);
         fetchData();
     }, [symbol]);
+
+    // Socket.IO Real-time updates
+    useEffect(() => {
+        if (!socket) return;
+
+        const roomSymbol = symbol.toUpperCase();
+        console.log(`[Socket] Joining room for ${roomSymbol}`);
+        socket.emit("join_symbol", roomSymbol);
+
+        const handleUpdate = (data: any) => {
+            if (String(data.symbol || "").toUpperCase() === roomSymbol) {
+                // Update specific quote
+                setQuote({
+                    price: data.price,
+                    changePercentage: data.changePercent,
+                });
+
+                // Update the last candle in the list (if exists)
+                setCandles(prev => {
+                    if (prev.length === 0) return prev;
+                    const last = prev[prev.length - 1];
+                    const updatedLast = {
+                        ...last,
+                        close: data.price,
+                        high: Math.max(last.high, data.price),
+                        low: Math.min(last.low, data.price),
+                    };
+                    return [...prev.slice(0, -1), updatedLast];
+                });
+            }
+        };
+
+        socket.on("price_update", handleUpdate);
+
+        return () => {
+            console.log(`[Socket] Leaving room for ${roomSymbol}`);
+            socket.emit("leave_symbol", roomSymbol);
+            socket.off("price_update", handleUpdate);
+        };
+    }, [socket, symbol]);
 
     return { candles, quote, loading, theme, isLight: theme === 'light' };
 }

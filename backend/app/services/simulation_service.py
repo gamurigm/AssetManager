@@ -13,14 +13,15 @@ Follows the same singleton pattern as the rest of the codebase
 
 from __future__ import annotations
 
+import asyncio
+import os
 import uuid
 from typing import Dict, List, Optional
 from datetime import datetime, timezone
 import logfire
 
 from ..agents.strategies.engine import (
-    StrategyConfig, TradeSignal, KPIResult,
-    ORBFVGEngine, ORBKPICalculator, StrategyFactory,
+    StrategyConfig, TradeSignal, ORBKPICalculator, StrategyFactory,
 )
 from ..agents.strategies.backtest_runner import (
     BacktestRunner, BacktestConfig, BacktestResult,
@@ -42,10 +43,159 @@ class SimulationService:
     """
 
     def __init__(self) -> None:
-        self._results: Dict[str, BacktestResult] = {}
+        self._results: Dict[str, Optional[BacktestResult]] = {}
+        self._sio = None
 
     # ================================================================== #
-    #  Run full backtest                                                  #
+    #  Real-time configuration                                           #
+    # ================================================================== #
+
+    def configure_realtime(self, sio) -> None:
+        """Register the Socket.IO server so background runs can broadcast events."""
+        self._sio = sio
+
+    def pre_register(self, symbol: str, strategy_name: str) -> str:
+        """Reserve a sim_id before the backtest starts (fills in None as placeholder)."""
+        sim_id = self._generate_sim_id(symbol, strategy_name)
+        self._results[sim_id] = None
+        return sim_id
+
+    async def _generate_pdf_report(self, result: BacktestResult) -> Optional[str]:
+        """Generate a PDF report in a worker thread and return its filename."""
+        from ..agents.strategies.report_generator import generate_pdf_report
+
+        reports_dir = os.path.join(os.getcwd(), "reports")
+        os.makedirs(reports_dir, exist_ok=True)
+
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        report_filename = f"backtest_{result.config.symbol}_{stamp}.pdf"
+        full_path = os.path.join(reports_dir, report_filename)
+
+        await asyncio.to_thread(generate_pdf_report, result, full_path)
+        logfire.info(f"PDF report generated: {full_path}")
+        return report_filename
+
+    def _make_callbacks(
+        self, sim_id: str, loop: asyncio.AbstractEventLoop
+    ):
+        """Return three thread-safe callbacks that emit Socket.IO events."""
+        sio = self._sio
+
+        def on_progress(day: int, total: int) -> None:
+            if not sio:
+                return
+            pct = round(day / total * 100) if total else 0
+            asyncio.run_coroutine_threadsafe(
+                sio.emit("backtest_progress", {
+                    "sim_id": sim_id, "day": day,
+                    "total": total, "pct": pct,
+                }),
+                loop,
+            )
+
+        def on_trade(record, equity: float) -> None:
+            if not sio:
+                return
+            asyncio.run_coroutine_threadsafe(
+                sio.emit("backtest_trade", {
+                    "sim_id": sim_id,
+                    "trade": {
+                        "signal_id":      record.signal.signal_id,
+                        "timestamp":      str(record.signal.timestamp),
+                        "direction":      record.signal.direction,
+                        "entry":          record.signal.entry,
+                        "stop":           record.signal.stop,
+                        "tp":             record.signal.tp,
+                        "outcome":        record.outcome,
+                        "pnl_r":          round(record.pnl_r, 3),
+                        "pnl_usd":        round(record.pnl_usd, 2),
+                        "exit_price":     record.exit_price,
+                        "exit_timestamp": str(record.exit_timestamp),
+                    },
+                    "equity": round(equity, 2),
+                }),
+                loop,
+            )
+
+        def on_bootstrap(stats: dict) -> None:
+            if not sio:
+                return
+            # Cap sample arrays at 500 items to keep socket frames small.
+            asyncio.run_coroutine_threadsafe(
+                sio.emit("backtest_bootstrap_ready", {
+                    "sim_id":                  sim_id,
+                    "iterations":              stats.get("iterations", 0),
+                    "net_profit_95_ci":        stats.get("net_profit_95_ci", [0, 0]),
+                    "max_drawdown_95_ci_pct":  stats.get("max_drawdown_95_ci_pct", [0, 0]),
+                    "net_profit_samples":      stats.get("net_profit_samples", [])[:500],
+                    "max_drawdown_samples":    stats.get("max_drawdown_samples", [])[:500],
+                }),
+                loop,
+            )
+
+        return on_progress, on_trade, on_bootstrap
+
+    async def run_backtest_background(self, sim_id: str, config: BacktestConfig) -> None:
+        """
+        Run a full backtest as a fire-and-forget background task.
+        Emits Socket.IO events: backtest_progress, backtest_trade,
+        backtest_bootstrap_ready, backtest_complete, backtest_error.
+        """
+        loop = asyncio.get_running_loop()
+        on_progress, on_trade, on_bootstrap = self._make_callbacks(sim_id, loop)
+        try:
+            engine   = StrategyFactory.create(config.strategy_name)
+            kpi_calc = ORBKPICalculator()
+            runner   = BacktestRunner(
+                engine, intraday_repository, kpi_calc,
+                on_progress_cb=on_progress,
+                on_trade_cb=on_trade,
+                on_bootstrap_cb=on_bootstrap,
+            )
+
+            result = await runner.run(config)
+
+            # --- Generate PDF report (in thread, non-blocking) ---
+            report_filename = None
+            try:
+                report_filename = await self._generate_pdf_report(result)
+                result.report_path = report_filename
+            except Exception as pdf_err:
+                logfire.error(f"PDF generation failed for {sim_id}: {pdf_err}")
+
+            self._results[sim_id] = result
+
+            report_url = (
+                f"http://localhost:8282/view-reports/{report_filename}"
+                if report_filename else None
+            )
+            if self._sio:
+                bootstrap_summary = None
+                if result.bootstrap_stats:
+                    bootstrap_summary = {
+                        k: v for k, v in result.bootstrap_stats.items()
+                        if k not in ("net_profit_samples", "max_drawdown_samples")
+                    }
+                await self._sio.emit("backtest_complete", {
+                    "sim_id":       sim_id,
+                    "kpis":         result.kpis.as_dict(),
+                    "trading_days": result.trading_days,
+                    "total_trades": result.kpis.total_trades,
+                    "bootstrap":    bootstrap_summary,
+                    "report_url":   report_url,
+                })
+
+        except Exception as exc:
+            logfire.error(f"run_backtest_background failed [{sim_id}]: {exc}")
+            self._results.pop(sim_id, None)
+            if self._sio:
+                await self._sio.emit("backtest_error", {
+                    "sim_id": sim_id,
+                    "error":  str(exc),
+                })
+
+    # ================================================================== #
+    #  Run full backtest (sync/polling path — kept for tests/backward compat)
     # ================================================================== #
 
     async def run_backtest(
@@ -88,6 +238,10 @@ class SimulationService:
         runner   = BacktestRunner(engine, intraday_repository, kpi_calc)
 
         result = await runner.run(config)
+        try:
+            result.report_path = await self._generate_pdf_report(result)
+        except Exception as pdf_err:
+            logfire.error(f"PDF generation failed for sync run: {pdf_err}")
 
         sim_id = self._generate_sim_id(symbol, strategy_name)
         self._results[sim_id] = result
@@ -101,9 +255,12 @@ class SimulationService:
     def get_result(self, sim_id: str) -> Optional[BacktestResult]:
         return self._results.get(sim_id)
 
+    def is_pending(self, sim_id: str) -> bool:
+        return sim_id in self._results and self._results[sim_id] is None
+
     def list_simulations(self) -> List[dict]:
         return [
-            {"sim_id": sid, "summary": r.summary()}
+            {"sim_id": sid, "status": "running"} if r is None else {"sim_id": sid, "status": "completed", "summary": r.summary()}
             for sid, r in self._results.items()
         ]
 

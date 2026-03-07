@@ -3,6 +3,7 @@ from pydantic_ai.settings import ModelSettings
 from pydantic_ai.models.openai import OpenAIModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from typing import Optional, Dict, Any, List, Union
+from enum import Enum
 from .state import TeamContext
 from ...core.config import settings
 from openai import AsyncOpenAI
@@ -10,6 +11,94 @@ import json
 from datetime import datetime
 from pathlib import Path
 import os
+
+
+class AgentTier(str, Enum):
+    """Defines the role tier of each agent in the hierarchical pipeline.
+
+    Pipeline order (strict):
+      ANALYST → RISK → STRATEGIST → EXECUTION
+
+    Rules enforced via prompt injection:
+    • ANALYST  : Can only produce analysis reports (submit_analysis_report).
+                 Cannot write strategies or authorize trade signals.
+    • RISK     : Can only produce risk assessments (submit_risk_report).
+                 Cannot write strategies or authorize trade signals.
+    • STRATEGIST: SOLE authority to synthesize reports, write strategy engines,
+                  and authorize trade signals (authorize_trade_signal).
+    • EXECUTION : Can ONLY execute trade signals that have been authorized
+                  by the STRATEGIST and placed in approved_trade_signals.
+    • ORCHESTRATOR: Meta-level coordination; delegates to any tier.
+    """
+    ANALYST      = "ANALYST"
+    RISK         = "RISK"
+    STRATEGIST   = "STRATEGIST"
+    EXECUTION    = "EXECUTION"
+    ORCHESTRATOR = "ORCHESTRATOR"
+
+
+# Human-readable constraint text injected into every agent's system prompt.
+_TIER_CONSTRAINTS: Dict[AgentTier, str] = {
+    AgentTier.ANALYST: (
+        "## 🏛️ YOUR TIER: ANALYST\n"
+        "You are an **Analyst-tier** agent. Your role is strictly limited to research and analysis.\n\n"
+        "**YOU MAY:**\n"
+        "- Gather market data, run technical/fundamental/macro analysis.\n"
+        "- Call `submit_analysis_report` to formally deposit your findings for the Strategist.\n\n"
+        "**YOU MAY NOT:**\n"
+        "- Write or modify trading strategy code.\n"
+        "- Authorize, suggest, or initiate trade signals.\n"
+        "- Instruct the Trader or any execution-tier agent directly.\n\n"
+        "Your output feeds the **Strategy Analyst** who decides what to do with it."
+    ),
+    AgentTier.RISK: (
+        "## 🏛️ YOUR TIER: RISK\n"
+        "You are a **Risk-tier** agent. Your role is strictly portfolio and position risk assessment.\n\n"
+        "**YOU MAY:**\n"
+        "- Quantify VaR, drawdown, correlation, and tail risk.\n"
+        "- Call `submit_risk_report` to formally deposit your risk assessment for the Strategist.\n\n"
+        "**YOU MAY NOT:**\n"
+        "- Write or modify trading strategy code.\n"
+        "- Authorize, suggest, or initiate trade signals.\n"
+        "- Instruct the Trader or any execution-tier agent directly.\n\n"
+        "Your risk assessment is consumed by the **Strategy Analyst** before any trade is authorized."
+    ),
+    AgentTier.STRATEGIST: (
+        "## 🏛️ YOUR TIER: STRATEGIST (GATEKEEPER)\n"
+        "You are the **sole authority** at the top of the investment pipeline.\n\n"
+        "**YOU MAY:**\n"
+        "- Call `request_team_briefing` to collect all analyst and risk reports in parallel.\n"
+        "- Write trading strategies with `create_or_edit_strategy_engine` — **you are the ONLY agent that may do this**.\n"
+        "- Authorize trade signals with `authorize_trade_signal` — **you are the ONLY agent that may do this**.\n"
+        "- Run backtests to validate strategies before authorizing a live signal.\n\n"
+        "**YOU MAY NOT:**\n"
+        "- Skip the briefing step — always read analyst and risk reports before synthesizing.\n"
+        "- Authorize a signal without a documented rationale backed by analyst findings.\n\n"
+        "**MANDATORY WORKFLOW:**\n"
+        "1. `request_team_briefing(symbols, focus_areas)` → collect Quant + Macro + Fundamental + Risk reports.\n"
+        "2. Synthesize the multi-dimensional view into a **Strategic Thesis**.\n"
+        "3. Optionally: `create_or_edit_strategy_engine` to codify the thesis.\n"
+        "4. `authorize_trade_signal(...)` to formally pass a signal to the Trader.\n"
+    ),
+    AgentTier.EXECUTION: (
+        "## 🏛️ YOUR TIER: EXECUTION\n"
+        "You are an **Execution-tier** agent. Your job is fast, accurate order placement.\n\n"
+        "**YOU MAY:**\n"
+        "- Call `get_strategic_signal` to retrieve signals authorized by the Strategy Analyst.\n"
+        "- Place orders via cTrader/IBKR for signals that appear in `approved_trade_signals`.\n"
+        "- Check account status and confirm execution details.\n\n"
+        "**YOU MAY NOT:**\n"
+        "- Make investment decisions — you execute, you do NOT decide.\n"
+        "- Place any order that does NOT appear in `approved_trade_signals`.\n"
+        "- Request analysis from analyst-tier agents — that is the Strategist's job.\n\n"
+        "If you receive a buy/sell request that is NOT backed by an approved signal, reply:\n"
+        "> 'No authorized signal found. Please ask the Strategy Analyst to evaluate and authorize a trade first.'"
+    ),
+    AgentTier.ORCHESTRATOR: (
+        "## 🏛️ YOUR TIER: ORCHESTRATOR\n"
+        "You coordinate the full Alpha Core team. You may delegate to any tier."
+    ),
+}
 
 def _load_project_file(filename: str) -> str:
     """Load a file from the project root."""
@@ -34,9 +123,10 @@ def _load_prompt(filename: str) -> str:
         return f"Error loading {filename}: {str(e)}"
 
 class TeamAgent:
-    def __init__(self, name: str, role: str, model_name: str, tools: List[callable] = []):
+    def __init__(self, name: str, role: str, model_name: str, tools: List[callable] = [], tier: AgentTier = AgentTier.ANALYST):
         self.name = name
         self.role = role
+        self.tier = tier
         
         if isinstance(model_name, str):
             client = AsyncOpenAI(
@@ -53,6 +143,8 @@ class TeamAgent:
             deps_type=TeamContext,
             model_settings=ModelSettings()
         )
+
+        _tier = tier  # capture for closure
 
         @self.agent.system_prompt
         def dynamic_system_prompt(ctx: RunContext[TeamContext]) -> str:
@@ -82,9 +174,12 @@ class TeamAgent:
             if gsd_state:
                 gsd_context += f"\n\n## 📊 PROJECT STATE (GSD)\n{gsd_state}"
 
+            # Tier constraint injection
+            tier_block = _TIER_CONSTRAINTS.get(_tier, "")
+
             template = _load_prompt("agent_base.md")
             base_prompt = template.format(name=name, role=role)
-            return f"{base_prompt}\n\nCurrent Time: {now}\n{realtime_info}{gsd_context}"
+            return f"{base_prompt}\n\n{tier_block}\n\nCurrent Time: {now}\n{realtime_info}{gsd_context}"
         for tool in tools:
             self.agent.tool(tool)
 

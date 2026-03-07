@@ -8,12 +8,23 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include_directories(include)
 
 # ── Source files ─────────────────────────────────────────────────────────────
-set(SOURCE_FILES
-    src/bindings.cpp
+set(PORTFOLIO_ENGINE_SOURCES
+    src/portfolio_backtest.cpp
+)
+
+set(CORE_ENGINE_NATIVE_SOURCES
     src/order_matching.cpp
     src/market_feed.cpp
     src/fix_handler.cpp
 )
+
+set(PYBIND_SOURCE src/bindings.cpp)
+
+add_library(portfolio_engine_native STATIC ${PORTFOLIO_ENGINE_SOURCES})
+target_include_directories(portfolio_engine_native PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+
+add_library(core_engine_native STATIC ${CORE_ENGINE_NATIVE_SOURCES})
+target_include_directories(core_engine_native PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 # ── Optional: Fix8 library ──────────────────────────────────────────────────
 # When Fix8 is installed, set FIX8_ROOT to its prefix (e.g. /usr/local).
@@ -41,7 +52,7 @@ if(USE_FIX8)
             DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/fix/schema.xml
             COMMENT "Generating Fix8 C++ sources from schema.xml"
         )
-        list(APPEND SOURCE_FILES src/AM_types.cpp src/AM_classes.cpp)
+        target_sources(core_engine_native PRIVATE src/AM_types.cpp src/AM_classes.cpp)
     else()
         message(WARNING "f8c compiler not found – skipping code generation.")
     endif()
@@ -59,17 +70,27 @@ if(USE_FIX8)
     endif()
 endif()
 
+if(USE_FIX8 AND FIX8_LIB)
+    target_link_libraries(portfolio_engine_native PUBLIC ${FIX8_LIB})
+    target_link_libraries(core_engine_native PUBLIC ${FIX8_LIB})
+endif()
+
+if(WIN32)
+    target_link_libraries(portfolio_engine_native PUBLIC ws2_32)
+    target_link_libraries(core_engine_native PUBLIC ws2_32)
+endif()
+
 # ── pybind11 (if available) ─────────────────────────────────────────────────
 find_package(pybind11 QUIET)
 if(pybind11_FOUND)
-    pybind11_add_module(core_engine ${SOURCE_FILES})
-    if(USE_FIX8 AND FIX8_LIB)
-        target_link_libraries(core_engine PRIVATE ${FIX8_LIB})
-    endif()
+    pybind11_add_module(core_engine ${PYBIND_SOURCE})
+    target_link_libraries(core_engine PRIVATE portfolio_engine_native core_engine_native)
+    target_include_directories(core_engine PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 else()
-    message(STATUS "pybind11 not found – building static library only.")
-    add_library(core_engine STATIC ${SOURCE_FILES})
-    if(USE_FIX8 AND FIX8_LIB)
-        target_link_libraries(core_engine PRIVATE ${FIX8_LIB})
-    endif()
+    message(STATUS "pybind11 not found – skipping Python module and keeping native targets only.")
 endif()
+
+add_executable(portfolio_cpp_service src/portfolio_cpp_service.cpp)
+target_link_libraries(portfolio_cpp_service PRIVATE portfolio_engine_native)
+target_include_directories(portfolio_cpp_service PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Plus, MoreHorizontal, ChevronDown, ChevronRight, ExternalLink, LayoutGrid, Pencil, X } from "lucide-react";
 import { useSocket } from "@/context/SocketContext";
+import { formatAssetPrice, formatAssetPriceFixed, getAssetPriceDecimals, isForexSymbol } from "@/lib/marketFormatting";
 import styles from "./Watchlist.module.css";
 
 declare global {
@@ -68,13 +69,9 @@ function getSymbolIcon(symbol: string) {
 }
 
 // ── Format price with superscript last digits ──────────────────────
-function PriceDisplay({ price }: { price: number }) {
+function PriceDisplay({ symbol, price }: { symbol: string; price: number }) {
     if (price === 0) return <span className={styles.wlPriceZero}>—</span>;
-    let decimals = 2;
-    if (price < 1) decimals = 5;
-    else if (price < 100) decimals = 4;
-    else if (price < 10000) decimals = 3;
-
+    const decimals = getAssetPriceDecimals({ symbol, price });
     const str = price.toFixed(decimals);
     const [whole, dec] = str.split(".");
     if (!dec) return <span>{whole}</span>;
@@ -199,8 +196,9 @@ export default function Watchlist({ onSelectSymbol }: { onSelectSymbol: (s: stri
         }
     }, [showAddInput]);
 
-    const formatChange = (val: number) => {
+    const formatChange = (val: number, symbol?: string) => {
         const abs = Math.abs(val);
+        if (symbol && isForexSymbol(symbol)) return val.toFixed(5);
         if (abs === 0) return "0.00";
         if (abs < 0.01) return val.toFixed(5);
         if (abs < 1) return val.toFixed(4);
@@ -308,10 +306,10 @@ export default function Watchlist({ onSelectSymbol }: { onSelectSymbol: (s: stri
                                         </div>
                                     </div>
                                     <span className={styles.wlRowLast}>
-                                        {item ? <PriceDisplay price={item.price} /> : "—"}
+                                        {item ? <PriceDisplay symbol={item.symbol} price={item.price} /> : "—"}
                                     </span>
                                     <span className={`${styles.wlRowChg} ${colorClass}`}>
-                                        {item ? formatChange(item.change) : "—"}
+                                        {item ? formatChange(item.change, item.symbol) : "—"}
                                     </span>
                                     <span className={`${styles.wlRowChgpct} ${colorClass}`}>
                                         {item ? `${item.changePercent.toFixed(2)}%` : "—"}
@@ -348,11 +346,11 @@ export default function Watchlist({ onSelectSymbol }: { onSelectSymbol: (s: stri
                     </div>
                     <div className={styles.wlDetailPriceRow}>
                         <span className={styles.wlDetailPrice}>
-                            {selectedItem.price.toLocaleString("en-US", { minimumFractionDigits: 3, maximumFractionDigits: 3 })}
+                            {formatAssetPrice(selectedItem.price, { symbol: selectedItem.symbol })}
                         </span>
                         <span className={styles.wlDetailCurrency}>USD</span>
                         <span className={`${styles.wlDetailChg} ${selectedItem.changePercent >= 0 ? styles.wlPositive : styles.wlNegative}`}>
-                            {selectedItem.change >= 0 ? "+" : ""}{formatChange(selectedItem.change)}
+                            {selectedItem.change >= 0 ? "+" : ""}{formatChange(selectedItem.change, selectedItem.symbol)}
                         </span>
                         <span className={`${styles.wlDetailChgpct} ${selectedItem.changePercent >= 0 ? styles.wlPositive : styles.wlNegative}`}>
                             {selectedItem.changePercent >= 0 ? "+" : ""}{selectedItem.changePercent.toFixed(2)}%

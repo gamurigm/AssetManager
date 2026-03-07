@@ -1,7 +1,7 @@
 from pydantic_ai import RunContext, Tool
-from typing import Optional, List
+from typing import Optional, List, Dict
 from .state import TeamContext
-from .base import TeamAgent
+from .base import TeamAgent, AgentTier
 from ...services.openbb_service import openbb_service
 from ...services.fmp_service import fmp_service
 from ...services.risk_service import RiskService
@@ -14,6 +14,8 @@ from ...services.openbb_rest_service import openbb_rest
 from ...services.openbb_native_service import openbb_native
 from ...services.openbb_api_catalog import openbb_catalog
 from ...services.gsd_service import gsd_service
+from ...services.ctrader_service import ctrader_service
+from ...services.ibkr_service import ibkr_service
 from ...core.container import search_knowledge_base_uc, read_book_section_uc
 from ...core.config import settings
 import asyncio
@@ -25,6 +27,250 @@ MIXTRAL_8X22B = "mistralai/mixtral-8x22b-instruct-v0.1"
 KIMI_K25 = "moonshotai/kimi-k2.5"
 DEEPSEEK_V3 = "deepseek-ai/deepseek-v3.2"
 NEMOTRON_253B = "nvidia/llama-3.1-nemotron-ultra-253b-v1"
+QWEN_35 = "qwen/qwen3.5-397b-a17b"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HIERARCHICAL PIPELINE TOOLS
+# These tools enforce the strict analyst→risk→strategist→execution flow.
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def submit_analysis_report(ctx: RunContext[TeamContext], content: str) -> str:
+    """
+    [ANALYST TIER TOOL]
+    Formally deposit your analysis findings into the shared pipeline context
+    so that the Strategy Analyst can consume them.
+
+    Call this at the END of your analysis, passing your full structured report
+    as the `content` argument. The report is stored keyed by your agent name.
+
+    This is the ONLY way your findings will be visible to the Strategist.
+    """
+    # Infer calling agent name from the message history (last system message sender)
+    agent_name = "Unknown Analyst"
+    for msg in reversed(ctx.deps.chat_history):
+        if msg.role in ("user", "assistant") and msg.agent_name not in ("System", "Head of Strategy"):
+            agent_name = msg.agent_name
+            break
+
+    ctx.deps.submit_report(agent_name, content)
+    return (
+        f"✅ Report from '{agent_name}' has been deposited into the pipeline context. "
+        f"The Strategy Analyst will retrieve it via `request_team_briefing`."
+    )
+
+
+async def submit_risk_report(ctx: RunContext[TeamContext], content: str) -> str:
+    """
+    [RISK TIER TOOL]
+    Formally deposit the session risk assessment into the shared pipeline context
+    so that the Strategy Analyst can consume it before authorizing any trade.
+
+    This is the ONLY way your risk findings will be visible to the Strategist.
+    """
+    ctx.deps.submit_risk_assessment(content)
+    return (
+        "✅ Risk assessment deposited into the pipeline context. "
+        "The Strategy Analyst will retrieve it as part of `request_team_briefing`."
+    )
+
+
+async def request_team_briefing(
+    ctx: RunContext[TeamContext],
+    symbols: str,
+    focus_areas: str = "technical,macro,fundamental,risk",
+) -> str:
+    """
+    [STRATEGIST TOOL — STEP 1]
+    Request a full intelligence briefing from the four analyst-tier agents in PARALLEL.
+
+    This triggers:
+    • Quantitative Analyst  → technical + quantitative analysis
+    • Macro Analyst         → macro & rates context
+    • Fundamental Analyst   → corporate fundamentals & valuation
+    • Risk Manager          → VaR, drawdown & tail risk assessment
+
+    All four run concurrently. Once complete, their reports are deposited into
+    the pipeline context and returned here as a synthesized briefing.
+
+    Args:
+        symbols: Comma-separated ticker list, e.g. "AAPL,MSFT,NVDA"
+        focus_areas: Comma-separated list of areas to focus on (used as hint in instructions).
+                     E.g. "technical,macro" or "fundamental,risk"
+    """
+    from app.core.logging import logger
+
+    areas = [a.strip() for a in focus_areas.split(",")]
+
+    instructions: Dict[str, str] = {
+        "Quantitative Analyst": (
+            f"Please perform a comprehensive quantitative/technical analysis for: {symbols}. "
+            f"Focus areas: {', '.join(a for a in areas if a in ('technical', 'quant', 'quantitative'))} "
+            f"(if none specified, cover all). "
+            "Include price action, momentum indicators, Markov state probabilities, "
+            "and statistical edge. End your analysis by calling `submit_analysis_report` "
+            "with your full structured findings."
+        ),
+        "Macro Analyst": (
+            f"Please provide the current macro environment context relevant to: {symbols}. "
+            f"Focus areas: {', '.join(a for a in areas if a in ('macro', 'rates', 'economy'))} "
+            "(if none specified, cover all). "
+            "Include yield curve, Fed stance, and macro regime classification. "
+            "End your analysis by calling `submit_analysis_report` with your full structured findings."
+        ),
+        "Fundamental Analyst": (
+            f"Please perform a fundamental analysis for: {symbols}. "
+            f"Focus areas: {', '.join(a for a in areas if a in ('fundamental', 'valuation', 'earnings'))} "
+            "(if none specified, cover all). "
+            "Include valuation, balance sheet health, and smart money flow. "
+            "End your analysis by calling `submit_analysis_report` with your full structured findings."
+        ),
+        "Risk Manager": (
+            f"Please quantify the risk profile for potential positions in: {symbols}. "
+            "Include VaR, max drawdown estimate, correlation risks, and tail risk flags. "
+            "End your assessment by calling `submit_risk_report` with your full structured findings."
+        ),
+    }
+
+    async def _brief(name: str, instruction: str) -> str:
+        agent = specialists_map.get(name)
+        if not agent:
+            return f"⚠ {name}: not found."
+        ctx.deps.add_message("system", f"[BRIEFING] Strategist requested {name}: {symbols}", "Strategy Analyst")
+        logger.info(f"[BRIEFING PAR] → {name}: {symbols}")
+        try:
+            result = await agent.run(instruction, ctx.deps)
+            return f"──── {name} ────\n{result}"
+        except Exception as e:
+            return f"⚠ {name} error: {e}"
+
+    results = await asyncio.gather(*(_brief(n, i) for n, i in instructions.items()))
+
+    # Build a consolidated summary of what was submitted
+    briefing_text = "\n\n".join(results)
+    all_reports = ctx.deps.get_all_reports()
+
+    return (
+        f"## TEAM BRIEFING COMPLETE — {symbols}\n\n"
+        f"{briefing_text}\n\n"
+        f"---\n## SUBMITTED REPORTS SUMMARY\n{all_reports}"
+    )
+
+
+async def authorize_trade_signal(
+    ctx: RunContext[TeamContext],
+    symbol: str,
+    direction: str,
+    entry: float,
+    stop: float,
+    tp: float,
+    rationale: str,
+    confidence: str = "MEDIUM",
+    strategy_name: str = "",
+) -> str:
+    """
+    [STRATEGIST TOOL — FINAL STEP]
+    Authorize a trade signal and place it into the approved pipeline for the Trader.
+
+    This is the ONLY mechanism by which a trading signal can reach the Trader (Qwen).
+    Do NOT call this unless you have:
+       1. Received a full team briefing (request_team_briefing).
+       2. Synthesized a documented strategic thesis.
+       3. Verified acceptable risk/reward based on the Risk Manager's assessment.
+
+    Args:
+        symbol:        Ticker, e.g. "AAPL"
+        direction:     "LONG" or "SHORT"
+        entry:         Entry price level
+        stop:          Stop-loss price level
+        tp:            Take-profit price level
+        rationale:     Strategic rationale (must reference analyst findings)
+        confidence:    "LOW" | "MEDIUM" | "HIGH"
+        strategy_name: Optional strategy engine name used to generate this signal
+    """
+    if direction.upper() not in ("LONG", "SHORT"):
+        return "Error: direction must be 'LONG' or 'SHORT'."
+
+    risk = abs(entry - stop)
+    reward = abs(tp - entry)
+    rr = round(reward / risk, 2) if risk > 0 else 0
+
+    signal = {
+        "symbol": symbol.upper(),
+        "direction": direction.upper(),
+        "entry": entry,
+        "stop": stop,
+        "tp": tp,
+        "risk_reward": rr,
+        "confidence": confidence.upper(),
+        "strategy_name": strategy_name,
+        "rationale": rationale,
+        "reports_available": list(ctx.deps.analyst_reports.keys()),
+        "risk_report_present": ctx.deps.risk_report is not None,
+    }
+
+    ctx.deps.approve_signal(signal)
+
+    return (
+        f"✅ TRADE SIGNAL AUTHORIZED\n"
+        f"┌─────────────────────────────────────────\n"
+        f"│ Symbol     : {signal['symbol']}\n"
+        f"│ Direction  : {signal['direction']}\n"
+        f"│ Entry      : {entry}\n"
+        f"│ Stop Loss  : {stop}\n"
+        f"│ Take Profit: {tp}\n"
+        f"│ R:R        : 1:{rr}\n"
+        f"│ Confidence : {signal['confidence']}\n"
+        f"│ Strategy   : {strategy_name or 'discretionary'}\n"
+        f"└─────────────────────────────────────────\n"
+        f"Rationale: {rationale}\n\n"
+        f"Signal is now available in `approved_trade_signals` for the Trader."
+    )
+
+
+async def get_strategic_signal(ctx: RunContext[TeamContext]) -> str:
+    """
+    [EXECUTION TIER TOOL]
+    Retrieve the latest trade signals authorized by the Strategy Analyst.
+
+    You may ONLY execute signals returned by this tool.
+    If no signals exist, inform the user that the Strategy Analyst must first
+    authorize a trade via `authorize_trade_signal`.
+    """
+    signals = ctx.deps.get_approved_signals()
+    if not signals:
+        return (
+            "⛔ No authorized trade signals found.\n"
+            "Please ask the **Strategy Analyst** to evaluate the market and "
+            "authorize a trade signal before placing any order."
+        )
+
+    # Show the most recent signal prominently
+    latest = signals[-1]
+    older = signals[:-1]
+
+    lines = [
+        f"✅ AUTHORIZED SIGNAL (latest):",
+        f"  Symbol    : {latest['symbol']}",
+        f"  Direction : {latest['direction']}",
+        f"  Entry     : {latest['entry']}",
+        f"  Stop Loss : {latest['stop']}",
+        f"  Take Profit: {latest['tp']}",
+        f"  R:R       : 1:{latest['risk_reward']}",
+        f"  Confidence: {latest['confidence']}",
+        f"  Strategy  : {latest.get('strategy_name') or 'discretionary'}",
+        f"  Authorized: {latest.get('authorized_at', 'unknown')}",
+        f"  Rationale : {latest['rationale']}",
+    ]
+
+    if older:
+        lines.append(f"\nOlder authorized signals ({len(older)} total): {[s['symbol'] + ' ' + s['direction'] for s in older]}")
+
+    return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SHARED DELEGATION TOOL (kept for Orchestrator use only)
+# ─────────────────────────────────────────────────────────────────────────────
 
 # --- Shared Delegation Tool ---
 async def delegate_subtask(ctx: RunContext[TeamContext], specialist_name: str, instruction: str) -> str:
@@ -445,6 +691,76 @@ async def place_order(ctx: RunContext[TeamContext], symbol: str, quantity: int, 
     order_id = f"EXEC-{symbol}-{side.upper()}-{time.time()}"
     return f"TRADE EXECUTED (via TwelveData Confirmation):\n- ID: {order_id}\n- Taker: {side.upper()} {quantity} @ {price}\n- Fee: ${fee}"
 
+async def execute_ctrader_trade(ctx: RunContext[TeamContext], symbol: str, quantity: float, side: str) -> str:
+    """
+    Execute a real or demo market order on cTrader Open API.
+    Use this as the preferred execution venue.
+    'quantity' should be in lots (e.g. 0.01 for 1000 units).
+    """
+    status = ctrader_service.get_status()
+    if not status["connected"]:
+        return "cTrader Error: Not connected to host. Ensure the backend service is running."
+    
+    if not status["account_authorized"]:
+        return "cTrader Error: Account not authorized. Check CTRADER_ACCESS_TOKEN and CTRADER_ACCOUNT_ID in .env."
+
+    try:
+        # Convert lot to units (standard lot = 100,000 units)
+        units = int(quantity * 100000)
+        account_id = os.getenv("CTRADER_ACCOUNT_ID")
+        
+        response = ctrader_service.place_market_order(account_id, symbol, units, side)
+        from google.protobuf.json_format import MessageToDict
+        res_dict = MessageToDict(response)
+        
+        return f"cTrader Trade Success:\n{json.dumps(res_dict, indent=2)}"
+    except Exception as e:
+        return f"cTrader Execution Failed: {str(e)}"
+
+async def get_ctrader_account_status(ctx: RunContext[TeamContext]) -> str:
+    """Get the current connection status and financial details of the cTrader account."""
+    status = ctrader_service.get_status()
+    if not status["connected"]:
+        return "cTrader Status: Disconnected."
+        
+    details = ""
+    if status["account_authorized"]:
+        try:
+            account_id = os.getenv("CTRADER_ACCOUNT_ID")
+            res = ctrader_service.get_account_details(account_id)
+            from google.protobuf.json_format import MessageToDict
+            details = "\nAccount Details:\n" + json.dumps(MessageToDict(res), indent=2)
+        except Exception as e:
+            details = f"\nError fetching details: {e}"
+            
+    return f"cTrader Connection: {'✅' if status['connected'] else '❌'}\nApp Auth: {'✅' if status['app_authorized'] else '❌'}\nAccount Auth: {'✅' if status['account_authorized'] else '❌'}{details}"
+
+async def execute_ibkr_trade(ctx: RunContext[TeamContext], symbol: str, quantity: float, side: str) -> str:
+    """
+    Execute a market order on Interactive Brokers (IBKR).
+    Requires TWS or IB Gateway to be running.
+    """
+    try:
+        response = await ibkr_service.place_market_order(symbol, quantity, side)
+        if "error" in response:
+            return f"IBKR Error: {response['error']}"
+        return f"IBKR Trade Success:\n{json.dumps(response, indent=2)}"
+    except Exception as e:
+        return f"IBKR Execution Failed: {str(e)}"
+
+async def get_ibkr_account_status(ctx: RunContext[TeamContext]) -> str:
+    """Get the current connection status and account summary from Interactive Brokers."""
+    status = ibkr_service.get_status()
+    summary_str = ""
+    if status["connected"]:
+        try:
+            summary = await ibkr_service.get_account_summary()
+            summary_str = "\nAccount Summary:\n" + json.dumps(summary, indent=2)
+        except Exception as e:
+            summary_str = f"\nError fetching summary: {e}"
+    
+    return f"IBKR Connection: {'✅' if status['connected'] else '❌'}{summary_str}"
+
 import os
 import time
 
@@ -466,44 +782,45 @@ OPENBB_API_REFERENCE = "\n\n" + _load_prompt("openbb_api_reference.md")
 
 # --- Initialize Specialist Agents ---
 
+# ANALYST TIER — research & analysis only, no trade authorization
 fundamental_analyst = TeamAgent(
     name="Fundamental Analyst",
     role=_load_prompt("fundamental_analyst.md") + OPENBB_API_REFERENCE,
     model_name=NEMOTRON_253B,
+    tier=AgentTier.ANALYST,
     tools=[get_market_news, get_company_profile, get_balance_sheet, search_knowledge_base, read_textbook_section,
            general_web_search, discover_openbb_endpoints, get_openbb_endpoint_details, query_openbb_api, query_openbb_api_post,
-           execute_openbb_terminal_command, calculate_markov_transition_matrix, delegate_subtask]
+           execute_openbb_terminal_command, calculate_markov_transition_matrix, submit_analysis_report]
 )
 
 quant_analyst = TeamAgent(
     name="Quantitative Analyst",
     role=_load_prompt("quant_analyst.md") + OPENBB_API_REFERENCE,
     model_name=NEMOTRON_253B,
+    tier=AgentTier.ANALYST,
     tools=[get_price, get_technical_indicator, discover_openbb_endpoints, get_openbb_endpoint_details,
-           query_openbb_api, query_openbb_api_post, execute_openbb_terminal_command, calculate_markov_transition_matrix, delegate_subtask]
-)
-
-risk_manager = TeamAgent(
-    name="Risk Manager",
-    role=_load_prompt("risk_manager.md") + OPENBB_API_REFERENCE,
-    model_name=MISTRAL_LARGE,
-    tools=[calculate_risk_metrics, generate_detailed_alpha_report, general_web_search,
-           discover_openbb_endpoints, get_openbb_endpoint_details, query_openbb_api, execute_openbb_terminal_command, delegate_subtask]
+           query_openbb_api, query_openbb_api_post, execute_openbb_terminal_command,
+           calculate_markov_transition_matrix, submit_analysis_report]
 )
 
 macro_analyst = TeamAgent(
     name="Macro Analyst",
     role=_load_prompt("macro_analyst.md") + OPENBB_API_REFERENCE,
     model_name=NEMOTRON_253B,
+    tier=AgentTier.ANALYST,
     tools=[get_macro_indicators, general_web_search, discover_openbb_endpoints, get_openbb_endpoint_details,
-           query_openbb_api, query_openbb_api_post, execute_openbb_terminal_command, delegate_subtask]
+           query_openbb_api, query_openbb_api_post, execute_openbb_terminal_command, submit_analysis_report]
 )
 
-trader = TeamAgent(
-    name="Trader",
-    role=_load_prompt("trader.md") + OPENBB_API_REFERENCE,
+# RISK TIER — risk assessment only, no trade authorization
+risk_manager = TeamAgent(
+    name="Risk Manager",
+    role=_load_prompt("risk_manager.md") + OPENBB_API_REFERENCE,
     model_name=MISTRAL_LARGE,
-    tools=[place_order, discover_openbb_endpoints, query_openbb_api, execute_openbb_terminal_command, delegate_subtask]
+    tier=AgentTier.RISK,
+    tools=[calculate_risk_metrics, generate_detailed_alpha_report, general_web_search,
+           discover_openbb_endpoints, get_openbb_endpoint_details, query_openbb_api,
+           execute_openbb_terminal_command, submit_risk_report]
 )
 
 # --- Tools for Strategy Analyst ---
@@ -618,19 +935,75 @@ async def scaffold_gsd_docs(ctx: RunContext[TeamContext], phase: str, plan: str,
 
 
 
+# STRATEGIST TIER — sole authority on strategy authoring + trade signal authorization
 strategy_analyst = TeamAgent(
     name="Strategy Analyst",
     role=_load_prompt("strategy_analyst.md") + OPENBB_API_REFERENCE,
     model_name=NEMOTRON_253B,
-    tools=[run_strategy_signal, create_or_edit_strategy_engine, search_knowledge_base, read_textbook_section,
-           general_web_search, discover_openbb_endpoints, get_openbb_endpoint_details, query_openbb_api,
-           query_openbb_api_post, execute_openbb_terminal_command, calculate_markov_transition_matrix, delegate_subtask],
+    tier=AgentTier.STRATEGIST,
+    tools=[
+        # Step 1: Collect briefings from all analyst + risk agents
+        request_team_briefing,
+        # Core strategy authoring (solo authority)
+        run_strategy_signal,
+        create_or_edit_strategy_engine,
+        # Step 4: Authorize trade signal for the Trader (solo authority)
+        authorize_trade_signal,
+        # Supporting research tools
+        search_knowledge_base,
+        read_textbook_section,
+        general_web_search,
+        discover_openbb_endpoints,
+        get_openbb_endpoint_details,
+        query_openbb_api,
+        query_openbb_api_post,
+        execute_openbb_terminal_command,
+        calculate_markov_transition_matrix,
+    ],
 )
 
+# EXECUTION TIER — executes only authorized signals
+trader = TeamAgent(
+    name="Trader",
+    role=_load_prompt("trader.md") + OPENBB_API_REFERENCE,
+    model_name=MISTRAL_LARGE,
+    tier=AgentTier.EXECUTION,
+    tools=[
+        get_strategic_signal,
+        place_order,
+        execute_ctrader_trade,
+        get_ctrader_account_status,
+        execute_ibkr_trade,
+        get_ibkr_account_status,
+        discover_openbb_endpoints,
+        query_openbb_api,
+        execute_openbb_terminal_command,
+    ],
+)
+
+terminal_trader = TeamAgent(
+    name="Terminal Trader",
+    role=_load_prompt("terminal_trader.md") + OPENBB_API_REFERENCE,
+    model_name=QWEN_35,
+    tier=AgentTier.EXECUTION,
+    tools=[
+        get_strategic_signal,
+        execute_ctrader_trade,
+        get_ctrader_account_status,
+        execute_ibkr_trade,
+        get_ibkr_account_status,
+        place_order,
+        execute_openbb_terminal_command,
+        get_price,
+    ],
+)
+
+# GSD / PROJECT MANAGEMENT TIER (independent of trading hierarchy)
 project_manager = TeamAgent(
     name="Project Manager",
     role=_load_prompt("gsd/gsd-roadmapper.md"),
     model_name=MISTRAL_LARGE,
+    tier=AgentTier.ORCHESTRATOR,
     tools=[get_project_status, manage_roadmap, update_requirement_status, scaffold_gsd_docs, general_web_search]
 )
 
@@ -638,23 +1011,26 @@ phase_planner = TeamAgent(
     name="Phase Planner",
     role=_load_prompt("gsd/gsd-planner.md"),
     model_name=NEMOTRON_253B,
+    tier=AgentTier.ORCHESTRATOR,
     tools=[scaffold_gsd_docs, discover_openbb_endpoints, get_openbb_endpoint_details, general_web_search]
 )
 
 quality_auditor = TeamAgent(
-    name="Quality Auditor", 
+    name="Quality Auditor",
     role=_load_prompt("gsd/gsd-verifier.md"),
     model_name=MISTRAL_LARGE,
+    tier=AgentTier.ORCHESTRATOR,
     tools=[get_project_status, update_requirement_status, general_web_search]
 )
 
-# Export map for Orchestrator lookup
+# Export map for Orchestrator lookup (keys unchanged — backward compatible)
 specialists_map = {
     "Fundamental Analyst": fundamental_analyst,
     "Quantitative Analyst": quant_analyst,
     "Risk Manager": risk_manager,
     "Macro Analyst": macro_analyst,
     "Trader": trader,
+    "Terminal Trader": terminal_trader,
     "Strategy Analyst": strategy_analyst,
     "Project Manager": project_manager,
     "Phase Planner": phase_planner,

@@ -8,6 +8,8 @@ import datetime
 from fastapi import APIRouter, HTTPException, Query, BackgroundTasks
 from ...core.container import get_quote, get_historical, fmp_provider, yahoo_provider, duckdb_repo
 from ...core.rate_limiter import get_all_statuses
+from ...services.ibkr_service import ibkr_service
+from ...services.realtime_service import realtime_service
 
 router = APIRouter()
 
@@ -49,6 +51,8 @@ async def system_status():
         "rate_limits": get_all_statuses(),
         "database": duckdb_repo.get_stats(),
         "prefetching": list(_prefetching),
+        "ibkr": ibkr_service.get_status(),
+        "realtime": realtime_service.get_status(),
     }
 
 
@@ -76,8 +80,8 @@ async def get_historical_endpoint(symbol: str, limit: int = 300):
 @router.get("/intraday/{symbol:path}")
 async def get_intraday_endpoint(
     symbol: str,
-    interval: str = Query("1h", description="Candle interval: 5m, 15m, 1h, 4h"),
-    period: str = Query("1mo", description="Lookback window: 5d, 1mo, 3mo, 6mo"),
+    interval: str = Query("1h", description="Candle interval: 1m, 5m, 15m, 1h, 4h"),
+    period: str = Query("1mo", description="Lookback window: 1d, 5d, 7d, 1mo, 3mo, 6mo"),
 ):
     """Get intraday OHLCV candles (DuckDB-first, then Yahoo/Polygon fallback)."""
     symbol = _normalize_symbol(symbol)
@@ -102,6 +106,28 @@ async def get_intraday_endpoint(
             row["date"] = str(row["ts"])
         historical.append(row)
     return {"symbol": symbol, "historical": historical, "source": data.get("source", "intraday")}
+
+
+@router.post("/intraday/backfill/{symbol:path}")
+async def backfill_intraday_endpoint(
+    symbol: str,
+    start_date: str = Query(..., description="Start date YYYY-MM-DD"),
+    end_date: str = Query(..., description="End date YYYY-MM-DD"),
+    intervals: list[str] = Query(["1m", "5m"], description="Intervals to backfill"),
+):
+    """Backfill long-range intraday candles into DuckDB using Polygon."""
+    symbol = _normalize_symbol(symbol)
+    from ...services.market_data import market_data_service
+
+    try:
+        return await market_data_service.backfill_intraday_range(
+            symbol,
+            start_date,
+            end_date,
+            intervals=intervals,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/profile/{symbol}")

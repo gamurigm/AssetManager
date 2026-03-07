@@ -93,9 +93,45 @@ class RiskService:
             
             # Momentum via Gradient Descent
             momentum_per_asset = {}
+            # --- Factor Analysis (CAPM & Idiosyncratic Risk) ---
+            # Automatically uses SPY as benchmark, since it's the safest market proxy
+            market_proxy = "SPY"
+            try:
+                spy_df = conn.execute("SELECT date, close FROM ohlcv WHERE symbol = ? AND date >= ? ORDER BY date ASC", [market_proxy, start_date.date()]).df()
+                has_benchmark = not spy_df.empty and len(spy_df) > 10
+                if has_benchmark:
+                    spy_df['returns'] = spy_df['close'].pct_change().fillna(0)
+                    market_returns = spy_df['returns'].values
+            except Exception:
+                has_benchmark = False
+
+            factor_metrics = {}
             for sym, prices in symbol_prices.items():
                 m, _ = math_core.gradient_descent_momentum(prices[-30:]) # Last 30 days
                 momentum_per_asset[sym] = m
+                
+                # If market benchmark available, try CAPM metrics
+                if has_benchmark and sym in all_returns:
+                    asset_rets = all_returns[sym].values
+                    min_len = min(len(asset_rets), len(market_returns))
+                    
+                    if min_len >= 10: # Ensure valid length
+                        asset_rets = asset_rets[-min_len:]
+                        market_rets_adj = market_returns[-min_len:]
+                        
+                        beta, alpha, exp_ret = math_core.calculate_capm(asset_rets, market_rets_adj)
+                        idio_risk = math_core.calculate_idiosyncratic_risk(asset_rets, market_rets_adj)
+                        factor_metrics[sym] = {
+                            "beta": round(beta, 4),
+                            "alpha_daily": round(alpha, 6),
+                            "expected_return_capm": round(exp_ret * 100, 2), # %
+                            "idiosyncratic_risk": round(idio_risk * 100, 2) # %
+                        }
+
+            # Covariance matrix & PCA on the portfolio assets
+            returns_dict = {sym: df_ret.values for sym, df_ret in all_returns.items()}
+            _, cov_matrix = math_core.calculate_covariance_matrix(returns_dict)
+            pca_res = math_core.calculate_pca(returns_dict)
 
             # --- Hedging Strategy ---
             hedging = cls.generate_hedging_strategy(weights, ann_vol, portfolio_returns.tolist())
@@ -113,7 +149,10 @@ class RiskService:
                 "exposure": weights,
                 "hedging_strategy": hedging,
                 "total_aum": round(total_market_value, 2),
-                "coverage_percent": round(len(found_symbols) / len(holdings) * 100, 1)
+                "coverage_percent": round(len(found_symbols) / len(holdings) * 100, 1),
+                # New Advanced Data Return:
+                "factor_analysis": factor_metrics if has_benchmark else None,
+                "pca_variance_explained": [round(v*100, 2) for v in pca_res.get('explained_variance', [])][:3], # Top 3 PC
             }
         finally:
             conn.close()

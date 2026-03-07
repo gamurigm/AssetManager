@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import {
     createChart,
     CandlestickSeries,
@@ -14,8 +14,10 @@ import {
     calcSupertrend,
     MAConfig
 } from "./chartMath";
+import { getChartPriceFormat } from "@/lib/marketFormatting";
 
 export function useMainChart(
+    symbol: string,
     rawData: any[],
     chartOpts: () => any,
     mas: MAConfig[],
@@ -34,16 +36,13 @@ export function useMainChart(
     mainChartApi: React.MutableRefObject<IChartApi | null>,
     candleSeriesRef: React.MutableRefObject<ISeriesApi<"Candlestick"> | null>,
 ) {
-    useEffect(() => {
-        if (!mainChartRef.current || rawData.length === 0) return;
+    const overlaySeriesRefs = useRef<any[]>([]);
+    const fibLineRefs = useRef<any[]>([]);
+    const resizeObserverRef = useRef<ResizeObserver | null>(null);
+    const hasFitContentRef = useRef(false);
 
-        let savedRange: any = null;
-        if (mainChartApi.current) {
-            savedRange = mainChartApi.current.timeScale().getVisibleLogicalRange();
-            const oldChart = mainChartApi.current;
-            try { oldChart.remove(); } catch (e) { }
-            mainChartApi.current = null;
-        }
+    useEffect(() => {
+        if (!mainChartRef.current || mainChartApi.current) return;
 
         const chart = createChart(mainChartRef.current, {
             ...chartOpts(),
@@ -51,14 +50,78 @@ export function useMainChart(
             height: mainChartRef.current.clientHeight || 400,
         });
         mainChartApi.current = chart;
-        window.dispatchEvent(new CustomEvent('mainChartReady'));
 
         const candleSeries = chart.addSeries(CandlestickSeries, {
             upColor: '#26a69d', downColor: '#ef5350',
             borderVisible: false, wickUpColor: '#26a69d', wickDownColor: '#ef5350',
+            priceFormat: getChartPriceFormat({ symbol }),
         });
 
         candleSeriesRef.current = candleSeries;
+        window.dispatchEvent(new CustomEvent('mainChartReady'));
+
+        const handleResize = () => {
+            if (!mainChartApi.current || !mainChartRef.current) return;
+            try {
+                mainChartApi.current.applyOptions({
+                    width: mainChartRef.current.clientWidth,
+                    height: mainChartRef.current.clientHeight || 400,
+                });
+            } catch {
+                // Chart may be in teardown during route changes.
+            }
+        };
+
+        const observer = new ResizeObserver(handleResize);
+        observer.observe(mainChartRef.current);
+        resizeObserverRef.current = observer;
+
+        return () => {
+            resizeObserverRef.current?.disconnect();
+            resizeObserverRef.current = null;
+
+            const activeChart = mainChartApi.current;
+            if (activeChart) {
+                overlaySeriesRefs.current.forEach(series => {
+                    try { activeChart.removeSeries(series); } catch { }
+                });
+            }
+            overlaySeriesRefs.current = [];
+
+            fibLineRefs.current.forEach(line => {
+                try { candleSeriesRef.current?.removePriceLine(line); } catch { }
+            });
+            fibLineRefs.current = [];
+
+            if (activeChart) {
+                try { activeChart.remove(); } catch { }
+            }
+
+            candleSeriesRef.current = null;
+            mainChartApi.current = null;
+            hasFitContentRef.current = false;
+        };
+    }, [chartOpts, mainChartRef, mainChartApi, candleSeriesRef]);
+
+    useEffect(() => {
+        const chart = mainChartApi.current;
+        const candleSeries = candleSeriesRef.current;
+        if (!chart || !candleSeries) return;
+
+        try {
+            chart.applyOptions({
+                ...chartOpts(),
+                width: mainChartRef.current?.clientWidth,
+                height: mainChartRef.current?.clientHeight || 400,
+            });
+        } catch {
+            // Ignore mid-teardown updates.
+        }
+
+        if (rawData.length === 0) return;
+
+        const savedRange = chart.timeScale().getVisibleLogicalRange();
+
         candleSeries.setData(rawData.map(d => ({
             time: d.time as any,
             open: d.open,
@@ -66,6 +129,16 @@ export function useMainChart(
             low: d.low,
             close: d.close
         })));
+
+        overlaySeriesRefs.current.forEach(series => {
+            try { chart.removeSeries(series); } catch { }
+        });
+        overlaySeriesRefs.current = [];
+
+        fibLineRefs.current.forEach(line => {
+            try { candleSeries.removePriceLine(line); } catch { }
+        });
+        fibLineRefs.current = [];
 
         const closes = rawData.map(d => d.close);
         const times = rawData.map(d => d.time as any);
@@ -80,16 +153,18 @@ export function useMainChart(
                 color: ma.color,
                 lineWidth: 1,
                 priceLineVisible: false,
-                crosshairMarkerVisible: false
+                crosshairMarkerVisible: false,
+                priceFormat: getChartPriceFormat({ symbol }),
             });
             series.setData(values.map((v, i) => isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
+            overlaySeriesRefs.current.push(series);
         }
 
         // Render Fibonacci Retracement
         if (showFib && rawData.length > 0) {
             const fibs = calcFibLevels(highs, lows, fibLookback);
             for (const fib of fibs) {
-                candleSeries.createPriceLine({
+                const line = candleSeries.createPriceLine({
                     price: fib.price,
                     color: fib.color,
                     lineWidth: 1,
@@ -97,25 +172,32 @@ export function useMainChart(
                     axisLabelVisible: true,
                     title: `Fib ${fib.label}`
                 });
+                fibLineRefs.current.push(line);
             }
         }
 
         // Render Bollinger Bands
         if (showBB) {
             const { middle, upper, lower } = calcBollingerBands(closes, bbPeriod, bbMult);
-            chart.addSeries(LineSeries, { color: 'rgba(33,150,243,0.5)', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
-                .setData(upper.map((v, i) => isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
-            chart.addSeries(LineSeries, { color: 'rgba(33,150,243,0.3)', lineWidth: 1, lineStyle: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
-                .setData(middle.map((v, i) => isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
-            chart.addSeries(LineSeries, { color: 'rgba(33,150,243,0.5)', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
-                .setData(lower.map((v, i) => isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
+            const upperSeries = chart.addSeries(LineSeries, { color: 'rgba(33,150,243,0.5)', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false, priceFormat: getChartPriceFormat({ symbol }) });
+            upperSeries.setData(upper.map((v, i) => isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
+            overlaySeriesRefs.current.push(upperSeries);
+
+            const middleSeries = chart.addSeries(LineSeries, { color: 'rgba(33,150,243,0.3)', lineWidth: 1, lineStyle: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false, priceFormat: getChartPriceFormat({ symbol }) });
+            middleSeries.setData(middle.map((v, i) => isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
+            overlaySeriesRefs.current.push(middleSeries);
+
+            const lowerSeries = chart.addSeries(LineSeries, { color: 'rgba(33,150,243,0.5)', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false, priceFormat: getChartPriceFormat({ symbol }) });
+            lowerSeries.setData(lower.map((v, i) => isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
+            overlaySeriesRefs.current.push(lowerSeries);
         }
 
         // Parabolic SAR
         if (showPSAR && rawData.length > 5) {
             const sar = calcParabolicSAR(highs, lows, psarStep, psarMax);
-            chart.addSeries(LineSeries, { color: '#ec4899', lineWidth: 1, lineStyle: 3, pointMarkersVisible: true, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
-                .setData(times.map((t, i) => (sar[i] === null || isNaN(sar[i]!)) ? { time: t } : { time: t, value: sar[i]! }) as any);
+            const sarSeries = chart.addSeries(LineSeries, { color: '#ec4899', lineWidth: 1, lineStyle: 3, pointMarkersVisible: true, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false, priceFormat: getChartPriceFormat({ symbol }) });
+            sarSeries.setData(times.map((t, i) => (sar[i] === null || isNaN(sar[i]!)) ? { time: t } : { time: t, value: sar[i]! }) as any);
+            overlaySeriesRefs.current.push(sarSeries);
         }
 
         // Supertrend
@@ -123,34 +205,20 @@ export function useMainChart(
             const { supertrend, dir } = calcSupertrend(highs, lows, closes, supertrendPeriod, supertrendMult);
             const upData = times.map((t, i) => (dir[i] === 1 && supertrend[i] !== null && !isNaN(supertrend[i]!)) ? { time: t, value: supertrend[i]! } : { time: t });
             const downData = times.map((t, i) => (dir[i] === -1 && supertrend[i] !== null && !isNaN(supertrend[i]!)) ? { time: t, value: supertrend[i]! } : { time: t });
-            chart.addSeries(LineSeries, { color: '#2dd4bf', lineWidth: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
-                .setData(upData as any);
-            chart.addSeries(LineSeries, { color: '#ef4444', lineWidth: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
-                .setData(downData as any);
+            const upSeries = chart.addSeries(LineSeries, { color: '#2dd4bf', lineWidth: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false, priceFormat: getChartPriceFormat({ symbol }) });
+            upSeries.setData(upData as any);
+            overlaySeriesRefs.current.push(upSeries);
+
+            const downSeries = chart.addSeries(LineSeries, { color: '#ef4444', lineWidth: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false, priceFormat: getChartPriceFormat({ symbol }) });
+            downSeries.setData(downData as any);
+            overlaySeriesRefs.current.push(downSeries);
         }
 
         if (savedRange) {
             chart.timeScale().setVisibleLogicalRange(savedRange);
-        } else {
+        } else if (!hasFitContentRef.current) {
             chart.timeScale().fitContent();
+            hasFitContentRef.current = true;
         }
-
-        const handleResize = () => {
-            if (mainChartApi.current && mainChartRef.current) {
-                mainChartApi.current.applyOptions({ width: mainChartRef.current.clientWidth, height: mainChartRef.current.clientHeight || 400 });
-            }
-        };
-
-        const ro = new ResizeObserver(handleResize);
-        ro.observe(mainChartRef.current);
-
-        return () => {
-            ro.disconnect();
-            if (mainChartApi.current) {
-                const oldChart = mainChartApi.current;
-                try { oldChart.remove(); } catch (e) { }
-                mainChartApi.current = null;
-            }
-        };
-    }, [rawData, chartOpts, mas, showFib, fibLookback, showBB, bbPeriod, bbMult, showPSAR, psarStep, psarMax, showSupertrend, supertrendPeriod, supertrendMult]);
+    }, [symbol, rawData, chartOpts, mas, showFib, fibLookback, showBB, bbPeriod, bbMult, showPSAR, psarStep, psarMax, showSupertrend, supertrendPeriod, supertrendMult]);
 }

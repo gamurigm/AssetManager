@@ -72,10 +72,28 @@ export function ChartSubPanels({
     const adxChartRef = useRef<HTMLDivElement>(null);
     const adxChartApi = useRef<IChartApi | null>(null);
 
+    const syncPanelRangeToMain = (chart: IChartApi) => {
+        try {
+            const mainRange = mainChartApi.current?.timeScale().getVisibleLogicalRange();
+            if (mainRange) {
+                chart.timeScale().setVisibleLogicalRange(mainRange);
+                return;
+            }
+        } catch {
+            // Fall through to fitContent when the main chart is mid-teardown.
+        }
+
+        try {
+            chart.timeScale().fitContent();
+        } catch {
+            // Ignore teardown races.
+        }
+    };
+
     // MACD
     useEffect(() => {
         if (!macdChartRef.current || rawData.length === 0 || !showMACD) return;
-        if (macdChartApi.current) { setTimeout(() => { try { macdChartApi.current?.remove(); } catch (e) { } }, 10); macdChartApi.current = null; }
+        if (macdChartApi.current) { try { macdChartApi.current.remove(); } catch (e) { } macdChartApi.current = null; }
 
         const chart = createChart(macdChartRef.current, { ...chartOpts(146), width: macdChartRef.current.clientWidth });
         macdChartApi.current = chart;
@@ -93,7 +111,7 @@ export function ChartSubPanels({
         const signalSeries = chart.addSeries(LineSeries, { color: '#FF6D00', lineWidth: 1, priceLineVisible: false, lastValueVisible: false });
         signalSeries.setData(signalLine.map((v, i) => v === null || isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
 
-        chart.timeScale().fitContent();
+        syncPanelRangeToMain(chart);
         const ro = new ResizeObserver(() => { if (macdChartRef.current) chart.applyOptions({ width: macdChartRef.current.clientWidth }); });
         ro.observe(macdChartRef.current);
         return () => { ro.disconnect(); try { chart.remove(); } catch (e) { } macdChartApi.current = null; };
@@ -102,7 +120,7 @@ export function ChartSubPanels({
     // Stochastic
     useEffect(() => {
         if (!stochChartRef.current || rawData.length === 0 || !showStoch) return;
-        if (stochChartApi.current) { setTimeout(() => { try { stochChartApi.current?.remove(); } catch (e) { } }, 10); stochChartApi.current = null; }
+        if (stochChartApi.current) { try { stochChartApi.current.remove(); } catch (e) { } stochChartApi.current = null; }
 
         const chart = createChart(stochChartRef.current, { ...chartOpts(146), width: stochChartRef.current.clientWidth });
         stochChartApi.current = chart;
@@ -119,7 +137,7 @@ export function ChartSubPanels({
         const dSeries = chart.addSeries(LineSeries, { color: '#FF6D00', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, title: '%D' });
         dSeries.setData(dLine.map((v, i) => v === null || isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
 
-        chart.timeScale().fitContent();
+        syncPanelRangeToMain(chart);
         const ro = new ResizeObserver(() => { if (stochChartRef.current) chart.applyOptions({ width: stochChartRef.current.clientWidth }); });
         ro.observe(stochChartRef.current);
         return () => { ro.disconnect(); try { chart.remove(); } catch (e) { } stochChartApi.current = null; };
@@ -128,7 +146,7 @@ export function ChartSubPanels({
     // ATR
     useEffect(() => {
         if (!atrChartRef.current || rawData.length === 0 || !showATR) return;
-        if (atrChartApi.current) { setTimeout(() => { try { atrChartApi.current?.remove(); } catch (e) { } }, 10); atrChartApi.current = null; }
+        if (atrChartApi.current) { try { atrChartApi.current.remove(); } catch (e) { } atrChartApi.current = null; }
 
         const chart = createChart(atrChartRef.current, { ...chartOpts(146), width: atrChartRef.current.clientWidth });
         atrChartApi.current = chart;
@@ -142,7 +160,7 @@ export function ChartSubPanels({
         const atrSeries = chart.addSeries(LineSeries, { color: '#e040fb', lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title: 'ATR' });
         atrSeries.setData(atrValues.map((v, i) => v === null || isNaN(v) ? { time: times[i] } : { time: times[i], value: v }) as any);
 
-        chart.timeScale().fitContent();
+        syncPanelRangeToMain(chart);
         const ro = new ResizeObserver(() => { if (atrChartRef.current) chart.applyOptions({ width: atrChartRef.current.clientWidth }); });
         ro.observe(atrChartRef.current);
         return () => { ro.disconnect(); try { chart.remove(); } catch (e) { } atrChartApi.current = null; };
@@ -151,7 +169,7 @@ export function ChartSubPanels({
     // Williams %R
     useEffect(() => {
         if (!williamsChartRef.current || rawData.length === 0 || !showWilliams) return;
-        if (williamsChartApi.current) { setTimeout(() => { try { williamsChartApi.current?.remove(); } catch (e) { } }, 10); williamsChartApi.current = null; }
+        if (williamsChartApi.current) { try { williamsChartApi.current.remove(); } catch (e) { } williamsChartApi.current = null; }
         const chart = createChart(williamsChartRef.current, { ...chartOpts(146), width: williamsChartRef.current.clientWidth });
         williamsChartApi.current = chart;
         const highs = rawData.map(d => d.high), lows = rawData.map(d => d.low), closes = rawData.map(d => d.close), times = rawData.map(d => d.time as any);
@@ -165,16 +183,16 @@ export function ChartSubPanels({
         chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
             .setData(times.map(t => ({ time: t, value: -80 })));
 
-        chart.timeScale().fitContent();
+        syncPanelRangeToMain(chart);
         const ro = new ResizeObserver(() => { if (williamsChartRef.current) chart.applyOptions({ width: williamsChartRef.current.clientWidth }); });
         ro.observe(williamsChartRef.current);
         return () => { ro.disconnect(); try { chart.remove(); } catch (e) { } williamsChartApi.current = null; };
-    }, [rawData, showWilliams, chartOpts]);
+    }, [rawData, showWilliams, williamsPeriod, chartOpts]);
 
     // MFI
     useEffect(() => {
         if (!mfiChartRef.current || rawData.length === 0 || !showMFI) return;
-        if (mfiChartApi.current) { setTimeout(() => { try { mfiChartApi.current?.remove(); } catch (e) { } }, 10); mfiChartApi.current = null; }
+        if (mfiChartApi.current) { try { mfiChartApi.current.remove(); } catch (e) { } mfiChartApi.current = null; }
         const chart = createChart(mfiChartRef.current, { ...chartOpts(146), width: mfiChartRef.current.clientWidth });
         mfiChartApi.current = chart;
         const highs = rawData.map(d => d.high), lows = rawData.map(d => d.low), closes = rawData.map(d => d.close), volumes = rawData.map(d => d.volume ?? 0), times = rawData.map(d => d.time as any);
@@ -188,16 +206,16 @@ export function ChartSubPanels({
         chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
             .setData(times.map(t => ({ time: t, value: 20 })));
 
-        chart.timeScale().fitContent();
+        syncPanelRangeToMain(chart);
         const ro = new ResizeObserver(() => { if (mfiChartRef.current) chart.applyOptions({ width: mfiChartRef.current.clientWidth }); });
         ro.observe(mfiChartRef.current);
         return () => { ro.disconnect(); try { chart.remove(); } catch (e) { } mfiChartApi.current = null; };
-    }, [rawData, showMFI, chartOpts]);
+    }, [rawData, showMFI, mfiPeriod, chartOpts]);
 
     // CMF
     useEffect(() => {
         if (!cmfChartRef.current || rawData.length === 0 || !showCMF) return;
-        if (cmfChartApi.current) { setTimeout(() => { try { cmfChartApi.current?.remove(); } catch (e) { } }, 10); cmfChartApi.current = null; }
+        if (cmfChartApi.current) { try { cmfChartApi.current.remove(); } catch (e) { } cmfChartApi.current = null; }
         const chart = createChart(cmfChartRef.current, { ...chartOpts(146), width: cmfChartRef.current.clientWidth });
         cmfChartApi.current = chart;
         const highs = rawData.map(d => d.high), lows = rawData.map(d => d.low), closes = rawData.map(d => d.close), volumes = rawData.map(d => d.volume), times = rawData.map(d => d.time as any);
@@ -212,12 +230,12 @@ export function ChartSubPanels({
         const ro = new ResizeObserver(() => { if (cmfChartRef.current) chart.applyOptions({ width: cmfChartRef.current.clientWidth }); });
         ro.observe(cmfChartRef.current);
         return () => { ro.disconnect(); try { chart.remove(); } catch (e) { } cmfChartApi.current = null; };
-    }, [rawData, showCMF, chartOpts]);
+    }, [rawData, showCMF, cmfPeriod, chartOpts]);
 
     // RSI
     useEffect(() => {
         if (!rsiChartRef.current || rawData.length === 0 || !showRSI) return;
-        if (rsiChartApi.current) { setTimeout(() => { try { rsiChartApi.current?.remove(); } catch (e) { } }, 10); rsiChartApi.current = null; }
+        if (rsiChartApi.current) { try { rsiChartApi.current.remove(); } catch (e) { } rsiChartApi.current = null; }
         const chart = createChart(rsiChartRef.current, { ...chartOpts(146), width: rsiChartRef.current.clientWidth });
         rsiChartApi.current = chart;
         const closes = rawData.map(d => d.close), times = rawData.map(d => d.time as any);
@@ -231,16 +249,16 @@ export function ChartSubPanels({
         chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
             .setData(times.map(t => ({ time: t, value: 30 })));
 
-        chart.timeScale().fitContent();
+        syncPanelRangeToMain(chart);
         const ro = new ResizeObserver(() => { if (rsiChartRef.current) chart.applyOptions({ width: rsiChartRef.current.clientWidth }); });
         ro.observe(rsiChartRef.current);
         return () => { ro.disconnect(); try { chart.remove(); } catch (e) { } rsiChartApi.current = null; };
-    }, [rawData, showRSI, chartOpts]);
+    }, [rawData, showRSI, rsiPeriod, chartOpts]);
 
     // CCI
     useEffect(() => {
         if (!cciChartRef.current || rawData.length === 0 || !showCCI) return;
-        if (cciChartApi.current) { setTimeout(() => { try { cciChartApi.current?.remove(); } catch (e) { } }, 10); cciChartApi.current = null; }
+        if (cciChartApi.current) { try { cciChartApi.current.remove(); } catch (e) { } cciChartApi.current = null; }
         const chart = createChart(cciChartRef.current, { ...chartOpts(146), width: cciChartRef.current.clientWidth });
         cciChartApi.current = chart;
         const highs = rawData.map(d => d.high), lows = rawData.map(d => d.low), closes = rawData.map(d => d.close), times = rawData.map(d => d.time as any);
@@ -254,16 +272,16 @@ export function ChartSubPanels({
         chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
             .setData(times.map(t => ({ time: t, value: -100 })));
 
-        chart.timeScale().fitContent();
+        syncPanelRangeToMain(chart);
         const ro = new ResizeObserver(() => { if (cciChartRef.current) chart.applyOptions({ width: cciChartRef.current.clientWidth }); });
         ro.observe(cciChartRef.current);
         return () => { ro.disconnect(); try { chart.remove(); } catch (e) { } cciChartApi.current = null; };
-    }, [rawData, showCCI, chartOpts]);
+    }, [rawData, showCCI, cciPeriod, chartOpts]);
 
     // ADX
     useEffect(() => {
         if (!adxChartRef.current || rawData.length === 0 || !showADX) return;
-        if (adxChartApi.current) { setTimeout(() => { try { adxChartApi.current?.remove(); } catch (e) { } }, 10); adxChartApi.current = null; }
+        if (adxChartApi.current) { try { adxChartApi.current.remove(); } catch (e) { } adxChartApi.current = null; }
         const chart = createChart(adxChartRef.current, { ...chartOpts(146), width: adxChartRef.current.clientWidth });
         adxChartApi.current = chart;
         const highs = rawData.map(d => d.high), lows = rawData.map(d => d.low), closes = rawData.map(d => d.close), times = rawData.map(d => d.time as any);
@@ -279,11 +297,11 @@ export function ChartSubPanels({
         chart.addSeries(LineSeries, { color: '#71717a60', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false })
             .setData(times.map(t => ({ time: t, value: 25 })));
 
-        chart.timeScale().fitContent();
+        syncPanelRangeToMain(chart);
         const ro = new ResizeObserver(() => { if (adxChartRef.current) chart.applyOptions({ width: adxChartRef.current.clientWidth }); });
         ro.observe(adxChartRef.current);
         return () => { ro.disconnect(); try { chart.remove(); } catch (e) { } adxChartApi.current = null; };
-    }, [rawData, showADX, chartOpts]);
+    }, [rawData, showADX, adxPeriod, chartOpts]);
 
     // ─── Unified Chart Syncing ─────────────────────────────────────────────
     useEffect(() => {
@@ -361,7 +379,7 @@ export function ChartSubPanels({
             window.removeEventListener('mainChartReady', doSync);
             cleanups.forEach(c => c());
         };
-    }, [showMACD, showStoch, showATR, showWilliams, williamsPeriod, showMFI, mfiPeriod, showCMF, cmfPeriod, showRSI, rsiPeriod, showCCI, cciPeriod, showADX, adxPeriod]);
+    }, [rawData, showMACD, showStoch, showATR, showWilliams, williamsPeriod, showMFI, mfiPeriod, showCMF, cmfPeriod, showRSI, rsiPeriod, showCCI, cciPeriod, showADX, adxPeriod]);
 
     return (
         <>

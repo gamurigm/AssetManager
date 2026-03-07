@@ -1,7 +1,9 @@
 import React from "react";
 import { ArrowLeft, ZoomIn, ZoomOut, TrendingUp, TrendingDown, Crosshair } from "lucide-react";
+import { formatAssetPrice, formatAssetPriceFixed } from "@/lib/marketFormatting";
 
 export const TIMEFRAMES = [
+    { label: "1m", value: "1m" },
     { label: "5m", value: "5m" },
     { label: "15m", value: "15m" },
     { label: "1H", value: "1h" },
@@ -69,7 +71,7 @@ export function ChartTopBar({
 
                 {quote && typeof quote.price === 'number' && (
                     <div className="flex items-center gap-3 ml-4 pl-4 border-l border-white/10">
-                        <span className="text-xl font-mono font-black text-white">${quote.price.toFixed(2)}</span>
+                        <span className="text-xl font-mono font-black text-white">${formatAssetPrice(quote.price, { symbol })}</span>
                         <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-black uppercase tracking-tighter ${(quote.changePercentage ?? 0) >= 0 ? "bg-green/10 text-green" : "bg-red/10 text-red"}`}>
                             {(quote.changePercentage ?? 0) >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
                             {(quote.changePercentage ?? 0).toFixed(2)}%
@@ -87,8 +89,8 @@ export function ChartTopBar({
                                 onClick={async () => {
                                     if (quote) {
                                         await openTrade(symbol, symbol, tradeQty, quote.price, 1.0, "Technology", "stock");
-                                        setSlPrice((quote.price * 1.05).toFixed(4));
-                                        setTpPrice((quote.price * 0.95).toFixed(4));
+                                        setSlPrice(formatAssetPriceFixed(quote.price * 1.05, { symbol }));
+                                        setTpPrice(formatAssetPriceFixed(quote.price * 0.95, { symbol }));
                                     }
                                 }}
                                 className="px-3 h-full bg-red-500/20 hover:bg-red-500 text-red-500 hover:text-white transition-all text-[10px] font-black border-r border-white/5"
@@ -106,8 +108,8 @@ export function ChartTopBar({
                                     if (quote) {
                                         const p = quote.price * 1.0001;
                                         await openTrade(symbol, symbol, tradeQty, p, 1.0, "Technology", "stock");
-                                        setSlPrice((p * 0.95).toFixed(4));
-                                        setTpPrice((p * 1.05).toFixed(4));
+                                        setSlPrice(formatAssetPriceFixed(p * 0.95, { symbol }));
+                                        setTpPrice(formatAssetPriceFixed(p * 1.05, { symbol }));
                                     }
                                 }}
                                 className="px-3 h-full bg-blue-500/20 hover:bg-blue-600 text-blue-500 hover:text-white transition-all text-[10px] font-black border-l border-white/5"

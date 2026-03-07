@@ -18,7 +18,9 @@ import {
     Leaf,
     LineChart,
     Building2,
-    Cog
+    Cog,
+    HelpCircle,
+    GraduationCap
 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { usePortfolio } from "@/context/PortfolioContext";
@@ -147,12 +149,12 @@ export default function Sidebar({ expanded }: { expanded: boolean }) {
                                 key={p.id}
                                 onClick={() => setActivePortfolio(p.id)}
                                 className={`flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-bold transition-all relative ${isActive
-                                        ? (isDarkMode
-                                            ? `${p.activeBgDark} ${p.activeTextDark} shadow-[inset_0_0_10px_rgba(255,255,255,0.05)] border ${p.activeBorderDark}`
-                                            : `${p.activeBgLight} ${p.activeTextLight} border ${p.activeBorderLight} shadow-sm`)
-                                        : (isDarkMode
-                                            ? "text-white/40 hover:text-white hover:bg-white/5 border border-transparent"
-                                            : "text-slate-500 hover:text-slate-900 hover:bg-slate-50 border border-transparent")
+                                    ? (isDarkMode
+                                        ? `${p.activeBgDark} ${p.activeTextDark} shadow-[inset_0_0_10px_rgba(255,255,255,0.05)] border ${p.activeBorderDark}`
+                                        : `${p.activeBgLight} ${p.activeTextLight} border ${p.activeBorderLight} shadow-sm`)
+                                    : (isDarkMode
+                                        ? "text-white/40 hover:text-white hover:bg-white/5 border border-transparent"
+                                        : "text-slate-500 hover:text-slate-900 hover:bg-slate-50 border border-transparent")
                                     }`}
                                 title={p.label}
                             >
@@ -177,6 +179,34 @@ export default function Sidebar({ expanded }: { expanded: boolean }) {
                     {isDarkMode ? <Sun size={18} className="text-yellow-400 drop-shadow-[0_0_8px_#facc15] shrink-0" /> : <Moon size={18} className="text-slate-600 shrink-0" />}
                     <span className={`truncate tracking-tight whitespace-nowrap ${isCollapsed ? "opacity-0 invisible w-0" : "opacity-100 visible w-auto delay-100"} transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]`}>
                         {isDarkMode ? "Light Mode" : "Dark Mode"}
+                    </span>
+                </button>
+
+                <button
+                    onClick={() => {
+                        window.dispatchEvent(new CustomEvent("open-docs"));
+                    }}
+                    className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-bold transition-all overflow-hidden ${isDarkMode
+                        ? "text-white/40 hover:text-white hover:bg-white/5"
+                        : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"}`}
+                >
+                    <HelpCircle size={18} className="shrink-0" />
+                    <span className={`truncate tracking-tight whitespace-nowrap ${isCollapsed ? "opacity-0 invisible w-0" : "opacity-100 visible w-auto delay-100"} transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]`}>
+                        System Documentation
+                    </span>
+                </button>
+
+                <button
+                    onClick={() => {
+                        window.dispatchEvent(new CustomEvent("open-education"));
+                    }}
+                    className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-bold transition-all overflow-hidden ${isDarkMode
+                        ? "text-white/40 hover:text-white hover:bg-white/5"
+                        : "text-slate-500 hover:text-slate-900 hover:bg-slate-50"}`}
+                >
+                    <GraduationCap size={18} className="shrink-0" />
+                    <span className={`truncate tracking-tight whitespace-nowrap ${isCollapsed ? "opacity-0 invisible w-0" : "opacity-100 visible w-auto delay-100"} transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)]`}>
+                        Quant Education
                     </span>
                 </button>
             </div>

@@ -185,12 +185,12 @@ def start_scheduler(sio=None):
         id="portfolio_scan_startup",
     )
 
-    # 5. Fast Market Data Stream — every 5 seconds
+    # 5. Fast Market Data Stream — every 2 seconds
     if sio:
         scheduler.add_job(
             broadcast_prices_job,
             "interval",
-            seconds=5,
+            seconds=2,
             args=[sio],
             id="realtime_price_stream",
             replace_existing=True,

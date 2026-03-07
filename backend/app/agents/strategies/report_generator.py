@@ -1,376 +1,250 @@
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
-import os
-from typing import Dict, Any
+from __future__ import annotations
+
+import math
+import tempfile
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Iterable
 
-def generate_html_report(backtest_result: Any, output_path: str = "backtest_report.html"):
-    """
-    Generates a highly visual, comprehensive HTML report from a BacktestResult.
-    Includes:
-    - Equity Curve
-    - Trade Outcome distribution
-    - Bootstrap Net Profit Histogram (if available)
-    - Bootstrap Drawdown Histogram (if available)
-    - Key metrics summary panels
-    """
-    
-    # 1. Extract data
+import matplotlib
+
+matplotlib.use("Agg")
+
+import matplotlib.pyplot as plt
+from fpdf import FPDF
+
+
+def _build_equity_curve(backtest_result: Any) -> tuple[list[str], list[float]]:
     trades = backtest_result.trades
-    kpis = backtest_result.kpis
+    running_equity = float(backtest_result.config.account_size)
+    labels = ["Start"]
+    equity = [running_equity]
+
+    for trade in trades:
+        running_equity += float(trade.pnl_usd)
+        labels.append(str(trade.exit_timestamp or trade.signal.timestamp))
+        equity.append(running_equity)
+
+    return labels, equity
+
+
+def _save_equity_chart(backtest_result: Any, output_path: Path) -> None:
+    _, equity = _build_equity_curve(backtest_result)
+    x = list(range(len(equity)))
+
+    plt.style.use("dark_background")
+    fig, ax = plt.subplots(figsize=(10, 4), dpi=180)
+    ax.plot(x, equity, color="#22c55e", linewidth=2)
+    ax.fill_between(x, equity, min(equity), color="#22c55e", alpha=0.14)
+    ax.set_title(f"Equity Curve: {backtest_result.config.symbol}")
+    ax.set_xlabel("Trade #")
+    ax.set_ylabel("Equity")
+    ax.grid(alpha=0.2)
+    fig.tight_layout()
+    fig.savefig(output_path, bbox_inches="tight", facecolor=fig.get_facecolor())
+    plt.close(fig)
+
+
+def _save_histogram(samples: Iterable[float], title: str, color: str, output_path: Path) -> None:
+    values = list(samples)
+    if not values:
+        return
+
+    plt.style.use("dark_background")
+    fig, ax = plt.subplots(figsize=(6, 4), dpi=180)
+    bins = min(30, max(10, int(math.sqrt(len(values)))))
+    ax.hist(values, bins=bins, color=color, alpha=0.82)
+    ax.set_title(title)
+    ax.grid(alpha=0.2)
+    fig.tight_layout()
+    fig.savefig(output_path, bbox_inches="tight", facecolor=fig.get_facecolor())
+    plt.close(fig)
+
+
+class BacktestPDF(FPDF):
+    def header(self) -> None:
+        self.set_fill_color(15, 23, 32)
+        self.rect(0, 0, self.w, 18, style="F")
+        self.set_xy(12, 6)
+        self.set_font("Helvetica", "B", 14)
+        self.set_text_color(255, 255, 255)
+        self.cell(0, 0, "AssetManager Backtest Report")
+
+    def footer(self) -> None:
+        self.set_y(-12)
+        self.set_font("Helvetica", size=8)
+        self.set_text_color(120, 120, 120)
+        self.cell(0, 8, f"Page {self.page_no()}", align="R")
+
+
+def _metric_card(pdf: BacktestPDF, x: float, y: float, width: float, height: float, label: str, value: str) -> None:
+    pdf.set_fill_color(22, 28, 36)
+    pdf.set_draw_color(52, 64, 78)
+    pdf.rect(x, y, width, height, style="FD")
+    pdf.set_xy(x + 4, y + 4)
+    pdf.set_font("Helvetica", size=8)
+    pdf.set_text_color(164, 178, 194)
+    pdf.cell(width - 8, 4, label)
+    pdf.set_xy(x + 4, y + 10)
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(width - 8, 6, value)
+
+
+def _fmt_money(value: float) -> str:
+    return f"${value:,.2f}"
+
+
+def _fmt_ratio(value: float) -> str:
+    if value == float("inf"):
+        return "Inf"
+    return f"{value:,.2f}"
+
+
+def _fmt_pct_fraction(value: float) -> str:
+    return f"{value * 100:,.2f}%"
+
+
+def _add_trade_table(pdf: BacktestPDF, backtest_result: Any) -> None:
+    pdf.add_page()
+    pdf.set_xy(12, 24)
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(0, 8, "Trades")
+
+    columns = [
+        ("Date", 35),
+        ("Dir", 16),
+        ("Entry", 24),
+        ("Exit", 24),
+        ("Outcome", 30),
+        ("R", 16),
+        ("PnL$", 24),
+    ]
+    row_height = 6
+
+    def draw_header(y: float) -> float:
+        pdf.set_xy(12, y)
+        pdf.set_font("Helvetica", "B", 8)
+        pdf.set_fill_color(24, 32, 44)
+        pdf.set_text_color(255, 255, 255)
+        for label, width in columns:
+            pdf.cell(width, row_height + 1, label, border=1, align="C", fill=True)
+        pdf.ln(row_height + 1)
+        return y + row_height + 1
+
+    current_y = draw_header(36)
+    pdf.set_font("Helvetica", size=7)
+
+    for trade in backtest_result.trades:
+        if current_y > 275:
+            pdf.add_page()
+            pdf.set_xy(12, 24)
+            pdf.set_font("Helvetica", "B", 14)
+            pdf.set_text_color(255, 255, 255)
+            pdf.cell(0, 8, "Trades")
+            current_y = draw_header(36)
+            pdf.set_font("Helvetica", size=7)
+
+        pdf.set_xy(12, current_y)
+        pdf.set_text_color(228, 228, 228)
+        values = [
+            str(trade.exit_timestamp or trade.signal.timestamp).replace("T", " ")[:16],
+            trade.signal.direction,
+            f"{trade.signal.entry:,.2f}",
+            f"{trade.exit_price:,.2f}",
+            trade.outcome,
+            f"{trade.pnl_r:,.2f}",
+            f"{trade.pnl_usd:,.2f}",
+        ]
+        for (_, width), value in zip(columns, values):
+            pdf.cell(width, row_height, value, border=1, align="C")
+        pdf.ln(row_height)
+        current_y += row_height
+
+
+def generate_pdf_report(backtest_result: Any, output_path: str = "backtest_report.pdf") -> str:
+    """Generate a PDF backtest report with KPIs, charts and trades."""
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+
     config = backtest_result.config
-    bootstrap = backtest_result.bootstrap_stats
-    
-    initial_equity = config.account_size
-    current_equity = initial_equity
-    
-    equity_curve = [initial_equity]
-    trade_dates = ["Start"]
-    
-    wins = 0
-    losses = 0
-    for t in trades:
-        current_equity += t.pnl_usd
-        equity_curve.append(current_equity)
-        trade_dates.append(t.exit_timestamp or "Unknown")
-        if t.pnl_usd > 0:
-            wins += 1
-        elif t.pnl_usd < 0:
-            losses += 1
-            
-    # 2. Setup Subplots
-    has_bootstrap = bootstrap is not None and "net_profit_samples" in bootstrap
-    
-    if has_bootstrap:
-        fig = make_subplots(
-            rows=2, cols=2,
-            specs=[[{"colspan": 2}, None],
-                   [{}, {}]],
-            subplot_titles=("Curva de Capital (Equity Curve)", 
-                            "Distribucion Bootstrap: Retorno Neto", 
-                            "Distribucion Bootstrap: Max Drawdown %"),
-            vertical_spacing=0.15
-        )
-    else:
-        fig = make_subplots(
-            rows=1, cols=1,
-            specs=[[{}]],
-            subplot_titles=("Curva de Capital (Equity Curve)",)
-        )
+    kpis = backtest_result.kpis
+    bootstrap = backtest_result.bootstrap_stats or {}
+    net_profit = float(kpis.final_equity) - float(config.account_size)
 
-    # 3. Add Equity Curve
-    fig.add_trace(
-        go.Scatter(x=list(range(len(equity_curve))), y=equity_curve,
-                   mode='lines+markers',
-                   name='Equity',
-                   line=dict(color='#00F0FF', width=3),
-                   marker=dict(size=6, color='#00F0FF'),
-                   fill='tozeroy',
-                   fillcolor='rgba(0, 240, 255, 0.1)',
-                   text=trade_dates,
-                   hovertemplate="Trade: %{x}<br>Equity: $%{y:.2f}<br>Date: %{text}<extra></extra>"),
-        row=1, col=1
-    )
+    pdf = BacktestPDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=14)
+    pdf.add_page()
 
-    # 4. Add Bootstrap Histograms if available
-    if has_bootstrap:
-        np_samples = bootstrap["net_profit_samples"]
-        dd_samples = bootstrap["max_drawdown_samples"]
-        np_ci = bootstrap.get("net_profit_95_ci", [0, 0])
-        dd_ci = bootstrap.get("max_drawdown_95_ci_pct", [0, 0])
+    pdf.set_xy(12, 24)
+    pdf.set_font("Helvetica", "B", 18)
+    pdf.set_text_color(255, 255, 255)
+    pdf.cell(0, 9, f"{config.symbol} | {config.strategy_name}")
 
-        # Net Profit Histogram
-        fig.add_trace(
-            go.Histogram(x=np_samples, marker_color='#00E676', opacity=0.7, name="Retorno Simulado",
-                         nbinsx=50),
-            row=2, col=1
-        )
-        # CI lines Net Profit
-        fig.add_vline(x=np_ci[0], line_dash="dash", line_color="red", row=2, col=1, annotation_text="P2.5")
-        fig.add_vline(x=np_ci[1], line_dash="dash", line_color="red", row=2, col=1, annotation_text="P97.5")
-        
-        # Max Drawdown Histogram
-        fig.add_trace(
-            go.Histogram(x=dd_samples, marker_color='#FF1744', opacity=0.7, name="Drawdown Simulado",
-                         nbinsx=50),
-            row=2, col=2
-        )
-        # CI lines Drawdown
-        fig.add_vline(x=dd_ci[0], line_dash="dash", line_color="yellow", row=2, col=2, annotation_text="P2.5")
-        fig.add_vline(x=dd_ci[1], line_dash="dash", line_color="yellow", row=2, col=2, annotation_text="P97.5")
+    pdf.set_xy(12, 34)
+    pdf.set_font("Helvetica", size=10)
+    pdf.set_text_color(166, 181, 201)
+    pdf.cell(0, 6, f"Period: {config.start_date} to {config.end_date}")
+    pdf.ln(5)
+    pdf.cell(0, 6, f"Initial capital: {_fmt_money(config.account_size)}   Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-    # 5. Styling and Layout
-    fig.update_layout(
-        title=dict(
-            text=f"Reporte de Backtest: {config.strategy_name} ({config.symbol})",
-            font=dict(size=24, color='white'),
-            x=0.5
-        ),
-        template="plotly_dark",
-        plot_bgcolor='#1E1E2E',
-        paper_bgcolor='#1E1E2E',
-        showlegend=False,
-        height=800 if has_bootstrap else 500,
-        margin=dict(t=120, b=50, l=50, r=50)
-    )
+    cards = [
+        ("Net Profit", _fmt_money(net_profit)),
+        ("Final Equity", _fmt_money(kpis.final_equity)),
+        ("Win Rate", _fmt_pct_fraction(kpis.win_rate)),
+        ("Profit Factor", _fmt_ratio(kpis.profit_factor)),
+        ("Max Drawdown", _fmt_pct_fraction(kpis.max_drawdown_pct)),
+        ("Sharpe Ratio", _fmt_ratio(kpis.sharpe_ratio)),
+    ]
+    card_w = 58
+    card_h = 20
+    gap = 6
+    top_y = 46
 
-    # 6. HTML generation with KPI boxes
-    plot_html = fig.to_html(full_html=False, include_plotlyjs='cdn')
-    
-    win_rate = f"{kpis.win_rate*100:.1f}%" if kpis.total_trades > 0 else "0%"
-    
-    bootstrap_html = ""
-    if has_bootstrap:
-        bootstrap_html = f"""
-        <div class="kpi-panel">
-            <h2>Estadisticas de Bootstrap ({bootstrap['iterations']} iteraciones)</h2>
-            <div class="kpi-grid">
-                <div class="kpi-card">
-                    <span class="label">Net Profit (95% CI)</span>
-                    <span class="value">${np_ci[0]:.2f}  a  ${np_ci[1]:.2f}</span>
-                </div>
-                <div class="kpi-card">
-                    <span class="label">Max Drawdown (95% CI)</span>
-                    <span class="value">{dd_ci[0]:.2f}%  a  {dd_ci[1]:.2f}%</span>
-                </div>
-            </div>
-        </div>
-        """
+    for idx, (label, value) in enumerate(cards):
+        row = idx // 3
+        col = idx % 3
+        _metric_card(pdf, 12 + col * (card_w + gap), top_y + row * (card_h + gap), card_w, card_h, label, value)
 
-    net_profit_usd = kpis.final_equity - initial_equity
-    
-    html_template = f"""
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Backtest Analysis | {config.symbol}</title>
-        <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
-        <style>
-            :root {{
-                --bg-color: #0c0c14;
-                --card-bg: rgba(30, 30, 46, 0.7);
-                --accent-primary: #00f0ff;
-                --accent-secondary: #7000ff;
-                --text-main: #e0e0e0;
-                --text-dim: #a0a0b0;
-                --success: #00e676;
-                --danger: #ff1744;
-                --warning: #ffd600;
-            }}
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir)
 
-            body {{
-                background-color: var(--bg-color);
-                background-image: 
-                    radial-gradient(circle at 20% 20%, rgba(112, 0, 255, 0.05) 0%, transparent 40%),
-                    radial-gradient(circle at 80% 80%, rgba(0, 240, 255, 0.05) 0%, transparent 40%);
-                color: var(--text-main);
-                font-family: 'Outfit', sans-serif;
-                margin: 0;
-                padding: 40px 20px;
-                line-height: 1.6;
-            }}
+        equity_chart = tmp_path / "equity.png"
+        _save_equity_chart(backtest_result, equity_chart)
 
-            .container {{
-                max-width: 1400px;
-                margin: 0 auto;
-            }}
+        pdf.set_xy(12, 96)
+        pdf.set_font("Helvetica", "B", 13)
+        pdf.set_text_color(255, 255, 255)
+        pdf.cell(0, 8, "Equity Curve")
+        pdf.image(str(equity_chart), x=12, y=104, w=186)
 
-            header {{
-                margin-bottom: 40px;
-                text-align: left;
-                border-left: 5px solid var(--accent-primary);
-                padding-left: 20px;
-            }}
+        if bootstrap:
+            profit_ci = bootstrap.get("net_profit_95_ci", [0, 0])
+            dd_ci = bootstrap.get("max_drawdown_95_ci_pct", [0, 0])
 
-            header h1 {{
-                margin: 0;
-                font-size: 2.5rem;
-                font-weight: 700;
-                letter-spacing: -1px;
-                background: linear-gradient(90deg, #fff, var(--accent-primary));
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-            }}
+            profit_hist = tmp_path / "profit_hist.png"
+            drawdown_hist = tmp_path / "drawdown_hist.png"
+            _save_histogram(bootstrap.get("net_profit_samples", []), "Bootstrap Net Profit", "#22c55e", profit_hist)
+            _save_histogram(bootstrap.get("max_drawdown_samples", []), "Bootstrap Max Drawdown", "#ef4444", drawdown_hist)
 
-            header p {{
-                margin: 5px 0 0;
-                color: var(--text-dim);
-                font-size: 1.1rem;
-            }}
+            pdf.add_page()
+            pdf.set_xy(12, 24)
+            pdf.set_font("Helvetica", "B", 14)
+            pdf.set_text_color(255, 255, 255)
+            pdf.cell(0, 8, f"Bootstrap Analysis ({bootstrap.get('iterations', 0)} iterations)")
+            pdf.set_xy(12, 34)
+            pdf.set_font("Helvetica", size=10)
+            pdf.set_text_color(166, 181, 201)
+            pdf.cell(0, 6, f"Net profit 95% CI: {_fmt_money(profit_ci[0])} to {_fmt_money(profit_ci[1])}")
+            pdf.ln(6)
+            pdf.cell(0, 6, f"Max drawdown 95% CI: {dd_ci[0]:.2f}% to {dd_ci[1]:.2f}%")
 
-            .section-title {{
-                font-size: 1.2rem;
-                font-weight: 600;
-                color: var(--text-dim);
-                text-transform: uppercase;
-                letter-spacing: 2px;
-                margin: 40px 0 20px;
-                display: flex;
-                align-items: center;
-            }}
+            if profit_hist.exists():
+                pdf.image(str(profit_hist), x=12, y=48, w=90)
+            if drawdown_hist.exists():
+                pdf.image(str(drawdown_hist), x=108, y=48, w=90)
 
-            .section-title::after {{
-                content: "";
-                flex: 1;
-                height: 1px;
-                background: rgba(255,255,255,0.1);
-                margin-left: 20px;
-            }}
-
-            .kpi-grid {{
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-                gap: 20px;
-                margin-bottom: 30px;
-            }}
-
-            .kpi-card {{
-                background: var(--card-bg);
-                backdrop-filter: blur(10px);
-                -webkit-backdrop-filter: blur(10px);
-                border: 1px solid rgba(255, 255, 255, 0.05);
-                border-radius: 16px;
-                padding: 24px;
-                transition: transform 0.3s ease, box-shadow 0.3s ease;
-                position: relative;
-                overflow: hidden;
-            }}
-
-            .kpi-card:hover {{
-                transform: translateY(-5px);
-                box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-                border-color: rgba(0, 240, 255, 0.2);
-            }}
-
-            .kpi-card::before {{
-                content: "";
-                position: absolute;
-                top: 0;
-                left: 0;
-                width: 4px;
-                height: 100%;
-                background: var(--accent-primary);
-            }}
-
-            .kpi-card.success::before {{ background: var(--success); }}
-            .kpi-card.danger::before {{ background: var(--danger); }}
-            .kpi-card.warning::before {{ background: var(--warning); }}
-            .kpi-card.purple::before {{ background: var(--accent-secondary); }}
-
-            .label {{
-                font-size: 0.85rem;
-                color: var(--text-dim);
-                text-transform: uppercase;
-                font-weight: 600;
-                margin-bottom: 8px;
-                display: block;
-            }}
-
-            .value {{
-                font-size: 2.2rem;
-                font-weight: 700;
-                color: #fff;
-            }}
-
-            .sub-value {{
-                font-size: 0.9rem;
-                color: var(--text-dim);
-                margin-top: 4px;
-            }}
-
-            .chart-container {{
-                background: var(--card-bg);
-                backdrop-filter: blur(10px);
-                border-radius: 20px;
-                padding: 20px;
-                border: 1px solid rgba(255, 255, 255, 0.05);
-                box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
-                margin-bottom: 40px;
-            }}
-
-            .summary-footer {{
-                text-align: center;
-                margin-top: 60px;
-                color: var(--text-dim);
-                font-size: 0.9rem;
-                padding-bottom: 40px;
-            }}
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <header>
-                <h1>Backtest Analysis: {config.symbol}</h1>
-                <p>Strategy: {config.strategy_name} | Period: {config.start_date} to {config.end_date}</p>
-            </header>
-
-            <div class="section-title">Performance Metrics</div>
-            <div class="kpi-grid">
-                <div class="kpi-card success">
-                    <span class="label">Net Profit</span>
-                    <span class="value">${net_profit_usd:,.2f}</span>
-                    <span class="sub-value">Total Return on Capital</span>
-                </div>
-                <div class="kpi-card">
-                    <span class="label">Win Rate</span>
-                    <span class="value">{kpis.win_rate*100:.1f}%</span>
-                    <span class="sub-value">{kpis.wins} Wins / {kpis.losses} Losses</span>
-                </div>
-                <div class="kpi-card danger">
-                    <span class="label">Max Drawdown</span>
-                    <span class="value">{kpis.max_drawdown_pct:.2f}%</span>
-                    <span class="sub-value">Peak to Trough</span>
-                </div>
-                <div class="kpi-card purple">
-                    <span class="label">Profit Factor</span>
-                    <span class="value">{kpis.profit_factor:.2f}</span>
-                    <span class="sub-value">Σ Gross Profit / Σ Gross Loss</span>
-                </div>
-                <div class="kpi-card warning">
-                    <span class="label">Expectancy</span>
-                    <span class="value">{kpis.expectancy_r:.2f}R</span>
-                    <span class="sub-value">Average result per trade</span>
-                </div>
-                <div class="kpi-card">
-                    <span class="label">Sharpe Ratio</span>
-                    <span class="value">{kpis.sharpe_ratio:.2f}</span>
-                    <span class="sub-value">Risk-Adjusted Return</span>
-                </div>
-            </div>
-
-            {f'''
-            <div class="section-title">Bootstrap Statistical Analysis (Monte Carlo)</div>
-            <div class="kpi-grid">
-                <div class="kpi-card success">
-                    <span class="label">Net Profit (95% CI)</span>
-                    <span class="value">${bootstrap['net_profit_95_ci'][0]:,.0f} - ${bootstrap['net_profit_95_ci'][1]:,.0f}</span>
-                    <span class="sub-value">Probable range after {bootstrap['iterations']} iterations</span>
-                </div>
-                <div class="kpi-card danger">
-                    <span class="label">Drawdown (95% CI)</span>
-                    <span class="value">{bootstrap['max_drawdown_95_ci_pct'][0]:,.2f}% - {bootstrap['max_drawdown_95_ci_pct'][1]:,.2f}%</span>
-                    <span class="sub-value">Statistical Drawdown Risk</span>
-                </div>
-            </div>
-            ''' if has_bootstrap else ''}
-
-            <div class="section-title">Visual Analysis</div>
-            <div class="chart-container">
-                {plot_html}
-            </div>
-
-            <div class="summary-footer">
-                AssetManager v2.0 - Strategy Engine Output | Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-            </div>
-        </div>
-    </body>
-    </html>
-    """
-
-    
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(html_template)
-        
-    return output_path
+    _add_trade_table(pdf, backtest_result)
+    pdf.output(str(output))
+    return str(output)

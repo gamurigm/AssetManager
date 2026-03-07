@@ -43,6 +43,12 @@ export const TAB_COMPLETIONS = [
     'technical adx --symbol ', 'technical aroon --symbol ',
     'technical cones --symbol ',
     'technical relative_rotation --symbol ',
+    // Factor / Sector Analytics — Plotly charts
+    'analytics factor --tickers ',
+    'analytics factor --tickers AAPL,MSFT,NVDA,TSLA,META',
+    'analytics factor --tickers AAPL,MSFT,NVDA --benchmark SPY --days 252',
+    'analytics sector --tickers ',
+    'analytics sector --tickers AAPL,MSFT,NVDA,JPM,JNJ,XOM',
     'help', 'clear',
 ];
 

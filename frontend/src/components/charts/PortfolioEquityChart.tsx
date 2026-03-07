@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useEffect, useState, useCallback, useMemo } from "react";
+import { usePortfolio } from "@/context/PortfolioContext";
 import {
     AreaChart,
     Area,
@@ -21,6 +22,7 @@ interface EquityPoint {
 }
 
 export default function PortfolioEquityChart() {
+    const { accountEquity, realizedPnL } = usePortfolio();
     const [data, setData] = useState<EquityPoint[]>([]);
     const [loading, setLoading] = useState(true);
     const [brushRange, setBrushRange] = useState<{ startIndex: number; endIndex: number } | null>(null);
@@ -53,11 +55,40 @@ export default function PortfolioEquityChart() {
         }
     }, []);
 
+    const chartData = useMemo(() => {
+        if (!data.length) {
+            if (loading) return data;
+            return [{
+                time: Math.floor(Date.now() / 1000),
+                realized: 50000 + realizedPnL,
+                total: accountEquity,
+                pnl: realizedPnL,
+            }];
+        }
+
+        const liveTime = Math.floor(Date.now() / 1000);
+        const baseRealized = data[0]?.realized ?? 50000;
+        const liveRealized = 50000 + realizedPnL;
+        const livePoint: EquityPoint = {
+            time: liveTime,
+            realized: liveRealized,
+            total: accountEquity,
+            pnl: liveRealized - baseRealized,
+        };
+
+        const last = data[data.length - 1];
+        if (liveTime - last.time <= 60) {
+            return [...data.slice(0, -1), { ...last, ...livePoint }];
+        }
+
+        return [...data, livePoint];
+    }, [data, loading, accountEquity, realizedPnL]);
+
     // Derive the visible slice of data for the sub-chart
     const visibleData = useMemo(() => {
-        if (!brushRange || data.length === 0) return data;
-        return data.slice(brushRange.startIndex, brushRange.endIndex + 1);
-    }, [data, brushRange]);
+        if (!brushRange || chartData.length === 0) return chartData;
+        return chartData.slice(brushRange.startIndex, brushRange.endIndex + 1);
+    }, [chartData, brushRange]);
 
     const formatXAxis = (tick: number) => {
         const date = new Date(tick * 1000);
@@ -122,7 +153,7 @@ export default function PortfolioEquityChart() {
             {/* ── MAIN NAV CHART ── */}
             <div className="flex-1 min-h-0 relative">
                 <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={data} margin={{ top: 10, right: 10, left: 10, bottom: 0 }} syncId="portfolio-nav">
+                    <AreaChart data={chartData} margin={{ top: 10, right: 10, left: 10, bottom: 0 }} syncId="portfolio-nav">
                         <defs>
                             <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.3} />
@@ -186,7 +217,7 @@ export default function PortfolioEquityChart() {
                     <span className="text-[10px] font-black uppercase tracking-widest text-[#a855f7]">Logarithmic Realized P&L</span>
                 </div>
                 <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={data} margin={{ top: 0, right: 10, left: 10, bottom: 0 }} syncId="portfolio-nav">
+                    <AreaChart data={chartData} margin={{ top: 0, right: 10, left: 10, bottom: 0 }} syncId="portfolio-nav">
                         <defs>
                             <linearGradient id="colorPnl" x1="0" y1="0" x2="0" y2="1">
                                 <stop offset="5%" stopColor="#a855f7" stopOpacity={0.4} />

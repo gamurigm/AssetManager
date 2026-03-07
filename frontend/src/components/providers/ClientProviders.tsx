@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { PortfolioProvider } from "@/context/PortfolioContext";
+import { SocketProvider } from "@/context/SocketContext";
 import BackendGate from "@/components/layout/BackendGate";
 
 // Lazy-load heavy components that aren't needed for initial render
@@ -17,11 +18,13 @@ const GlobalSearch = dynamic(() => import("@/components/layout/GlobalSearch"), {
 export default function ClientProviders({ children }: { children: React.ReactNode }) {
     return (
         <BackendGate>
-            <PortfolioProvider>
-                <GlobalSearch />
-                {children}
-                <ChatWidget />
-            </PortfolioProvider>
+            <SocketProvider>
+                <PortfolioProvider>
+                    <GlobalSearch />
+                    {children}
+                    <ChatWidget />
+                </PortfolioProvider>
+            </SocketProvider>
         </BackendGate>
     );
 }

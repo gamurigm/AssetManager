@@ -9,8 +9,10 @@ import {
 } from "lucide-react";
 import { usePortfolio } from "@/context/PortfolioContext";
 import { getHeatmapColor, BRIGHT_BADGE_COLORS } from "@/lib/colors";
+import { formatAssetPrice, formatAssetPriceFixed } from "@/lib/marketFormatting";
 import type { DashboardHolding, TransactionRecord, TreemapItem, SectorItem } from "@/types/dashboard";
 import AssetSparkline from "@/components/dashboard/AssetSparkline";
+import PortfolioPolicyMonitor from "@/components/dashboard/PortfolioPolicyMonitor";
 
 const AssetTreemap = dynamic(() => import("@/components/charts/AssetTreemap"), {
     ssr: false,
@@ -20,6 +22,11 @@ const SectorPieChart = dynamic(() => import("@/components/charts/SectorPieChart"
     ssr: false,
     loading: () => <div className="h-[300px] flex items-center justify-center"><div className="h-6 w-6 border-2 border-accent border-t-transparent rounded-full animate-spin" /></div>,
 });
+const FactorAnalysisPanel = dynamic(() => import("@/components/dashboard/FactorAnalysisPanel"), {
+    ssr: false,
+    loading: () => <div className="h-[200px] flex items-center justify-center"><div className="h-6 w-6 border-2 border-accent border-t-transparent rounded-full animate-spin" /></div>,
+});
+
 const PortfolioEquityChart = dynamic(() => import("@/components/charts/PortfolioEquityChart"), {
     ssr: false,
     loading: () => (
@@ -54,7 +61,7 @@ export default function PortfolioView({
     riskData, transactions, treemapData, sectorData,
     collapsed, togglePanel, onSelectSymbol,
 }: PortfolioViewProps) {
-    const { holdings, setHoldings, closePosition, realizedPnL, unrealizedPnL } = usePortfolio();
+    const { holdings, setHoldings, closePosition, realizedPnL, unrealizedPnL, activePortfolio } = usePortfolio();
     const [isLight, setIsLight] = useState(false);
 
     useEffect(() => {
@@ -144,6 +151,8 @@ export default function PortfolioView({
                 />
             </div>
 
+            <PortfolioPolicyMonitor holdings={holdings} portfolioId={activePortfolio} />
+
             {/* BENTO GRID */}
             <div className="shrink-0 min-w-0 flex flex-col gap-4">
                 {/* NAV Chart (Full Width) */}
@@ -185,6 +194,22 @@ export default function PortfolioView({
                         <div className="p-4 flex-1 min-h-[400px]"><AssetTreemap data={treemapData} /></div>
                     </CollapsiblePanel>
                 </div>
+
+                {/* Factor Analysis Panel — CAPM, PCA, Covariance, Idiosyncratic Risk */}
+                {activeHoldings.length > 0 && (
+                    <div className="flex flex-col">
+                        <CollapsiblePanel
+                            id="factor-analysis"
+                            collapsed={collapsed}
+                            toggle={togglePanel}
+                            title="Factor Analysis — CAPM · PCA · Covariance · Idiosyncratic Risk"
+                            icon={<BarChart3 size={14} className="text-accent" />}
+                            badge={<span className="hidden sm:block text-[9px] text-muted font-black px-2 py-0.5 bg-background rounded border border-border tracking-tighter uppercase">SPY Benchmark</span>}
+                        >
+                            <FactorAnalysisPanel tickers={activeHoldings.map(h => h.symbol)} />
+                        </CollapsiblePanel>
+                    </div>
+                )}
             </div>
 
             {/* Positions Table */}
@@ -318,7 +343,7 @@ function PositionsTable({ activeHoldings, holdings, collapsed, togglePanel, onSe
                                             </div>
                                         </td>
                                         <td className="px-4 py-4 text-right"><span className="text-[10px] font-black uppercase tracking-widest px-2 py-0.5 bg-card-hover rounded border border-border/50">{h.type}</span></td>
-                                        <td className="px-4 py-4 text-right font-mono text-xs font-bold">{h.shares.toLocaleString()} <span className="text-muted text-[9px] font-black">× ${h.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span></td>
+                                        <td className="px-4 py-4 text-right font-mono text-xs font-bold">{h.shares.toLocaleString()} <span className="text-muted text-[9px] font-black">× ${formatAssetPrice(h.price, { symbol: h.symbol, sector: h.sector, assetType: h.type })}</span></td>
                                         <td className="px-4 py-4 text-right">
                                             <div className="flex flex-col items-end gap-0.5">
                                                 <span className={`text-sm font-black font-mono ${h.change >= 0 ? "text-green" : "text-red"}`}>{h.change >= 0 ? "+" : ""}${h.change.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
@@ -436,7 +461,7 @@ function ActivityPanel({ transactions, collapsed, togglePanel }: { transactions:
                                     </div>
                                     <div className="text-right flex flex-col">
                                         <span className="text-xs font-mono font-bold">${(t.price * t.shares).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
-                                        <span className="text-[9px] text-muted font-bold tracking-tighter">{t.shares} units @ ${t.price.toFixed(2)}</span>
+                                        <span className="text-[9px] text-muted font-bold tracking-tighter">{t.shares} units @ ${formatAssetPriceFixed(t.price, { symbol: t.symbol })}</span>
                                     </div>
                                 </div>
                             ))}

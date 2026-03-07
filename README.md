@@ -42,7 +42,7 @@
 
 ## 🚀 Quick Start (Node: Gravity-U)
 
-Execute the primary bootstrapping script from the root directory. This will concurrently lift the OpenBB Data Server, the FastAPI Backend, and the Next.js Frontend.
+Execute the primary bootstrapping script from the root directory. This now lifts the OpenBB Data Server, the standalone portfolio C++ service, the FastAPI Backend, and the Next.js Frontend.
 
 ```powershell
 .\run_app.ps1
@@ -52,7 +52,23 @@ Execute the primary bootstrapping script from the root directory. This will conc
 - 🟢 **Frontend Node:** `http://localhost:3309`
 - 🟢 **Core Backend FastAPI:** `http://localhost:8282`
 - 🟢 **OpenBB Gateway:** `http://localhost:6900`
+- 🟢 **Portfolio C++ Service:** `http://localhost:9092`
 - 🟢 **Swagger/OpenAPI:** `http://localhost:6900/docs`
+
+### Portfolio C++ Service Only
+
+If you want to launch the standalone portfolio engine without the rest of the stack:
+
+```powershell
+.\run_portfolio_cpp_service.ps1
+```
+
+The script will:
+- configure and build `portfolio_cpp_service` if the executable is missing
+- start the service on `http://127.0.0.1:9092`
+- set `PORTFOLIO_CPP_SERVICE_URL` in the current PowerShell session
+
+When `run_app.ps1` starts the backend, it forwards `PORTFOLIO_CPP_SERVICE_URL` to the FastAPI process so portfolio backtests can use the remote C++ engine. If the standalone service is unavailable, the backend falls back to embedded C++ or Python execution.
 
 ## 📊 Analytics Mechanics
 > *Gravity Asset Manager U does not provide financial advice. It is a research and analytical deployment node.*

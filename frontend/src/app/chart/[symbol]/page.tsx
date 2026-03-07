@@ -17,6 +17,7 @@ import { useMainChart } from "./useMainChart";
 import { useVolumeProfile } from "./useVolumeProfile";
 import { useTradingLines } from "./useTradingLines";
 import { useMeasureTool } from "./useMeasureTool";
+import { formatAssetPriceFixed } from "@/lib/marketFormatting";
 
 /* ─── Main Component ──────────────────────────────────────────────────── */
 
@@ -61,6 +62,7 @@ export default function ChartWindow() {
     const { loading, quote, rawData, chartOpts } = useChartData(symbol, timeframe, isLight);
 
     useMainChart(
+        symbol,
         rawData, chartOpts, chartState.mas,
         chartState.showFib, chartState.fibLookback,
         chartState.showBB, chartState.bbPeriod, chartState.bbMult,
@@ -92,8 +94,8 @@ export default function ChartWindow() {
     const holding = holdings.find(h => h.symbol === symbol);
     useEffect(() => {
         if (holding && !slTpLoadedRef.current) {
-            if (holding.sl != null && holding.sl > 0) setSlPrice(holding.sl.toFixed(4));
-            if (holding.tp != null && holding.tp > 0) setTpPrice(holding.tp.toFixed(4));
+            if (holding.sl != null && holding.sl > 0) setSlPrice(formatAssetPriceFixed(holding.sl, { symbol: holding.symbol, sector: holding.sector, assetType: holding.type }));
+            if (holding.tp != null && holding.tp > 0) setTpPrice(formatAssetPriceFixed(holding.tp, { symbol: holding.symbol, sector: holding.sector, assetType: holding.type }));
             slTpLoadedRef.current = true;
         }
         if (!holding) slTpLoadedRef.current = false;

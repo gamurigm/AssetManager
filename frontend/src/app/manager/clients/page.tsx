@@ -12,8 +12,29 @@ const STRATEGIES = [
         status: "Active (C++ / Rust Core)",
         accuracy: "98.5% (High Freq)",
         winRate: "72.4%",
-        latency: "<2ms"
-    }
+        latency: "<2ms",
+        description: "6-step Opening Range Breakout + Fair Value Gap engulfing. Intraday M5/M1 candles.",
+    },
+    {
+        id: 2,
+        name: "ICT Liquidity + Volume Profile",
+        type: "Institutional SMC",
+        status: "Active (Python Engine)",
+        accuracy: "—",
+        winRate: "—",
+        latency: "<50ms",
+        description: "Liquidity sweep detection combined with rolling Volume Profile (HVN/POC/VAH/VAL).",
+    },
+    {
+        id: 3,
+        name: "IV Regime (Black-Scholes Daily)",
+        type: "Volatility Regime",
+        status: "Active (Python Engine)",
+        accuracy: "—",
+        winRate: "—",
+        latency: "<200ms",
+        description: "Derives directional bias from implied volatility rank (percentile), Markov vol state and N-day price momentum. Uses BS inverse for live ATM IV.",
+    },
 ];
 
 export default function StrategiesPage() {
@@ -44,8 +65,7 @@ export default function StrategiesPage() {
                     <div className="bg-card border border-border rounded-2xl p-5 relative overflow-hidden">
                         <Cpu className="absolute -right-4 -bottom-4 text-border opacity-20" size={100} />
                         <p className="text-xs text-muted uppercase tracking-wider font-medium">Active Agents</p>
-                        <p className="text-2xl font-bold font-mono mt-2">{STRATEGIES.length}</p>
-                    </div>
+                        <p className="text-2xl font-bold font-mono mt-2">{STRATEGIES.length}</p>                    </div>
                     <div className="bg-card border border-border rounded-2xl p-5 relative overflow-hidden">
                         <Activity className="absolute -right-4 -bottom-4 text-green/20" size={100} />
                         <p className="text-xs text-muted uppercase tracking-wider font-medium">Avg Win Rate (Sim)</p>
@@ -95,7 +115,7 @@ export default function StrategiesPage() {
                                                     <p className="font-semibold">{strategy.name}</p>
                                                     <div className="flex items-center gap-1.5 mt-0.5">
                                                         <span className="h-1.5 w-1.5 rounded-full bg-green animate-pulse" />
-                                                        <p className="text-[10px] text-muted uppercase tracking-wider">Fix8 / Jesse-Rust Linked</p>
+                                                        <p className="text-[10px] text-muted uppercase tracking-wider max-w-xs truncate">{strategy.description ?? "Fix8 / Jesse-Rust Linked"}</p>
                                                     </div>
                                                 </div>
                                             </div>

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from "react";
 import { ISeriesApi, IChartApi } from "lightweight-charts";
+import { formatAssetPriceFixed } from "@/lib/marketFormatting";
 
 export function useTradingLines(
     symbol: string,
@@ -63,8 +64,8 @@ export function useTradingLines(
 
             const price = series.coordinateToPrice(y as any);
             if (price !== null) {
-                if (dragging === 'SL') setSlPrice(price.toFixed(4));
-                if (dragging === 'TP') setTpPrice(price.toFixed(4));
+                if (dragging === 'SL') setSlPrice(formatAssetPriceFixed(price, { symbol }));
+                if (dragging === 'TP') setTpPrice(formatAssetPriceFixed(price, { symbol }));
             }
         };
 
@@ -112,27 +113,29 @@ export function useTradingLines(
         const isLong = holding.shares > 0;
         const unrealized = (quote.price - ep) * holding.shares;
         const pnlStr = `${unrealized >= 0 ? '+' : ''}${unrealized.toFixed(2)}`;
+        const formattedEntry = formatAssetPriceFixed(ep, { symbol });
 
         if (!posLineRef.current) {
             posLineRef.current = candleSeries.createPriceLine({
                 price: ep, color: '#3b82f6', lineWidth: 2, lineStyle: 0,
-                axisLabelVisible: true, title: `POSITION: AVG ${ep.toFixed(2)} (${pnlStr} USD)`
+                axisLabelVisible: true, title: `POSITION: AVG ${formattedEntry} (${pnlStr} USD)`
             });
         } else {
-            posLineRef.current.applyOptions({ title: `POSITION: AVG ${ep.toFixed(2)} (${pnlStr} USD)`, price: ep });
+            posLineRef.current.applyOptions({ title: `POSITION: AVG ${formattedEntry} (${pnlStr} USD)`, price: ep });
         }
 
         const slVal = parseFloat(slPrice);
         if (!isNaN(slVal) && slVal > 0) {
             const slPnl = (slVal - ep) * holding.shares;
             const slPnlStr = `${slPnl >= 0 ? '+' : ''}${slPnl.toFixed(2)}`;
+            const formattedSl = formatAssetPriceFixed(slVal, { symbol });
             if (!slLineRef.current) {
                 slLineRef.current = candleSeries.createPriceLine({
                     price: slVal, color: '#ff1744', lineWidth: 2, lineStyle: 2,
-                    axisLabelVisible: true, title: `STOP LOSS: ${slVal.toFixed(2)} (${slPnlStr} USD)`
+                    axisLabelVisible: true, title: `STOP LOSS: ${formattedSl} (${slPnlStr} USD)`
                 });
             } else {
-                slLineRef.current.applyOptions({ title: `STOP LOSS: ${slVal.toFixed(2)} (${slPnlStr} USD)`, price: slVal });
+                slLineRef.current.applyOptions({ title: `STOP LOSS: ${formattedSl} (${slPnlStr} USD)`, price: slVal });
             }
 
             if ((isLong && quote.price <= slVal) || (!isLong && quote.price >= slVal)) {
@@ -148,13 +151,14 @@ export function useTradingLines(
         if (!isNaN(tpVal) && tpVal > 0) {
             const tpPnl = (tpVal - ep) * holding.shares;
             const tpPnlStr = `${tpPnl >= 0 ? '+' : ''}${tpPnl.toFixed(2)}`;
+            const formattedTp = formatAssetPriceFixed(tpVal, { symbol });
             if (!tpLineRef.current) {
                 tpLineRef.current = candleSeries.createPriceLine({
                     price: tpVal, color: '#00e676', lineWidth: 2, lineStyle: 2,
-                    axisLabelVisible: true, title: `TAKE PROFIT: ${tpVal.toFixed(2)} (${tpPnlStr} USD)`
+                    axisLabelVisible: true, title: `TAKE PROFIT: ${formattedTp} (${tpPnlStr} USD)`
                 });
             } else {
-                tpLineRef.current.applyOptions({ title: `TAKE PROFIT: ${tpVal.toFixed(2)} (${tpPnlStr} USD)`, price: tpVal });
+                tpLineRef.current.applyOptions({ title: `TAKE PROFIT: ${formattedTp} (${tpPnlStr} USD)`, price: tpVal });
             }
 
             if ((isLong && quote.price >= tpVal) || (!isLong && quote.price <= tpVal)) {

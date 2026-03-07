@@ -2,6 +2,8 @@
 
 import React, { useEffect, useState } from "react";
 import { LineChart, Line, ResponsiveContainer, YAxis, ReferenceLine } from "recharts";
+import { useSocket } from "@/context/SocketContext";
+import { formatAssetPriceFixed } from "@/lib/marketFormatting";
 
 const sparklineCache: Record<string, any[]> = {};
 
@@ -13,6 +15,7 @@ interface AssetSparklineProps {
 
 const AssetSparkline = React.memo(({ symbol, color, entryPrice }: AssetSparklineProps) => {
     const [data, setData] = useState<any[]>(sparklineCache[symbol] || []);
+    const { socket, connected } = useSocket();
 
     useEffect(() => {
         if (sparklineCache[symbol]?.length > 0) return;
@@ -32,6 +35,32 @@ const AssetSparkline = React.memo(({ symbol, color, entryPrice }: AssetSparkline
             .catch(() => { });
         return () => { isMounted = false; };
     }, [symbol]);
+
+    useEffect(() => {
+        if (!socket || !connected || !symbol) return;
+
+        socket.emit("join_symbol", symbol);
+
+        const onPriceUpdate = (payload: any) => {
+            if (String(payload?.symbol || "").toUpperCase() !== symbol.toUpperCase()) return;
+            if (typeof payload?.price !== "number") return;
+
+            setData(prev => {
+                const next = prev.length > 0
+                    ? [...prev.slice(0, -1), { v: payload.price }]
+                    : [{ v: payload.price }];
+                sparklineCache[symbol] = next;
+                return next;
+            });
+        };
+
+        socket.on("price_update", onPriceUpdate);
+
+        return () => {
+            socket.emit("leave_symbol", symbol);
+            socket.off("price_update", onPriceUpdate);
+        };
+    }, [socket, connected, symbol]);
 
     return (
         <div className="h-10 w-32 ml-auto relative group">
@@ -62,7 +91,7 @@ const AssetSparkline = React.memo(({ symbol, color, entryPrice }: AssetSparkline
                     {entryPrice && entryPrice > 0 && (
                         <div className="absolute -top-7 right-0 opacity-0 group-hover:opacity-100 transition-opacity bg-black/80 backdrop-blur-md px-2 py-1 flex items-center gap-2 rounded border border-border/50 text-[9px] font-mono whitespace-nowrap z-50 pointer-events-none shadow-xl">
                             <span className="text-muted font-bold uppercase tracking-tighter">Entry</span>
-                            <span style={{ color: color }}>${entryPrice.toFixed(2)}</span>
+                            <span style={{ color: color }}>${formatAssetPriceFixed(entryPrice, { symbol })}</span>
                         </div>
                     )}
                 </>

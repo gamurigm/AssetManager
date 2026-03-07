@@ -13,8 +13,10 @@ import plotly.graph_objects as go
 import plotly.express as px
 import pandas as pd
 import numpy as np
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Tuple
 from scipy.interpolate import griddata
+from scipy.fft import fft
+from scipy.integrate import quad
 from datetime import datetime, timedelta
 
 
@@ -801,3 +803,190 @@ class QuantModelsService:
 
         except Exception as e:
             return f"<div style='color:#ef4444; text-align:center; padding:40px;'>Relative Strength Error: {e}</div>"
+    
+    # ══════════════════════════════════════════════════════════════════════════
+    # 6 ─ CARR-MADAN FFT OPTION PRICING
+    # ══════════════════════════════════════════════════════════════════════════
+    async def get_fft_option_pricing(
+        self, 
+        symbol: str = "SPY", 
+        model: str = "heston", 
+        risk_free: float = 0.045
+    ) -> str:
+        """
+        Calculates European Call prices using the Carr-Madan FFT algorithm.
+        Allows for extremely fast pricing across thousands of strikes.
+        
+        X = Strike Price ($), Y = Option Price ($)
+        Comparison between Market Mid-Price and Theoretical Model (Heston or BS).
+        """
+        try:
+            import yfinance as yf
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period="1y")
+            S = hist['Close'].values[-1]
+            h_vol = hist['Close'].pct_change().std() * np.sqrt(252)
+
+            chain_data = self._yf_options_to_list(ticker)
+            if not chain_data:
+                # Mock data if none available (weekend or API limit)
+                strikes_mkt = np.linspace(S*0.8, S*1.2, 20)
+                prices_mkt = np.maximum(S - strikes_mkt, 0)
+                dte = 30
+            else:
+                df_mkt = pd.DataFrame(chain_data)
+                df_mkt = df_mkt[df_mkt['type'] == 'CALL'].sort_values('strike')
+                # Take the first expiration for clarity in 2D plot or multiple if we want 3D
+                first_dte = df_mkt['daysToExpiration'].unique()[0]
+                df_mkt = df_mkt[df_mkt['daysToExpiration'] == first_dte]
+                strikes_mkt = df_mkt['strike'].values
+                # We don't have Bid/Ask in _yf_options_to_list, we only have IV. 
+                # Calculating Mid from BS if unavailable, but let's try to get more data
+                # Actually, Black-Scholes surface already uses BS, we want to show THEORETICAL prices
+                dte = first_dte
+
+            T = dte / 365.0
+            r = risk_free
+
+            # FFT Parameters
+            N = 4096
+            delta_u = 0.25
+            alpha = 1.1 # Damping factor
+            
+            # Strike mapping
+            delta_k = (2 * np.pi) / (N * delta_u)
+            b = (N * delta_k) / 2
+            
+            # m range [0, N-1]
+            m = np.arange(N)
+            k_m = -b + m * delta_k
+            K_vals = np.exp(k_m)
+            
+            # u range: v_j = j * delta_u
+            j = np.arange(N)
+            v_j = j * delta_u
+            
+            # Weights for Simpson's rule
+            w = np.ones(N)
+            w[0] = 1/3
+            w[1:N-1:2] = 4/3
+            w[2:N-2:2] = 2/3
+            
+            # Model selection
+            if model == "heston":
+                # Heston params (typical values)
+                v0 = h_vol**2
+                kappa = 2.0  # Mean reversion speed
+                theta = h_vol**2 # Long run variance
+                sigma = 0.3  # Vol of vol
+                rho = -0.7   # Correlation
+                phi_func = lambda u: self._heston_char_func(u, S, T, r, 0.0, v0, kappa, theta, sigma, rho)
+            else:
+                # Black-Scholes
+                phi_func = lambda u: self._bs_char_func(u, S, T, r, 0.0, h_vol)
+
+            # Modified Characteristic Function
+            # psi(v) = exp(-rt) * phi(v - (alpha+1)i) / (alpha^2 + alpha - v^2 + i(2alpha+1)v)
+            def psi(v):
+                u_shifted = v - (alpha + 1) * 1j
+                denom = (alpha**2 + alpha - v**2 + 1j * (2 * alpha + 1) * v)
+                return np.exp(-r * T) * phi_func(u_shifted) / denom
+
+            psi_vals = psi(v_j)
+            
+            # FFT input
+            x = np.exp(1j * b * v_j) * psi_vals * delta_u * w
+            ff_res = fft(x)
+            
+            # Call price C(k_m) = exp(-alpha * k_m) / pi * Re(ff_res)
+            C_list = (np.exp(-alpha * k_m) / np.pi) * np.real(ff_res)
+            
+            # Filter reasonable range around S (S*0.5 to S*1.5)
+            mask = (K_vals > S * 0.5) & (K_vals < S * 1.5)
+            K_plot = K_vals[mask]
+            C_plot = C_list[mask]
+            
+            # Plotly Visualization
+            fig = go.Figure()
+            
+            # Theoretical Model
+            fig.add_trace(go.Scatter(
+                x=K_plot, y=C_plot,
+                mode='lines',
+                name=f'FFT Model: {model.upper()}',
+                line=dict(color='#22d3ee', width=3),
+                hovertemplate='Strike: $%{x:.2f}<br>Price: $%{y:.2f}'
+            ))
+            
+            # Market points (if available)
+            if len(strikes_mkt) > 0 and 'df_mkt' in locals():
+                from scipy.stats import norm
+                def bs_c(S, K, T, r, sigma):
+                    d1 = (np.log(S/K) + (r + sigma**2/2)*T) / (sigma*np.sqrt(T))
+                    d2 = d1 - sigma*np.sqrt(T)
+                    return S * norm.cdf(d1) - K * np.exp(-r*T) * norm.cdf(d2)
+                
+                mkt_mid = []
+                for idx, row in df_mkt.iterrows():
+                    mkt_mid.append(bs_c(S, row['strike'], T, r, row['impliedVolatility']))
+                
+                fig.add_trace(go.Scatter(
+                    x=strikes_mkt, y=mkt_mid,
+                    mode='markers',
+                    name='Market Mid (BS Proxy)',
+                    marker=dict(color='#fb923c', size=8, symbol='x'),
+                    hovertemplate='Market Strike: $%{x:.2f}<br>Market Price: $%{y:.2f}'
+                ))
+
+            fig.update_layout(
+                **_DARK_LAYOUT,
+                title=dict(
+                    text=f'⚡ CARR-MADAN FFT OPTION PRICING — {symbol.upper()} ({model.capitalize()})',
+                    x=0.5, font=dict(size=18, color="#f8fafc", family="Inter")
+                ),
+                xaxis=dict(title='Strike Price ($)', gridcolor='rgba(255,255,255,0.05)'),
+                yaxis=dict(title='Price ($)', gridcolor='rgba(255,255,255,0.05)'),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                margin=dict(t=100, b=150, l=60, r=40)
+            )
+
+            # Annotation for Quants
+            summary = (
+                f"<b>⚡ VALORACIÓN POR TRANSFORMADA DE FOURIER (Carr-Madan 1999)</b><br><br>"
+                f"<b>Modelo:</b> {model.upper()} | <b>Spot (S₀):</b> ${S:.2f} | <b>DTE:</b> {dte} días<br>"
+                f"<b>Configuración FFT:</b> N={N}, Δu={delta_u}, α={alpha}<br><br>"
+                f"<b>💡 Insight:</b> FFT permite calcular precios para <b>{N} strikes</b> simultáneamente en milisegundos.<br>"
+                f"• El modelo de {model.capitalize()} captura mejor {'la asimetría (skewness) y curtosis (vol of vol)' if model == 'heston' else 'la distribución log-normal estándar'}.<br>"
+                f"• Si el <b>SML (Skew)</b> es pronunciado, Heston se ajusta mejor que Black-Scholes."
+            )
+            fig.add_annotation(
+                text=summary, x=0.5, y=-0.25, xref='paper', yref='paper',
+                showarrow=False, align='center', font=dict(size=12, color='#cbd5e1', family='Inter'),
+                bgcolor='rgba(15,23,42,0.95)', bordercolor='rgba(34,211,238,0.6)',
+                borderwidth=1, borderpad=12,
+            )
+
+            return fig.to_html(full_html=False, include_plotlyjs='cdn', config={'responsive': True})
+
+        except Exception as e:
+            return f"<div style='color:#ef4444; text-align:center; padding:40px;'>FFT Pricing Error: {e}</div>"
+
+    def _bs_char_func(self, u, S, T, r, q, sigma):
+        """Standard Black-Scholes Characteristic Function."""
+        mu = np.log(S) + (r - q - 0.5 * sigma**2) * T
+        return np.exp(1j * u * mu - 0.5 * sigma**2 * u**2 * T)
+
+    def _heston_char_func(self, u, S, T, r, q, v0, kappa, theta, sigma, rho):
+        """Heston Stochastic Volatility Model Characteristic Function."""
+        # Derived from Heston (1993)
+        x = np.log(S)
+        a = kappa * theta
+        b = kappa
+        
+        d = np.sqrt((rho * sigma * u * 1j - b)**2 - sigma**2 * (-u * 1j - u**2))
+        g = (b - rho * sigma * u * 1j + d) / (b - rho * sigma * u * 1j - d)
+        
+        C = (r - q) * u * 1j * T + a / sigma**2 * ((b - rho * sigma * u * 1j + d) * T - 2 * np.log((1 - g * np.exp(d * T)) / (1 - g)))
+        D = (b - rho * sigma * u * 1j + d) / sigma**2 * ((1 - np.exp(d * T)) / (1 - g * np.exp(d * T)))
+        
+        return np.exp(C + D * v0 + 1j * u * x)

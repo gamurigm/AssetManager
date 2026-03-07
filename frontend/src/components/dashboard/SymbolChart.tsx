@@ -6,6 +6,7 @@ import { createChart, ColorType, CandlestickSeries, LineSeries, HistogramSeries,
 import { usePortfolio } from "@/context/PortfolioContext";
 import { useChartData } from "@/hooks/useChartData";
 import { calcEMA, calcMACD, calcStochastic, FIBONACCI_LEVELS, calcBollingerBands, calcIchimoku, calcRSI, calcVWAP, calcATR, calcKeltner, calcCCI, calcADX, calcParabolicSAR, calcSupertrend, calcWilliamsR, calcMFI, calcCMF } from "@/lib/indicators";
+import { formatAssetPrice, formatAssetPriceFixed, getChartPriceFormat } from "@/lib/marketFormatting";
 
 // ─── Props ──────────────────────────────────────────────────────────
 interface SymbolChartProps {
@@ -203,7 +204,7 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
         let savedRange: any = null;
         if (mainChartApi.current) {
             savedRange = mainChartApi.current.timeScale().getVisibleLogicalRange();
-            setTimeout(() => { try { mainChartApi.current?.remove(); } catch (e) { } }, 10);
+            try { mainChartApi.current.remove(); } catch (e) { }
             mainChartApi.current = null;
         }
 
@@ -212,9 +213,18 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
         const series = chart.addSeries(CandlestickSeries, {
             upColor: '#22c55e', downColor: '#ef4444', borderVisible: false,
             wickUpColor: '#22c55e', wickDownColor: '#ef4444',
+            priceFormat: getChartPriceFormat({ symbol }),
         });
         mainSeriesRef.current = series;
-        series.setData(candles.map(d => ({ time: d.date, open: d.open, high: d.high, low: d.low, close: d.close })));
+
+        const candleData = candles.map(d => ({
+            time: d.date,
+            open: d.open,
+            high: d.high,
+            low: d.low,
+            close: d.close
+        }));
+        series.setData(candleData);
 
         // Re-draw any existing custom fib if chart recreated
         const st = drawStateRef.current;
@@ -229,7 +239,7 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
         if (showEmas) {
             [{ period: ema1, color: '#fbbf24' }, { period: ema2, color: '#f472b6' }, { period: ema3, color: '#38bdf8' }].forEach(({ period, color }) => {
                 const emaData = calcEMA(closes, period);
-                chart.addSeries(LineSeries, { color, lineWidth: 2, priceLineVisible: false, crosshairMarkerVisible: false })
+                chart.addSeries(LineSeries, { color, lineWidth: 2, priceLineVisible: false, crosshairMarkerVisible: false, priceFormat: getChartPriceFormat({ symbol }) })
                     .setData(safeLine(times, emaData) as any);
             });
         }
@@ -242,7 +252,7 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
             const diff = high - low;
             FIBONACCI_LEVELS.forEach(l => {
                 const price = high - (diff * l.level);
-                chart.addSeries(LineSeries, { color: l.color, lineWidth: 1, lineStyle: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+                chart.addSeries(LineSeries, { color: l.color, lineWidth: 1, lineStyle: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false, priceFormat: getChartPriceFormat({ symbol }) })
                     .setData(candles.map(c => ({ time: c.date, value: price })));
             });
         }
@@ -250,24 +260,24 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
         // Bollinger Bands
         if (showBollinger && candles.length > 20) {
             const { upper, middle, lower } = calcBollingerBands(closes, 20, 2.0);
-            chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 1, lineStyle: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+            chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 1, lineStyle: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false, priceFormat: getChartPriceFormat({ symbol }) })
                 .setData(safeLine(times, upper) as any);
-            chart.addSeries(LineSeries, { color: '#a855f780', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+            chart.addSeries(LineSeries, { color: '#a855f780', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false, priceFormat: getChartPriceFormat({ symbol }) })
                 .setData(safeLine(times, middle) as any);
-            chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 1, lineStyle: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+            chart.addSeries(LineSeries, { color: '#a855f7', lineWidth: 1, lineStyle: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false, priceFormat: getChartPriceFormat({ symbol }) })
                 .setData(safeLine(times, lower) as any);
         }
 
         // Ichimoku Cloud
         if (showIchimoku && candles.length > 52) {
             const { tenkan, kijun, senkouA, senkouB } = calcIchimoku(highs, lows, closes);
-            chart.addSeries(LineSeries, { color: '#22d3ee', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+            chart.addSeries(LineSeries, { color: '#22d3ee', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false, priceFormat: getChartPriceFormat({ symbol }) })
                 .setData(safeLine(times, tenkan) as any);
-            chart.addSeries(LineSeries, { color: '#f97316', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+            chart.addSeries(LineSeries, { color: '#f97316', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false, priceFormat: getChartPriceFormat({ symbol }) })
                 .setData(safeLine(times, kijun) as any);
-            chart.addSeries(LineSeries, { color: '#22c55e80', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+            chart.addSeries(LineSeries, { color: '#22c55e80', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false, priceFormat: getChartPriceFormat({ symbol }) })
                 .setData(safeLine(times, senkouA) as any);
-            chart.addSeries(LineSeries, { color: '#ef444480', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+            chart.addSeries(LineSeries, { color: '#ef444480', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false, priceFormat: getChartPriceFormat({ symbol }) })
                 .setData(safeLine(times, senkouB) as any);
         }
 
@@ -275,25 +285,25 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
         if (showVwap && candles.length > 10) {
             const volumes = candles.map(d => (d as any).volume ?? 0) as number[];
             const vwap = calcVWAP(highs, lows, closes, volumes);
-            chart.addSeries(LineSeries, { color: '#eab308', lineWidth: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: true })
+            chart.addSeries(LineSeries, { color: '#eab308', lineWidth: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: true, priceFormat: getChartPriceFormat({ symbol }) })
                 .setData(safeLine(times, vwap) as any);
         }
 
         // Keltner Channels
         if (showKeltner && candles.length > 20) {
             const { upper, middle, lower } = calcKeltner(highs, lows, closes, 20, 10, 2.0);
-            chart.addSeries(LineSeries, { color: '#3b82f6', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+            chart.addSeries(LineSeries, { color: '#3b82f6', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false, priceFormat: getChartPriceFormat({ symbol }) })
                 .setData(safeLine(times, upper) as any);
-            chart.addSeries(LineSeries, { color: '#3b82f680', lineWidth: 1, lineStyle: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+            chart.addSeries(LineSeries, { color: '#3b82f680', lineWidth: 1, lineStyle: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false, priceFormat: getChartPriceFormat({ symbol }) })
                 .setData(safeLine(times, middle) as any);
-            chart.addSeries(LineSeries, { color: '#3b82f6', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+            chart.addSeries(LineSeries, { color: '#3b82f6', lineWidth: 1, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false, priceFormat: getChartPriceFormat({ symbol }) })
                 .setData(safeLine(times, lower) as any);
         }
 
         // Parabolic SAR
         if (showPsar && candles.length > 5) {
             const sar = calcParabolicSAR(highs, lows);
-            chart.addSeries(LineSeries, { color: '#ec4899', lineWidth: 2, lineStyle: 3, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: true })
+            chart.addSeries(LineSeries, { color: '#ec4899', lineWidth: 2, lineStyle: 3, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: true, priceFormat: getChartPriceFormat({ symbol }) })
                 .setData(safeLine(times, sar) as any);
         }
 
@@ -302,9 +312,9 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
             const { supertrend, dir } = calcSupertrend(highs, lows, closes);
             const upData = times.map((t, i) => (dir[i] === 1 && supertrend[i] !== null && !isNaN(supertrend[i]!)) ? { time: t, value: supertrend[i]! } : { time: t });
             const downData = times.map((t, i) => (dir[i] === -1 && supertrend[i] !== null && !isNaN(supertrend[i]!)) ? { time: t, value: supertrend[i]! } : { time: t });
-            chart.addSeries(LineSeries, { color: '#2dd4bf', lineWidth: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+            chart.addSeries(LineSeries, { color: '#2dd4bf', lineWidth: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false, priceFormat: getChartPriceFormat({ symbol }) })
                 .setData(upData as any);
-            chart.addSeries(LineSeries, { color: '#ef4444', lineWidth: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false })
+            chart.addSeries(LineSeries, { color: '#ef4444', lineWidth: 2, priceLineVisible: false, crosshairMarkerVisible: false, lastValueVisible: false, priceFormat: getChartPriceFormat({ symbol }) })
                 .setData(downData as any);
         }
 
@@ -312,10 +322,10 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
         const myHolding = holdings.find(h => h.symbol === symbol);
         const markers: any[] = [];
         if (myHolding && myHolding.purchaseDate) {
-            markers.push({ time: myHolding.purchaseDate, position: 'belowBar', color: '#22c55e', shape: 'arrowUp', text: `BOT @ ${myHolding.entryPrice.toFixed(2)}` });
+            markers.push({ time: myHolding.purchaseDate, position: 'belowBar', color: '#22c55e', shape: 'arrowUp', text: `BOT @ ${formatAssetPriceFixed(myHolding.entryPrice, { symbol: myHolding.symbol, sector: myHolding.sector, assetType: myHolding.type })}` });
         }
         transactions.filter(t => t.symbol === symbol && t.type === 'SELL').forEach(t => {
-            markers.push({ time: t.date, position: 'aboveBar', color: '#ef4444', shape: 'arrowDown', text: `SOLD @ ${t.price.toFixed(2)}` });
+            markers.push({ time: t.date, position: 'aboveBar', color: '#ef4444', shape: 'arrowDown', text: `SOLD @ ${formatAssetPriceFixed(t.price, { symbol: t.symbol })}` });
         });
         createSeriesMarkers(series, markers.sort((a, b) => {
             const timeA = typeof a.time === 'string' ? a.time : '';
@@ -342,7 +352,30 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
             try { chart.remove(); } catch (e) { }
             mainChartApi.current = null;
         };
-    }, [candles, chartOpts, showEmas, showFib, showBollinger, showIchimoku, showVwap, showKeltner, showPsar, showSupertrend, ema1, ema2, ema3, holdings, transactions]);
+    }, [symbol, chartOpts, showEmas, showFib, showBollinger, showIchimoku, showVwap, showKeltner, showPsar, showSupertrend, ema1, ema2, ema3, holdings, transactions]);
+
+    // Incremental data update effect (REAL-TIME)
+    useEffect(() => {
+        if (!mainSeriesRef.current || candles.length === 0) return;
+
+        const lastCandle = candles[candles.length - 1];
+        const formatted = {
+            time: lastCandle.date,
+            open: lastCandle.open,
+            high: lastCandle.high,
+            low: lastCandle.low,
+            close: lastCandle.close
+        };
+
+        try {
+            mainSeriesRef.current.update(formatted);
+        } catch (e) {
+            // Fallback to setData if update fails (e.g. time mismatch)
+            mainSeriesRef.current.setData(candles.map(d => ({
+                time: d.date, open: d.open, high: d.high, low: d.low, close: d.close
+            })));
+        }
+    }, [candles]);
 
     // ─── Sub-chart builder helper ─────────────────────────────────
     const buildSubChart = (ref: React.RefObject<HTMLDivElement | null>, height: number, builder: (chart: IChartApi, times: string[]) => void, deps: any[]) => {
@@ -542,7 +575,7 @@ export default function SymbolChart({ symbol, showFib: propShowFib, showBollinge
                     </div>
                     {quote && (
                         <div className="flex items-center gap-3 ml-4 pl-4 border-l border-border">
-                            <span className="text-xl font-mono font-black">${quote.price.toFixed(2)}</span>
+                            <span className="text-xl font-mono font-black">${formatAssetPrice(quote.price, { symbol })}</span>
                             <div className={`flex items-center gap-1 text-xs font-black px-2 py-0.5 rounded-md ${quote.changePercentage >= 0 ? "bg-green/20 text-green" : "bg-red/20 text-red"}`}>
                                 {quote.changePercentage >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
                                 {quote.changePercentage.toFixed(2)}%

@@ -144,5 +144,123 @@ class FinancialMathCore:
         prices = np.asarray(prices, dtype=np.float64)
         return np.diff(np.log(prices))
 
+    # ── CAPM (Capital Asset Pricing Model) ──────────────────────────
+    @staticmethod
+    def calculate_capm(asset_returns: np.ndarray, market_returns: np.ndarray, risk_free_rate_annual: float = 0.04) -> Tuple[float, float, float]:
+        """
+        CAPM Regression
+        R_i = R_f + Beta * (R_m - R_f) + Alpha + error
+
+        Returns:
+            Beta (market sensitivity)
+            Alpha (daily abnormal return)
+            Expected Return (annualized based on CAPM)
+        """
+        if len(asset_returns) < 2 or len(asset_returns) != len(market_returns):
+            return 0.0, 0.0, 0.0
+
+        covariance = np.cov(asset_returns, market_returns)[0][1]
+        market_variance = np.var(market_returns, ddof=1)
+        
+        if market_variance == 0:
+            return 0.0, 0.0, 0.0
+            
+        beta = covariance / market_variance
+        alpha = np.mean(asset_returns) - (beta * np.mean(market_returns))
+        
+        # CAPM expected return (annualized)
+        market_return_annual = np.mean(market_returns) * 252.0
+        expected_return_annual = risk_free_rate_annual + beta * (market_return_annual - risk_free_rate_annual)
+        
+        return float(beta), float(alpha), float(expected_return_annual)
+
+    # ── Idiosyncratic Risk ──────────────────────────────────────────
+    @staticmethod
+    def calculate_idiosyncratic_risk(asset_returns: np.ndarray, market_returns: np.ndarray) -> float:
+        """
+        Idiosyncratic Risk (annualized volatility of the residuals).
+        Returns variance of (asset_returns - (alpha + beta * market_returns)).
+        """
+        if len(asset_returns) < 2 or len(asset_returns) != len(market_returns):
+            return 0.0
+
+        covariance = np.cov(asset_returns, market_returns)[0][1]
+        market_variance = np.var(market_returns, ddof=1)
+        
+        if market_variance == 0:
+            return float(np.std(asset_returns, ddof=1) * np.sqrt(252.0))
+            
+        beta = covariance / market_variance
+        alpha = np.mean(asset_returns) - (beta * np.mean(market_returns))
+        
+        predicted_returns = alpha + beta * market_returns
+        residuals = asset_returns - predicted_returns
+        
+        # Annualized idiosyncratic volatility
+        idiosyncratic_volatility = np.std(residuals, ddof=1) * np.sqrt(252.0)
+        return float(idiosyncratic_volatility)
+
+    # ── Covariance Matrix ───────────────────────────────────────────
+    @staticmethod
+    def calculate_covariance_matrix(returns_dict: Dict[str, np.ndarray]) -> Tuple[List[str], np.ndarray]:
+        """
+        Calculates the covariance matrix across multiple assets.
+        Ensures all arrays are of the same length (pads or truncates to match).
+        Returns:
+            headers: List of asset symbols
+            cov_matrix: Annualized covariance matrix
+        """
+        tickers = list(returns_dict.keys())
+        if not tickers:
+            return [], np.array([])
+            
+        # Align lengths
+        min_len = min(len(arr) for arr in returns_dict.values())
+        if min_len < 2:
+            return tickers, np.zeros((len(tickers), len(tickers)))
+            
+        aligned_returns = [returns_dict[t][-min_len:] for t in tickers]
+        matrix = np.vstack(aligned_returns)
+        
+        # Annualized covariance matrix
+        cov_matrix = np.cov(matrix) * 252.0
+        return tickers, cov_matrix
+
+    # ── PCA Spectral Decomposition ──────────────────────────────────
+    @staticmethod
+    def calculate_pca(returns_dict: Dict[str, np.ndarray]) -> Dict[str, Any]:
+        """
+        Performs Principal Component Analysis via Eigen-decomposition of correlation matrix.
+        """
+        tickers, cov_matrix = FinancialMathCore.calculate_covariance_matrix(returns_dict)
+        n = len(tickers)
+        if n < 2:
+            return {"eigenvalues": [], "eigenvectors": [], "cumulative_variance": []}
+            
+        # Convert Covariance to Correlation matrix for PCA
+        stds = np.sqrt(np.diag(cov_matrix))
+        # Handle zero division
+        stds[stds == 0] = 1.0
+        corr_matrix = cov_matrix / np.outer(stds, stds)
+        
+        eigenvalues, eigenvectors = np.linalg.eigh(corr_matrix)
+        
+        # Sort in descending order
+        sorted_idx = np.argsort(eigenvalues)[::-1]
+        eigenvalues = eigenvalues[sorted_idx]
+        eigenvectors = eigenvectors[:, sorted_idx]
+        
+        total_var = np.sum(eigenvalues)
+        explained_variance = eigenvalues / total_var
+        cumulative_variance = np.cumsum(explained_variance)
+        
+        return {
+            "eigenvalues": eigenvalues.tolist(),
+            "explained_variance": explained_variance.tolist(),
+            "cumulative_variance": cumulative_variance.tolist(),
+            "components": eigenvectors.tolist(),
+            "tickers": tickers
+        }
+
 
 math_core = FinancialMathCore()

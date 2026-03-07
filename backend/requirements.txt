@@ -25,6 +25,12 @@ pandas
 hmmlearn
 scikit-learn
 plotly
+fpdf2
+matplotlib
 duckduckgo-search
 beautifulsoup4
 lxml
+ib_insync
+crochet
+ctrader-open-api
+service_identity

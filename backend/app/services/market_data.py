@@ -4,6 +4,7 @@ Now with Token Bucket Rate Limiting and DuckDB persistence.
 """
 
 from typing import Dict, Any, Optional, Union
+from datetime import date, datetime, timedelta
 from .fmp_service import fmp_service
 from .twelve_data_service import twelve_data_service
 from .alpha_vantage_service import alpha_vantage_service
@@ -26,6 +27,10 @@ cache = Cache(CACHE_DIR)
 
 class MarketDataService:
     CACHE_QUOTE_TTL = 90    # 90s cache — reduces provider calls significantly
+    _INTRADAY_COVERAGE_HINT = (
+        "Yahoo Finance only exposes about 7 days of 1m candles and about 1 month of 5m candles. "
+        "Load longer intraday history into DuckDB first or use a provider like Polygon for the full range."
+    )
 
     # Common crypto base symbols for auto-detection
     _CRYPTO_BASES = {
@@ -242,6 +247,113 @@ class MarketDataService:
                 return fmp_data
 
         return {"error": f"Historical data unavailable for {symbol}."}
+
+    @staticmethod
+    def _validate_intraday_coverage(
+        candles: list[dict],
+        start: str,
+        end: str,
+        interval: str,
+        tolerance_days: int = 7,
+    ) -> dict:
+        if not candles:
+            raise ValueError(
+                f"No {interval} candles available for {start} -> {end}."
+            )
+
+        requested_start = date.fromisoformat(start)
+        requested_end = date.fromisoformat(end)
+        available_start = datetime.fromisoformat(candles[0]["timestamp"].replace("Z", "")).date()
+        available_end = datetime.fromisoformat(candles[-1]["timestamp"].replace("Z", "")).date()
+
+        tolerance = timedelta(days=tolerance_days)
+        starts_too_late = available_start > (requested_start + tolerance)
+        ends_too_early = available_end < (requested_end - tolerance)
+
+        if starts_too_late or ends_too_early:
+            raise ValueError(
+                f"Insufficient {interval} coverage for backfill {start} -> {end}. "
+                f"Available {interval} data spans {available_start} -> {available_end}. "
+                f"{MarketDataService._INTRADAY_COVERAGE_HINT}"
+            )
+
+        return {
+            "available_start": available_start.isoformat(),
+            "available_end": available_end.isoformat(),
+        }
+
+    @staticmethod
+    async def backfill_intraday_range(
+        symbol: str,
+        start: str,
+        end: str,
+        intervals: Union[list[str], tuple[str, ...]] = ("1m", "5m"),
+    ) -> dict:
+        """
+        Ensure long-range intraday history exists in DuckDB.
+
+        This path is intentionally strict: it does not fall back to Yahoo because
+        Yahoo can return recent-only slices for long ranges and poison yearly backtests.
+        """
+        normalized_intervals = tuple(dict.fromkeys(intervals))
+        unsupported = [interval for interval in normalized_intervals if interval not in {"1m", "5m"}]
+        if unsupported:
+            raise ValueError(
+                f"Unsupported intraday intervals for backfill: {', '.join(unsupported)}. Use 1m and/or 5m."
+            )
+
+        start_ts = f"{start} 00:00:00"
+        end_ts = f"{end} 23:59:59"
+        polygon_symbol = MarketDataService._normalize_symbol(symbol, "polygon")
+        results: dict[str, dict[str, Any]] = {}
+
+        for interval in normalized_intervals:
+            candles = intraday_repository.get(symbol, interval, start_ts, end_ts)
+            used_cache = False
+            inserted = 0
+
+            if candles:
+                try:
+                    coverage = MarketDataService._validate_intraday_coverage(candles, start, end, interval)
+                    used_cache = True
+                except ValueError:
+                    candles = []
+
+            if not candles:
+                polygon_result = await polygon_service.get_intraday(
+                    polygon_symbol,
+                    interval,
+                    start,
+                    end,
+                )
+                if not polygon_result or "error" in polygon_result:
+                    error_message = (
+                        polygon_result.get("error", "Polygon returned no intraday data.")
+                        if isinstance(polygon_result, dict)
+                        else "Polygon returned no intraday data."
+                    )
+                    raise ValueError(
+                        f"Polygon backfill failed for {symbol} {interval}: {error_message}"
+                    )
+
+                candles = polygon_result.get("candles", [])
+                coverage = MarketDataService._validate_intraday_coverage(candles, start, end, interval)
+                inserted = intraday_repository.save(symbol, interval, candles, source="polygon")
+
+            results[interval] = {
+                "status": "cached" if used_cache else "downloaded",
+                "count": len(candles),
+                "inserted": inserted,
+                **coverage,
+            }
+
+        return {
+            "symbol": symbol,
+            "start_date": start,
+            "end_date": end,
+            "source": "DuckDB (Intraday Backfill)",
+            "intervals": results,
+        }
 
     @staticmethod
     async def get_intraday(

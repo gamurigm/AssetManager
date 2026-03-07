@@ -1,7 +1,11 @@
-from fastapi import APIRouter, Body, Query
-from typing import List, Dict, Any
+from fastapi import APIRouter, Body, HTTPException, Query
+from pydantic import BaseModel, Field
+from typing import List, Dict, Any, Optional
 from ...services.report_service import report_service
 from ...services.risk_service import risk_service
+from ...services.portfolio_backtest_service import portfolio_backtest_service
+from ...services.portfolio_policy_service import portfolio_policy_service
+from ...services.portfolio_rebalance_service import portfolio_rebalance_service
 
 from ...core.container import duckdb_repo, calculate_equity_curve_uc
 
@@ -21,6 +25,64 @@ INITIAL_HOLDINGS = [
 ]
 
 router = APIRouter()
+
+
+class PortfolioBacktestAssetRequest(BaseModel):
+    symbol: str = Field(..., examples=["AAPL"])
+    weight: Optional[float] = Field(default=None, ge=0)
+    factor: float = Field(default=1.0, gt=0)
+    name: Optional[str] = Field(default=None)
+
+
+class PortfolioBacktestRequest(BaseModel):
+    start_date: str = Field(..., examples=["2024-01-02"])
+    end_date: str = Field(..., examples=["2024-12-31"])
+    initial_cash: float = Field(default=10_000.0, gt=0)
+    portfolio_id: Optional[str] = Field(default=None, examples=["main"])
+    assets: List[PortfolioBacktestAssetRequest] = Field(default_factory=list)
+    rebalance_frequency: str = Field(default="none", examples=["none", "monthly"])
+    fee_bps: float = Field(default=0.0, ge=0, le=500)
+    execution_mode: str = Field(default="auto", examples=["auto", "remote", "cpp", "python"])
+
+
+class PortfolioPolicyHoldingRequest(BaseModel):
+    symbol: str = Field(..., examples=["AAPL"])
+    name: Optional[str] = Field(default=None)
+    shares: float = Field(...)
+    price: float = Field(default=0.0)
+    entryPrice: float = Field(default=0.0)
+    factor: float = Field(default=1.0, gt=0)
+    sector: Optional[str] = Field(default=None)
+    type: Optional[str] = Field(default=None)
+    purchaseDate: Optional[str] = Field(default=None)
+
+
+class PortfolioPolicyRequest(BaseModel):
+    portfolio_id: str = Field(default="main", examples=["main"])
+    holdings: Optional[List[PortfolioPolicyHoldingRequest]] = Field(default=None)
+    benchmark: str = Field(default="SPY", examples=["SPY"])
+    lookback_days: int = Field(default=252, ge=30, le=756)
+    risk_aversion: float = Field(default=0.35, ge=0, le=3)
+    turnover_penalty: float = Field(default=0.08, ge=0, le=1)
+    max_weight: float = Field(default=0.35, gt=0, le=1)
+    gross_limit: float = Field(default=1.0, gt=0, le=2)
+
+
+class PortfolioPolicyAllocationRequest(BaseModel):
+    symbol: str = Field(..., examples=["AAPL"])
+    price: float = Field(default=0.0)
+    factor: float = Field(default=1.0, gt=0)
+    delta_shares: float = Field(default=0.0)
+    target_notional: Optional[float] = Field(default=None)
+    action: Optional[str] = Field(default=None)
+
+
+class PortfolioPolicyApplyRequest(BaseModel):
+    portfolio_id: str = Field(default="main", examples=["main"])
+    holdings: Optional[List[PortfolioPolicyHoldingRequest]] = Field(default=None)
+    allocations: List[PortfolioPolicyAllocationRequest] = Field(default_factory=list)
+    symbols: Optional[List[str]] = Field(default=None)
+    trade_date: Optional[str] = Field(default=None)
 
 @router.get("/")
 async def get_portfolios(portfolio_id: str = Query("main", description="Target portfolio to load")):
@@ -47,6 +109,76 @@ async def save_portfolio(
     """Persist current holdings to DuckDB."""
     success = duckdb_repo.save_portfolio(holdings, portfolio_id)
     return {"status": "success" if success else "failed"}
+
+
+@router.post("/backtest")
+async def run_portfolio_backtest(request: PortfolioBacktestRequest):
+    """
+    Buy a weighted basket on the first available trading day in the range and backtest it.
+
+    Input can come either from:
+      - `assets`: manual weighted basket
+      - `portfolio_id`: current persisted holdings converted to long-only weights
+    """
+    if request.start_date >= request.end_date:
+        raise HTTPException(status_code=400, detail="start_date must be before end_date")
+
+    result = await portfolio_backtest_service.run_backtest(
+        start_date=request.start_date,
+        end_date=request.end_date,
+        initial_cash=request.initial_cash,
+        assets=[asset.model_dump(exclude_none=True) for asset in request.assets],
+        portfolio_id=request.portfolio_id,
+        rebalance_frequency=request.rebalance_frequency,
+        fee_bps=request.fee_bps,
+        execution_mode=request.execution_mode,
+    )
+    if "error" in result:
+        detail = str(result["error"])
+        status = 404 if "historical data" in detail.lower() else 422
+        raise HTTPException(status_code=status, detail=detail)
+    return result
+
+
+@router.get("/backtest/engines")
+async def get_portfolio_backtest_engines():
+    """Describe which portfolio backtest execution engines are currently available."""
+    return await portfolio_backtest_service.describe_execution_engines()
+
+
+@router.post("/policy")
+async def get_portfolio_policy(request: PortfolioPolicyRequest):
+    """Continuous EV-maximizing policy snapshot for the live portfolio state."""
+    snapshot = portfolio_policy_service.build_policy_snapshot(
+        portfolio_id=request.portfolio_id,
+        holdings=[holding.model_dump(exclude_none=True) for holding in request.holdings] if request.holdings else None,
+        benchmark=request.benchmark,
+        lookback_days=request.lookback_days,
+        risk_aversion=request.risk_aversion,
+        turnover_penalty=request.turnover_penalty,
+        max_weight=request.max_weight,
+        gross_limit=request.gross_limit,
+    )
+    if "error" in snapshot:
+        detail = str(snapshot["error"])
+        status = 404 if "history" in detail.lower() or "holdings" in detail.lower() else 422
+        raise HTTPException(status_code=status, detail=detail)
+    return snapshot
+
+
+@router.post("/policy/apply")
+async def apply_portfolio_policy(request: PortfolioPolicyApplyRequest):
+    """Apply one or more live portfolio policy allocations to the persisted portfolio and record transactions."""
+    result = portfolio_rebalance_service.apply_policy_rebalance(
+        portfolio_id=request.portfolio_id,
+        holdings=[holding.model_dump(exclude_none=True) for holding in request.holdings] if request.holdings else None,
+        allocations=[allocation.model_dump(exclude_none=True) for allocation in request.allocations],
+        symbols=request.symbols,
+        trade_date=request.trade_date,
+    )
+    if "error" in result:
+        raise HTTPException(status_code=422, detail=str(result["error"]))
+    return result
 
 @router.get("/risk")
 async def get_portfolio_risk(portfolio_id: str = Query("main", description="Target portfolio")):

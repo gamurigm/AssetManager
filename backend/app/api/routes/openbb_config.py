@@ -9,6 +9,9 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from pathlib import Path
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from ...services.asset_classification_service import classify_assets
 
 def _load_prompt(filename: str) -> str:
     """Load Markdown prompt from the prompts directory."""
@@ -63,6 +66,258 @@ def _format_dict(d: dict, indent: int = 0) -> str:
         else:
             lines.append(f"{prefix}{k}: {v}")
     return "\n".join(lines)
+
+
+# ─── Factor Analysis / Sector Correlation chart builder ───────────────────────
+async def _generate_factor_html(tickers_str: str, benchmark: str = "SPY", days: int = 252) -> str:
+    """Fetch data, compute CAPM + PCA + sector correlations, return Plotly full-HTML."""
+    from ...services.math_core import math_core  # local import to avoid circular
+
+    tickers = [t.strip().upper() for t in tickers_str.split(",") if t.strip()]
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=days)
+    asset_classifications = await classify_assets(tickers, benchmark=benchmark)
+
+    # ── Fetch returns from DuckDB ───────────────────────────────────
+    needed_sector_etfs = {asset_classifications[t]["sector_etf"] for t in tickers if t in asset_classifications}
+    symbols_to_load = list(set(tickers + [benchmark] + list(needed_sector_etfs)))
+
+    all_returns: dict[str, np.ndarray] = {}
+    conn = duckdb_repo._connect(read_only=True)
+    try:
+        for sym in symbols_to_load:
+            df = conn.execute(
+                "SELECT date, close FROM ohlcv WHERE symbol = ? AND date >= ? ORDER BY date ASC",
+                [sym, start_date.date()],
+            ).df()
+            if not df.empty and len(df) > 10:
+                df["returns"] = df["close"].pct_change().fillna(0)
+                all_returns[sym] = df["returns"].values
+    finally:
+        conn.close()
+
+    # Fetch missing sector ETFs from yfinance
+    missing_etfs = [e for e in needed_sector_etfs if e not in all_returns]
+    if missing_etfs:
+        try:
+            import yfinance as yf
+            for etf in missing_etfs:
+                hist = yf.download(etf, start=start_date.strftime("%Y-%m-%d"),
+                                   end=end_date.strftime("%Y-%m-%d"), progress=False, auto_adjust=True)
+                if not hist.empty and len(hist) > 10:
+                    all_returns[etf] = hist["Close"].squeeze().pct_change().fillna(0).values
+        except Exception:
+            pass
+
+    valid_tickers = [t for t in tickers if t in all_returns]
+    if not valid_tickers or benchmark not in all_returns:
+        return "<html><body style='background:#0f172a;color:#ef4444;font-family:monospace;padding:40px'>" \
+               "<h2>⚠ No data available</h2><p>Make sure tickers are in DuckDB and benchmark is cached.</p></body></html>"
+
+    market_returns = all_returns[benchmark]
+    returns_dict = {t: all_returns[t] for t in valid_tickers}
+
+    # ── CAPM + Idiosyncratic Risk ───────────────────────────────────
+    asset_metrics: list[dict] = []
+    for t in valid_tickers:
+        a = all_returns[t]
+        min_len = min(len(a), len(market_returns))
+        av, mv = a[-min_len:], market_returns[-min_len:]
+        beta, alpha, exp_ret = math_core.calculate_capm(av, mv)
+        idio = math_core.calculate_idiosyncratic_risk(av, mv)
+        total_vol = float(np.std(av, ddof=1) * np.sqrt(252))
+        sys_risk = abs(beta) * float(np.std(mv, ddof=1) * np.sqrt(252))
+        asset_metrics.append(dict(
+            ticker=t, beta=beta, alpha=alpha,
+            exp_ret_pct=exp_ret * 100, idio_pct=idio * 100,
+            sys_pct=sys_risk * 100, vol_pct=total_vol * 100,
+            a_ret=av, m_ret=mv,
+        ))
+
+    # ── PCA ─────────────────────────────────────────────────────────
+    pca = math_core.calculate_pca(returns_dict)
+
+    # ── Sector Correlations ──────────────────────────────────────────
+    sector_corrs = []
+    for t in valid_tickers:
+        classification = asset_classifications.get(t, {})
+        etf = classification.get("sector_etf", benchmark)
+        etf_used = etf if etf in all_returns else benchmark
+        a = all_returns[t]; e = all_returns[etf_used]
+        min_len = min(len(a), len(e))
+        try:
+            corr = float(np.corrcoef(a[-min_len:], e[-min_len:])[0, 1])
+        except Exception:
+            corr = 0.0
+        sector_corrs.append(dict(
+            ticker=t, etf=etf_used,
+            sector=classification.get("sector", "Unclassified"),
+            industry_group=classification.get("industry_group", "Unclassified"),
+            industry=classification.get("industry", "Unclassified"),
+            sub_industry=classification.get("sub_industry", "Unclassified"),
+            corr=corr, r2=corr ** 2,
+        ))
+    sector_corrs.sort(key=lambda x: (x["sector"], x["industry_group"], -x["corr"]))
+
+    # ── PLOT ─────────────────────────────────────────────────────────
+    PALETTE = ["#22d3ee","#a78bfa","#34d399","#f59e0b","#f87171",
+               "#60a5fa","#e879f9","#4ade80","#fb923c","#94a3b8","#fde68a","#6ee7b7"]
+    DARK_BG   = "#0a0f1a"
+    CARD_BG   = "#111827"
+    GRID_CLR  = "rgba(255,255,255,0.055)"
+    TEXT_CLR  = "#9ca3af"
+    TITLE_CLR = "#e5e7eb"
+
+    fig = make_subplots(
+        rows=2, cols=2,
+        subplot_titles=[
+            f"Sector Correlation (ρ) vs SPDR ETF  ·  {days}d",
+            "PCA Scree — Variance Explained",
+            f"CAPM Regression  ·  Benchmark: {benchmark}",
+            "Risk / Return Profile (CAPM)",
+        ],
+        vertical_spacing=0.14,
+        horizontal_spacing=0.10,
+        specs=[[{"type": "bar"}, {"type": "xy"}],
+               [{"type": "xy"}, {"type": "xy"}]],
+    )
+
+    # Panel 1 — Sector Correlation horizontal bars
+    for i, sc in enumerate(sector_corrs):
+        color = PALETTE[i % len(PALETTE)]
+        corr_val = sc["corr"]
+        fig.add_trace(go.Bar(
+            name=sc["ticker"],
+            y=[sc["ticker"]],
+            x=[round(corr_val, 4)],
+            orientation="h",
+            marker_color=color,
+            text=[f"ρ={corr_val:.3f}  R²={sc['r2']:.3f}  [{sc['etf']}]"],
+            textposition="outside",
+            textfont=dict(size=9, color=TEXT_CLR),
+            hovertemplate=(
+                f"<b>{sc['ticker']}</b><br>"
+                f"Sector: {sc['sector']}<br>"
+                f"Group: {sc['industry_group']}<br>"
+                f"Industry: {sc['industry']}<br>"
+                f"Sub-Industry: {sc['sub_industry']}<br>"
+                f"ETF: {sc['etf']}<br>"
+                f"ρ = {corr_val:.4f}<br>"
+                "<extra></extra>"
+            ),
+            showlegend=False,
+        ), row=1, col=1)
+    fig.add_vline(x=0.7, line_dash="dot", line_color="rgba(255,255,255,0.15)",
+                  annotation_text="ρ=0.7", annotation_font_size=8,
+                  annotation_font_color=TEXT_CLR, row=1, col=1)
+
+    # Panel 2 — PCA Scree
+    pc_labels = [f"PC{i+1}" for i in range(len(pca["eigenvalues"]))]
+    expl_pct  = [v * 100 for v in pca["explained_variance"]]
+    cum_pct   = [v * 100 for v in pca["cumulative_variance"]]
+    fig.add_trace(go.Bar(
+        x=pc_labels, y=expl_pct, name="Explained %",
+        marker_color="#22d3ee", opacity=0.7, showlegend=False,
+        hovertemplate="%{x}: %{y:.2f}%<extra></extra>",
+    ), row=1, col=2)
+    fig.add_trace(go.Scatter(
+        x=pc_labels, y=cum_pct, name="Cumulative %",
+        mode="lines+markers", line=dict(color="#a78bfa", width=2),
+        marker=dict(size=6, symbol="circle"), showlegend=False,
+        hovertemplate="%{x} cum: %{y:.2f}%<extra></extra>",
+    ), row=1, col=2)
+
+    # Panel 3 — CAPM scatter (all assets, colour per asset)
+    for i, m in enumerate(asset_metrics):
+        color = PALETTE[i % len(PALETTE)]
+        # subsample for perf
+        step = max(1, len(m["m_ret"]) // 120)
+        fig.add_trace(go.Scatter(
+            x=m["m_ret"][::step], y=m["a_ret"][::step],
+            mode="markers", name=m["ticker"],
+            marker=dict(color=color, size=3, opacity=0.4),
+            showlegend=True,
+            hovertemplate=f"{m['ticker']}<extra></extra>",
+        ), row=2, col=1)
+        # best-fit line
+        x_fit = np.array([np.percentile(m["m_ret"], 3), np.percentile(m["m_ret"], 97)])
+        y_fit = m["alpha"] + m["beta"] * x_fit
+        fig.add_trace(go.Scatter(
+            x=x_fit, y=y_fit, mode="lines",
+            line=dict(color=color, width=1.5, dash="dot"),
+            showlegend=False,
+        ), row=2, col=1)
+
+    # Panel 4 — Risk / Return bubble
+    for i, m in enumerate(asset_metrics):
+        fig.add_trace(go.Scatter(
+            x=[m["beta"]], y=[m["exp_ret_pct"]],
+            mode="markers+text",
+            name=m["ticker"],
+            text=[m["ticker"]],
+            textposition="top center",
+            textfont=dict(size=9, color=PALETTE[i % len(PALETTE)]),
+            marker=dict(
+                size=max(10, m["idio_pct"] * 1.2),
+                color=PALETTE[i % len(PALETTE)],
+                opacity=0.75,
+                line=dict(width=1, color="rgba(255,255,255,0.3)"),
+            ),
+            showlegend=False,
+            hovertemplate=(
+                f"<b>{m['ticker']}</b><br>"
+                f"β = {m['beta']:.4f}<br>"
+                f"CAPM Ret = {m['exp_ret_pct']:.2f}%<br>"
+                f"Idio Risk = {m['idio_pct']:.2f}%<br>"
+                f"Total Vol = {m['vol_pct']:.2f}%<br>"
+                "<extra></extra>"
+            ),
+        ), row=2, col=2)
+    # Reference lines: β=1 and y=0
+    fig.add_vline(x=1, line_dash="dash", line_color="rgba(255,255,255,0.12)",
+                  annotation_text="β=1", annotation_font_size=8,
+                  annotation_font_color=TEXT_CLR, row=2, col=2)
+    fig.add_hline(y=0, line_dash="dash", line_color="rgba(255,255,255,0.12)", row=2, col=2)
+
+    # ── Global layout ────────────────────────────────────────────────
+    fig.update_layout(
+        height=820,
+        title=dict(
+            text=f"Factor & Sector Analysis  ·  {', '.join(valid_tickers)}  ·  {days}d lookback",
+            font=dict(size=14, color=TITLE_CLR, family="monospace"),
+            x=0.5,
+        ),
+        paper_bgcolor=DARK_BG,
+        plot_bgcolor=CARD_BG,
+        font=dict(color=TEXT_CLR, size=10, family="monospace"),
+        margin=dict(t=80, b=40, l=60, r=40),
+        legend=dict(
+            orientation="h", yanchor="bottom", y=-0.12, xanchor="center", x=0.5,
+            font=dict(size=9), bgcolor="rgba(0,0,0,0)",
+        ),
+    )
+    # Style all axes
+    for row in (1, 2):
+        for col in (1, 2):
+            fig.update_xaxes(gridcolor=GRID_CLR, zeroline=False,
+                             tickfont=dict(size=8), row=row, col=col)
+            fig.update_yaxes(gridcolor=GRID_CLR, zeroline=False,
+                             tickfont=dict(size=8), row=row, col=col)
+    # Axis labels
+    fig.update_xaxes(title_text="Correlation (ρ)", range=[0, 1.05], row=1, col=1)
+    fig.update_xaxes(title_text="Principal Component", row=1, col=2)
+    fig.update_yaxes(title_text="Variance Explained (%)", row=1, col=2)
+    fig.update_xaxes(title_text=f"{benchmark} Daily Return", row=2, col=1)
+    fig.update_yaxes(title_text="Asset Daily Return", row=2, col=1)
+    fig.update_xaxes(title_text="Beta (β)", row=2, col=2)
+    fig.update_yaxes(title_text="CAPM Expected Return (%/yr)", row=2, col=2)
+
+    # Style subplot titles
+    for ann in fig.layout.annotations:
+        ann.font.color = TITLE_CLR
+        ann.font.size  = 11
+
+    return fig.to_html(full_html=True, include_plotlyjs="cdn")
 
 
 @router.post("/openbb/cli")
@@ -211,6 +466,9 @@ async def openbb_cli(body: dict = Body(...)):
         "gainers": "equity.discovery.gainers",
         "losers": "equity.discovery.losers",
         "active": "equity.discovery.active",
+        "factor": "analytics.factor",
+        "sector": "analytics.sector",
+        "fft": "models.options.fft",
     }
     # Only apply alias if it's a single-token shortcut OR starts with an alias
     command = aliases.get(raw_cmd, raw_cmd)
@@ -226,7 +484,7 @@ async def openbb_cli(body: dict = Body(...)):
             if base == "ratio" and len(extra_tokens) >= 2:
                 kwargs["symbol1"] = extra_tokens[0].upper()
                 kwargs["symbol2"] = extra_tokens[1].upper()
-            elif base in ("bs", "hmm", "mc", "positions", "quote", "price", "historical", "history", "profile", "income", "balance", "cash", "dividends", "earnings", "estimates", "insiders", "institutional", "short", "etf_holdings", "index_members", "gainers", "losers", "active") and len(extra_tokens) >= 1:
+            elif base in ("bs", "fft", "hmm", "mc", "positions", "quote", "price", "historical", "history", "profile", "income", "balance", "cash", "dividends", "earnings", "estimates", "insiders", "institutional", "short", "etf_holdings", "index_members", "gainers", "losers", "active") and len(extra_tokens) >= 1:
                 kwargs["symbol"] = extra_tokens[0].upper()
             elif base in ("buy", "sell") and len(extra_tokens) >= 2:
                 kwargs["symbol"] = extra_tokens[0].upper()
@@ -507,6 +765,13 @@ async def openbb_cli(body: dict = Body(...)):
         html = await quant_models.get_black_scholes(symbol, risk_free_rate=rf)
         return {"type": "chart_window", "html": html}
 
+    if command == "models.options.fft":
+        symbol = kwargs.get("symbol", "SPY")
+        model = kwargs.get("model", "heston")
+        rf = float(kwargs.get("rf", 0.045))
+        html = await quant_models.get_fft_option_pricing(symbol, model=model, risk_free=rf)
+        return {"type": "chart_window", "html": html}
+
     if command == "models.ratio":
         # Supports --symbol1 AAPL --symbol2 MSFT or generic --symbol AAPL,MSFT
         s1 = kwargs.get("symbol1")
@@ -535,6 +800,18 @@ async def openbb_cli(body: dict = Body(...)):
         symbols = kwargs.get("symbols", kwargs.get("symbol", "AAPL,MSFT,NVDA,TSLA,META,AMZN,GOOGL,JPM,V,JNJ,XOM,PFE,KO,DIS,NFLX"))
         n_clusters = int(kwargs.get("clusters", 4))
         html = await ml_models.get_kmeans_clusters(symbols, n_clusters=n_clusters)
+        return {"type": "chart_window", "html": html}
+
+    # ─── Factor / Sector Analytics ───────────────────────────────────
+    if command in ("analytics.factor", "analytics.sector", "factor", "sector"):
+        tickers_str = kwargs.get("tickers", kwargs.get("symbol", ""))
+        if not tickers_str:
+            # default to current portfolio
+            holdings = duckdb_repo.get_portfolio("main")
+            tickers_str = ",".join(h["symbol"] for h in holdings[:12]) if holdings else "AAPL,MSFT,NVDA"
+        benchmark_sym = str(kwargs.get("benchmark", "SPY")).upper()
+        days_param = int(kwargs.get("days", 252))
+        html = await _generate_factor_html(tickers_str, benchmark_sym, days_param)
         return {"type": "chart_window", "html": html}
 
     if command == "ml.bootstrap":

@@ -1,6 +1,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
 #include <pybind11/functional.h>
+#include "portfolio_backtest.h"
 #include "order_matching.h"
 #include "market_feed.h"
 #include "fix_handler.h"
@@ -22,6 +23,51 @@ PYBIND11_MODULE(core_engine, m) {
         .def(py::init<>())
         .def("add_order",      &OrderMatchingEngine::add_order)
         .def("get_order_book", &OrderMatchingEngine::get_order_book);
+
+    // ── Portfolio Backtest Engine ──────────────────────────────────────────
+    py::class_<PortfolioTarget>(m, "PortfolioTarget")
+        .def(py::init<>())
+        .def_readwrite("symbol", &PortfolioTarget::symbol)
+        .def_readwrite("weight", &PortfolioTarget::weight)
+        .def_readwrite("factor", &PortfolioTarget::factor);
+
+    py::class_<PortfolioPriceBar>(m, "PortfolioPriceBar")
+        .def(py::init<>())
+        .def_readwrite("date", &PortfolioPriceBar::date)
+        .def_readwrite("symbol", &PortfolioPriceBar::symbol)
+        .def_readwrite("close", &PortfolioPriceBar::close);
+
+    py::class_<PortfolioTrade>(m, "PortfolioTrade")
+        .def(py::init<>())
+        .def_readonly("date", &PortfolioTrade::date)
+        .def_readonly("symbol", &PortfolioTrade::symbol)
+        .def_readonly("quantity", &PortfolioTrade::quantity)
+        .def_readonly("price", &PortfolioTrade::price)
+        .def_readonly("is_buy", &PortfolioTrade::is_buy)
+        .def_readonly("notional", &PortfolioTrade::notional)
+        .def_readonly("fee", &PortfolioTrade::fee);
+
+    py::class_<PortfolioEquityPoint>(m, "PortfolioEquityPoint")
+        .def(py::init<>())
+        .def_readonly("date", &PortfolioEquityPoint::date)
+        .def_readonly("equity", &PortfolioEquityPoint::equity)
+        .def_readonly("cash", &PortfolioEquityPoint::cash);
+
+    py::class_<PortfolioBacktestResult>(m, "PortfolioBacktestResult")
+        .def(py::init<>())
+        .def_readonly("final_equity", &PortfolioBacktestResult::final_equity)
+        .def_readonly("final_cash", &PortfolioBacktestResult::final_cash)
+        .def_readonly("trades", &PortfolioBacktestResult::trades)
+        .def_readonly("equity_curve", &PortfolioBacktestResult::equity_curve);
+
+    py::class_<PortfolioBacktestEngine>(m, "PortfolioBacktestEngine")
+        .def(py::init<>())
+        .def("run_weighted", &PortfolioBacktestEngine::run_weighted,
+            py::arg("initial_cash"),
+            py::arg("targets"),
+            py::arg("prices"),
+            py::arg("rebalance_interval_days") = 0,
+            py::arg("fee_bps") = 0.0);
 
     // ── Market Data Feed ────────────────────────────────────────────────────
     py::class_<MarketDataFeed>(m, "MarketDataFeed")
