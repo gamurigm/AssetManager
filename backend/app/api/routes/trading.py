@@ -34,7 +34,7 @@ async def _execute_ibkr_order(order: IBKROrderRequest) -> Dict[str, Any]:
     final_price = float(result.get("avgFillPrice", 0.0) or 0.0)
     success_record = False
 
-    if order.record_trade:
+    if order.record_trade and result.get("status") == "Filled":
         success_record = duckdb_repo.add_transaction(
             type_str=order.side.upper(),
             symbol=executed_symbol,
@@ -49,7 +49,7 @@ async def _execute_ibkr_order(order: IBKROrderRequest) -> Dict[str, Any]:
             _sync_portfolio_entry(executed_symbol, order.portfolio_id)
 
     return {
-        "status": "success",
+        "status": result.get("status", "success"),
         "symbol": executed_symbol,
         "asset_type": result.get("asset_type", order.asset_type),
         "ibkr_result": result,

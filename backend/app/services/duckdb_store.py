@@ -13,6 +13,7 @@ DB_PATH = os.path.join(os.path.dirname(__file__), "../../data/market.duckdb")
 
 
 import time
+import threading
 
 class DuckDBStore:
     """Persistent DuckDB store for historical market data."""
@@ -22,18 +23,31 @@ class DuckDBStore:
         os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
         self.db_path = DB_PATH
         self._initialized = False
+        self._main_conn = None
+        self._lock = threading.Lock()
 
     def _get_conn(self, retry_count=3):
-        """Get a connection to the DuckDB database with retry logic."""
-        for i in range(retry_count):
-            try:
-                return duckdb.connect(self.db_path)
-            except duckdb.IOException as e:
-                if "used by another process" in str(e) and i < retry_count - 1:
-                    print(f"[DuckDB] Database locked, retrying in 1s... ({i+1}/{retry_count})")
-                    time.sleep(1)
-                    continue
-                raise e
+        """Get a connection (cursor) from the DuckDB database singleton."""
+        import threading
+        if not hasattr(self, '_lock'): self._lock = threading.Lock()
+        
+        with self._lock:
+            if self._main_conn is None:
+                for i in range(retry_count):
+                    try:
+                        self._main_conn = duckdb.connect(self.db_path, read_only=False)
+                        break
+                    except duckdb.IOException as e:
+                        if "used by another process" in str(e) and i < retry_count - 1:
+                            print(f"[DuckDB Store] Database locked, retrying in 1s... ({i+1}/{retry_count})")
+                            time.sleep(1)
+                            continue
+                        raise e
+            
+            if self._main_conn is None:
+                raise RuntimeError("Could not connect to DuckDB Store")
+                
+            return self._main_conn.cursor()
 
     def _ensure_initialized(self):
         """Ensure schema is initialized exactly once."""

@@ -1,7 +1,6 @@
 import os
 import asyncio
 import sys
-import nest_asyncio
 from pathlib import Path
 
 # MANDATORY: On Windows, ProactorEventLoop often breaks ib_insync/nest_asyncio.
@@ -9,7 +8,7 @@ from pathlib import Path
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-nest_asyncio.apply()
+
 
 from dotenv import load_dotenv
 # Load .env ASAP
@@ -87,6 +86,7 @@ async def lifespan(app: FastAPI):
     
     yield
     # Shutdown
+    ibkr_service.disconnect()
     realtime_service.remove_tick_listener(portfolio_policy_realtime_service.handle_price_update)
     realtime_service.shutdown_streaming()
     stop_scheduler()

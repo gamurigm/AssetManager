@@ -26,6 +26,7 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
         self.db_path = DB_PATH
         self._write_lock = threading.RLock()
         self._initialized = False
+        self._main_conn = None  # Singleton connection for the process
         try:
             self._ensure_initialized()
         except duckdb.IOException as exc:
@@ -44,19 +45,37 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
         )
 
     def _open_connection(self, read_only: bool = False, retries: int = 5, delay: float = 0.2):
-        last_exc = None
-        for attempt in range(retries):
-            try:
-                return duckdb.connect(self.db_path, read_only=read_only)
-            except duckdb.IOException as exc:
-                last_exc = exc
-                if attempt < retries - 1 and self._is_lock_error(exc):
-                    time.sleep(delay * (attempt + 1))
-                    continue
-                raise
-        if last_exc is not None:
-            raise last_exc
-        raise RuntimeError("Could not connect to DuckDB")
+        """
+        Returns a DuckDB cursor. If the shared connection hasn't been established,
+        it opens one. We always use read_only=False for the shared connection to
+        simplify configuration and permit all operations.
+        """
+        with self._write_lock:
+            if self._main_conn is None:
+                last_exc = None
+                for attempt in range(retries):
+                    try:
+                        # Shared process-wide connection
+                        self._main_conn = duckdb.connect(self.db_path, read_only=False)
+                        break
+                    except duckdb.IOException as exc:
+                        last_exc = exc
+                        if attempt < retries - 1 and self._is_lock_error(exc):
+                            time.sleep(delay * (attempt + 1))
+                            continue
+                        raise
+                
+                if self._main_conn is None:
+                    if last_exc: raise last_exc
+                    raise RuntimeError("Could not connect to DuckDB")
+
+                # PERFORMANCE PRAGMAS on initialization
+                self._main_conn.execute("PRAGMA memory_limit='1GB'")
+                self._main_conn.execute("PRAGMA threads=4")
+            
+            # Return a cursor from the existing connection.
+            # DuckDB cursors are thread-safe and isolated for query execution.
+            return self._main_conn.cursor()
 
     def _ensure_initialized(self):
         if self._initialized:
@@ -68,16 +87,18 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
             self._initialized = True
 
     def _connect(self, read_only=False):
-        """Open a short-lived DuckDB connection for the current operation."""
+        """
+        Retrieve a DuckDB cursor. 
+        NOTE: read_only parameter is now ignored as we share a single read-write 
+        connection for the process to avoid configuration mismatch errors.
+        """
         self._ensure_initialized()
-        return self._open_connection(read_only=read_only)
+        return self._open_connection(read_only=False)
 
     def _init_schema(self):
         conn = self._open_connection(read_only=False)
         try:
-            # PERFORMANCE PRAGMAS
-            conn.execute("PRAGMA memory_limit='1GB'")
-            conn.execute("PRAGMA threads=4")
+            # Pragmas are now handled in _open_init during connection creation
             
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS ohlcv (
