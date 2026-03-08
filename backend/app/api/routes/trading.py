@@ -1,55 +1,111 @@
-from fastapi import APIRouter, Body, HTTPException
 from typing import List, Dict, Any
+
+from fastapi import APIRouter, Body, HTTPException
 from datetime import datetime
 from ...core.container import duckdb_repo, get_quote
+from ...services.ibkr_order_parser import (
+    IBKRCommandRequest,
+    IBKROrderRequest,
+    parse_ibkr_terminal_command,
+)
 from ...services.ibkr_service import ibkr_service
 
 router = APIRouter()
 
-@router.post("/order/ibkr")
-async def place_ibkr_order(
-    symbol: str = Body(...),
-    quantity: float = Body(...),
-    side: str = Body(...), # 'BUY' or 'SELL'
-    portfolio_id: str = Body("main")
-):
-    """Place a real market order on IBKR TWS/Gateway and record it if successful."""
-    try:
-        # 1. Execute the real order
-        result = await ibkr_service.place_market_order(symbol, quantity, side)
-        
-        if "error" in result:
-            raise HTTPException(status_code=400, detail=result["error"])
-            
-        # 2. If successful, record it in our local database
-        final_price = result.get("avgFillPrice", 0.0)
-        
+
+async def _execute_ibkr_order(order: IBKROrderRequest) -> Dict[str, Any]:
+    result = await ibkr_service.place_market_order(
+        symbol=order.symbol,
+        quantity=order.quantity,
+        side=order.side,
+        asset_type=order.asset_type,
+        currency=order.currency,
+        exchange=order.exchange,
+        primary_exchange=order.primary_exchange,
+        last_trade_date=order.last_trade_date,
+    )
+
+    if "error" in result:
+        detail = str(result["error"])
+        status_code = 503 if "Not connected" in detail or "reachable IBKR endpoint" in detail else 400
+        raise HTTPException(status_code=status_code, detail=detail)
+
+    executed_symbol = str(result.get("symbol") or order.symbol).upper()
+    final_price = float(result.get("avgFillPrice", 0.0) or 0.0)
+    success_record = False
+
+    if order.record_trade:
         success_record = duckdb_repo.add_transaction(
-            type_str=side.upper(),
-            symbol=symbol.upper(),
-            shares=quantity,
+            type_str=order.side.upper(),
+            symbol=executed_symbol,
+            shares=order.quantity,
             price=final_price,
             realized_pnl=0.0,
             custom_date=datetime.now().strftime("%Y-%m-%d"),
-            portfolio_id=portfolio_id
+            portfolio_id=order.portfolio_id,
         )
-        
+
         if success_record:
-            _sync_portfolio_entry(symbol, portfolio_id)
-            
-        return {
-            "status": "success",
-            "ibkr_result": result,
-            "recorded": success_record,
-            "recorded_price": final_price
+            _sync_portfolio_entry(executed_symbol, order.portfolio_id)
+
+    return {
+        "status": "success",
+        "symbol": executed_symbol,
+        "asset_type": result.get("asset_type", order.asset_type),
+        "ibkr_result": result,
+        "recorded": success_record,
+        "recorded_price": final_price,
+        "portfolio_id": order.portfolio_id,
+    }
+
+@router.post("/order/ibkr")
+async def place_ibkr_order(order: IBKROrderRequest):
+    """Place a real market order on IBKR TWS/Gateway and record it if successful."""
+    try:
+        return await _execute_ibkr_order(order)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/command/ibkr")
+async def place_ibkr_order_from_command(body: IBKRCommandRequest):
+    """Execute a live IBKR order from a terminal-style command string."""
+    try:
+        order = parse_ibkr_terminal_command(
+            command=body.command,
+            portfolio_id=body.portfolio_id,
+            record_trade=body.record_trade,
+        )
+        result = await _execute_ibkr_order(order)
+        result["parsed_order"] = {
+            "symbol": order.symbol,
+            "quantity": order.quantity,
+            "side": order.side,
+            "asset_type": order.asset_type,
+            "currency": order.currency,
+            "exchange": order.exchange,
+            "primary_exchange": order.primary_exchange,
+            "last_trade_date": order.last_trade_date,
         }
-        
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/status/ibkr")
 async def get_ibkr_status():
     """Check connectivity status with IBKR."""
+    return ibkr_service.get_status()
+
+@router.post("/connect/ibkr")
+async def connect_ibkr():
+    """Explicitly trigger connection attempt to IBKR."""
+    await ibkr_service.connect()
     return ibkr_service.get_status()
 
 @router.get("/history")

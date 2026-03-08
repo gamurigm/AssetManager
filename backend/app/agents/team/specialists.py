@@ -16,7 +16,7 @@ from ...services.openbb_api_catalog import openbb_catalog
 from ...services.gsd_service import gsd_service
 from ...services.ctrader_service import ctrader_service
 from ...services.ibkr_service import ibkr_service
-from ...core.container import search_knowledge_base_uc, read_book_section_uc
+from ...core.container import search_knowledge_base_uc, read_book_section_uc, duckdb_repo
 from ...core.config import settings
 import asyncio
 import time
@@ -713,6 +713,14 @@ async def execute_ctrader_trade(ctx: RunContext[TeamContext], symbol: str, quant
         from google.protobuf.json_format import MessageToDict
         res_dict = MessageToDict(response)
         
+        # Record transaction in local database for portfolio tracking
+        try:
+            execution_price = res_dict.get("executionPrice", 0)
+            if execution_price > 0:
+                duckdb_repo.add_transaction(symbol, quantity, side.upper(), price=float(execution_price))
+        except Exception as db_err:
+            logger.error(f"[DB] Failed to record cTrader transaction: {db_err}")
+
         return f"cTrader Trade Success:\n{json.dumps(res_dict, indent=2)}"
     except Exception as e:
         return f"cTrader Execution Failed: {str(e)}"
@@ -744,6 +752,14 @@ async def execute_ibkr_trade(ctx: RunContext[TeamContext], symbol: str, quantity
         response = await ibkr_service.place_market_order(symbol, quantity, side)
         if "error" in response:
             return f"IBKR Error: {response['error']}"
+        # Record transaction in local database for portfolio tracking
+        try:
+            execution_price = response.get("avgFillPrice", 0)
+            if execution_price > 0:
+                duckdb_repo.add_transaction(symbol, quantity, side.upper(), price=float(execution_price))
+        except Exception as db_err:
+            logger.error(f"[DB] Failed to record IBKR transaction: {db_err}")
+
         return f"IBKR Trade Success:\n{json.dumps(response, indent=2)}"
     except Exception as e:
         return f"IBKR Execution Failed: {str(e)}"

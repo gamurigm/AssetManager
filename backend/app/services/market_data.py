@@ -216,12 +216,12 @@ class MarketDataService:
         """
         # --- DuckDB First (Local, instant) ---
         if duckdb_store.has_data(symbol, min_rows=20):
-            print(f"[MarketData] 🦆 DuckDB HIT for {symbol}")
+            print(f"[MarketData] [DuckDB] HIT for {symbol}")
             candles = duckdb_store.get_history(symbol, limit)
             return {"symbol": symbol, "historical": candles, "source": "DuckDB (Local)"}
 
         # --- API Fetch & Persist ---
-        print(f"[MarketData] 🦆 DuckDB MISS for {symbol}. Fetching from API...")
+        print(f"[MarketData] [DuckDB] MISS for {symbol}. Fetching from API...")
 
         # Yahoo Finance first (no strict limits for historical)
         yf_bucket = get_bucket("yahoo")

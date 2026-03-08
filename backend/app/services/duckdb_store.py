@@ -12,6 +12,8 @@ from datetime import datetime, date
 DB_PATH = os.path.join(os.path.dirname(__file__), "../../data/market.duckdb")
 
 
+import time
+
 class DuckDBStore:
     """Persistent DuckDB store for historical market data."""
 
@@ -19,11 +21,25 @@ class DuckDBStore:
         # Ensure data directory exists
         os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
         self.db_path = DB_PATH
-        self._init_schema()
+        self._initialized = False
 
-    def _get_conn(self):
-        """Get a connection to the DuckDB database."""
-        return duckdb.connect(self.db_path)
+    def _get_conn(self, retry_count=3):
+        """Get a connection to the DuckDB database with retry logic."""
+        for i in range(retry_count):
+            try:
+                return duckdb.connect(self.db_path)
+            except duckdb.IOException as e:
+                if "used by another process" in str(e) and i < retry_count - 1:
+                    print(f"[DuckDB] Database locked, retrying in 1s... ({i+1}/{retry_count})")
+                    time.sleep(1)
+                    continue
+                raise e
+
+    def _ensure_initialized(self):
+        """Ensure schema is initialized exactly once."""
+        if not self._initialized:
+            self._init_schema()
+            self._initialized = True
 
     def _init_schema(self):
         """Create tables if they don't exist."""
@@ -75,6 +91,7 @@ class DuckDBStore:
         if not candles:
             return 0
 
+        self._ensure_initialized()
         conn = self._get_conn()
         try:
             count = 0
@@ -103,6 +120,7 @@ class DuckDBStore:
         Get historical OHLCV data for a symbol.
         Returns newest first, limited to `limit` rows.
         """
+        self._ensure_initialized()
         conn = self._get_conn()
         try:
             result = conn.execute("""
@@ -130,6 +148,7 @@ class DuckDBStore:
 
     def has_data(self, symbol: str, min_rows: int = 10) -> bool:
         """Check if we have enough historical data for a symbol."""
+        self._ensure_initialized()
         conn = self._get_conn()
         try:
             count = conn.execute(
@@ -141,6 +160,7 @@ class DuckDBStore:
 
     def get_latest_date(self, symbol: str) -> Optional[str]:
         """Get the most recent date we have data for."""
+        self._ensure_initialized()
         conn = self._get_conn()
         try:
             result = conn.execute(
@@ -152,6 +172,7 @@ class DuckDBStore:
 
     def get_stats(self) -> Dict[str, Any]:
         """Get database statistics for monitoring."""
+        self._ensure_initialized()
         conn = self._get_conn()
         try:
             total_candles = conn.execute("SELECT COUNT(*) FROM ohlcv").fetchone()[0]
@@ -168,6 +189,7 @@ class DuckDBStore:
     def register_symbol(self, symbol: str, name: str = "", asset_type: str = "stock",
                          sector: str = "", exchange: str = ""):
         """Register a symbol in the universe tracker."""
+        self._ensure_initialized()
         conn = self._get_conn()
         try:
             conn.execute("""
@@ -179,6 +201,7 @@ class DuckDBStore:
 
     def get_universe(self, asset_type: str = None) -> List[Dict[str, Any]]:
         """Get all symbols in the universe, optionally filtered by type."""
+        self._ensure_initialized()
         conn = self._get_conn()
         try:
             if asset_type:

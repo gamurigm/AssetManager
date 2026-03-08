@@ -23,7 +23,8 @@ class IBKRProvider(IMarketDataProvider):
             
             if not latest:
                 # If not cached, trigger a subscription (lazy init)
-                await ibkr_service.subscribe_market_data(symbol)
+                # We use create_task to avoid blocking the parallel-race in GetQuoteUseCase
+                asyncio.create_task(ibkr_service.subscribe_market_data(symbol))
                 return None # Return None for the first call until data arrives
             
             return Quote(

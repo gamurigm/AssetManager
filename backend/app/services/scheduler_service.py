@@ -11,6 +11,7 @@ from app.core.container import duckdb_repo
 from app.services.risk_service import risk_service
 from app.services.crawler import crawler_service
 from app.services.realtime_service import realtime_service
+from app.services.ibkr_service import ibkr_service
 
 
 # ──────────────────────────────────────────────
@@ -18,7 +19,7 @@ from app.services.realtime_service import realtime_service
 # ──────────────────────────────────────────────
 async def run_portfolio_scan():
     """Scan all stored portfolios for concentration risk, bad Sharpe, or extreme kurtosis."""
-    logger.info("🤖 [AutoScan] Starting automated portfolio risk scan...")
+    logger.info("[AutoScan] Starting automated portfolio risk scan...")
     try:
         holdings = duckdb_repo.get_portfolio()
         if not holdings:
@@ -37,7 +38,7 @@ async def run_portfolio_scan():
             weight = (h["shares"] * h["entryPrice"]) / total_value * 100
             if weight > 20:
                 alerts.append(
-                    f"⚠️ CONCENTRATION: {h['symbol']} is {weight:.1f}% of portfolio (limit: 20%)"
+                    f"CONCENTRATION: {h['symbol']} is {weight:.1f}% of portfolio (limit: 20%)"
                 )
 
         # ── Pfaff Risk Metrics ──
@@ -49,25 +50,25 @@ async def run_portfolio_scan():
 
             if sharpe < 0:
                 alerts.append(
-                    f"📉 NEGATIVE SHARPE: Annualized Sharpe is {sharpe:.2f} — portfolio is underperforming risk-free rate."
+                    f"NEGATIVE SHARPE: Annualized Sharpe is {sharpe:.2f} — portfolio is underperforming risk-free rate."
                 )
             if kurtosis > 3:
                 alerts.append(
-                    f"🔺 HIGH KURTOSIS: Excess kurtosis is {kurtosis:.2f} — heavy-tail risk detected (fat tails)."
+                    f"HIGH KURTOSIS: Excess kurtosis is {kurtosis:.2f} — heavy-tail risk detected (fat tails)."
                 )
             if mvar and float(str(mvar).replace("%", "")) > 3:
                 alerts.append(
-                    f"🛡️ HIGH VaR: Modified VaR (95%) is {mvar}% — daily loss could exceed 3% of AUM."
+                    f"HIGH VaR: Modified VaR (95%) is {mvar}% — daily loss could exceed 3% of AUM."
                 )
         else:
-            alerts.append(f"ℹ️ Risk analysis unavailable: {risk_report.get('error')}")
+            alerts.append(f"Risk analysis unavailable: {risk_report.get('error')}")
 
         # ── Log Results ──
         if alerts:
             alert_text = "\n".join(alerts)
-            logger.warning(f"🚨 [AutoScan] {len(alerts)} alert(s) detected:\n{alert_text}")
+            logger.warning(f"[AutoScan] {len(alerts)} alert(s) detected:\n{alert_text}")
         else:
-            logger.info("✅ [AutoScan] Portfolio is healthy — no alerts.")
+            logger.info("[AutoScan] Portfolio is healthy — no alerts.")
 
     except Exception as e:
         logger.error(f"[AutoScan] Error during scan: {e}")
@@ -78,7 +79,7 @@ async def run_portfolio_scan():
 # ──────────────────────────────────────────────
 async def generate_daily_briefing():
     """Generate a pre-market briefing using the Orchestrator."""
-    logger.info("☕ [DailyBrief] Generating morning briefing...")
+    logger.info("[DailyBrief] Generating morning briefing...")
     try:
         from app.agents.team.orchestrator import orchestrator
 
@@ -95,7 +96,7 @@ async def generate_daily_briefing():
         )
 
         result = await orchestrator.run(instruction)
-        logger.info(f"☕ [DailyBrief] Morning Briefing:\n{result}\n{'='*60}")
+        logger.info(f"[DailyBrief] Morning Briefing:\n{result}\n{'='*60}")
 
     except Exception as e:
         logger.error(f"[DailyBrief] Error: {e}")
@@ -115,7 +116,7 @@ async def record_equity_snapshot():
         total_equity = sum(h.get("shares", 0) * h.get("entryPrice", 0) for h in holdings)
         if total_equity > 0:
             duckdb_repo.record_equity_snapshot(total_equity)
-            logger.info(f"📈 [EquitySnap] Recorded equity snapshot: ${total_equity:,.2f}")
+            logger.info(f"[EquitySnap] Recorded equity snapshot: ${total_equity:,.2f}")
 
     except Exception as e:
         logger.error(f"[EquitySnap] Error: {e}")
@@ -176,7 +177,16 @@ def start_scheduler(sio=None):
         replace_existing=True,
     )
 
-    # 5. Run an initial scan 15 seconds after startup (for demo/testing)
+    # 5. IBKR Keep-Alive (ensures connection stays active)
+    scheduler.add_job(
+        ibkr_service.connect,
+        "interval",
+        minutes=5,
+        id="ibkr_keep_alive",
+        replace_existing=True,
+    )
+
+    # 6. Run an initial scan 15 seconds after startup (for demo/testing)
     run_date = datetime.datetime.now() + datetime.timedelta(seconds=15)
     scheduler.add_job(
         run_portfolio_scan,
@@ -198,11 +208,11 @@ def start_scheduler(sio=None):
 
     scheduler.start()
     logger.info(
-        "⏱️  Background Scheduler Started:\n"
-        "   • Portfolio Risk Scan  — every 60 min + 15s after boot\n"
-        "   • Daily Briefing       — Mon–Fri at 8:00 AM\n"
-        "   • Equity Snapshots     — every 30 min during market hours\n"
-        "   • Background Crawler   — every 2 min (drip-feed)"
+        "Background Scheduler Started:\n"
+        "   * Portfolio Risk Scan  - every 60 min + 15s after boot\n"
+        "   * Daily Briefing       - Mon-Fri at 8:00 AM\n"
+        "   * Equity Snapshots     - every 30 min during market hours\n"
+        "   * Background Crawler   - every 2 min (drip-feed)"
     )
 
 
@@ -210,4 +220,4 @@ def stop_scheduler():
     """Gracefully shut down the scheduler."""
     if scheduler.running:
         scheduler.shutdown(wait=False)
-        logger.info("⏱️  Background Scheduler Stopped.")
+        logger.info("Background Scheduler Stopped.")

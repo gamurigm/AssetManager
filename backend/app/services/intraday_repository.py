@@ -87,7 +87,12 @@ class DuckDBIntradayRepository:
     def __init__(self, db_path: str = _DB_PATH):
         self._db_path = db_path
         os.makedirs(os.path.dirname(self._db_path), exist_ok=True)
-        self._init_schema()
+        self._initialized = False
+
+    def _ensure_initialized(self):
+        if not self._initialized:
+            self._init_schema()
+            self._initialized = True
 
     import contextlib
     import time
@@ -152,6 +157,7 @@ class DuckDBIntradayRepository:
 
     def save(self, symbol: str, interval: str, candles: List[CandleRow], source: str = "unknown") -> int:
         """Vectorized bulk upsert using pandas + DuckDB register. Handles 200k rows in ms."""
+        self._ensure_initialized()
         if not candles:
             return 0
 
@@ -191,6 +197,7 @@ class DuckDBIntradayRepository:
         limit: int = 500_000,
     ) -> List[CandleRow]:
         """Retrieve candles in chronological order."""
+        self._ensure_initialized()
         where_clauses = ["symbol = ?", "interval = ?"]
         params: list = [symbol, interval]
 
@@ -230,6 +237,7 @@ class DuckDBIntradayRepository:
         Returns True if there are at least `min_count` candles in [start, end]
         for the given symbol+interval.
         """
+        self._ensure_initialized()
         with self._connection(read_only=True) as conn:
             count = conn.execute(
                 """
@@ -299,6 +307,7 @@ class DuckDBIntradayRepository:
 
     def get_stats(self) -> dict:
         """Diagnostic stats — mirrors DuckDBStore.get_stats()."""
+        self._ensure_initialized()
         with self._connection(read_only=True) as conn:
             total = conn.execute("SELECT COUNT(*) FROM ohlcv_intraday").fetchone()[0]
             syms  = conn.execute("SELECT COUNT(DISTINCT symbol) FROM ohlcv_intraday").fetchone()[0]

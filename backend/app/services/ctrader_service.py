@@ -58,7 +58,7 @@ class CTraderService:
         No-ops silently if cTrader credentials are not configured in .env.
         """
         if not _ctrader_configured():
-            logger.info("ℹ️  [cTrader] Credentials not configured — service disabled. "
+            logger.info("[cTrader] Credentials not configured - service disabled. "
                         "Set CTRADER_CLIENT_ID/SECRET/ACCESS_TOKEN/ACCOUNT_ID to enable.")
             return
 

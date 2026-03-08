@@ -28,6 +28,8 @@ from ...services.risk_service import risk_service
 from ...services.standardizer import standardizer
 from ...services.openbb_rest_service import openbb_rest
 from ...services.openbb_native_service import openbb_native, get_chart_html
+from ...services.ibkr_service import ibkr_service
+from ...services.ctrader_service import ctrader_service
 
 router = APIRouter()
 
@@ -52,6 +54,36 @@ def _parse_args(parts: list[str]) -> dict:
         else:
             i += 1
     return kwargs
+
+
+def _apply_alias_positionals(base: str, extra_tokens: list[str], kwargs: dict) -> None:
+    """Map positional terminal arguments onto alias kwargs before flag parsing."""
+    if not extra_tokens:
+        return
+
+    if base == "ratio" and len(extra_tokens) >= 2:
+        kwargs["symbol1"] = extra_tokens[0].upper()
+        kwargs["symbol2"] = extra_tokens[1].upper()
+        return
+
+    if base in {
+        "bs", "fft", "hmm", "mc", "positions", "quote", "price",
+        "historical", "history", "profile", "income", "balance", "cash",
+        "dividends", "earnings", "estimates", "insiders", "institutional",
+        "short", "etf_holdings", "index_members", "gainers", "losers",
+        "active", "modify",
+    }:
+        kwargs["symbol"] = extra_tokens[0].upper()
+        return
+
+    if base in {"buy", "sell"}:
+        kwargs["symbol"] = extra_tokens[0].upper()
+        if len(extra_tokens) >= 2:
+            value = extra_tokens[1].lower()
+            if value.endswith('$') or value.startswith('$'):
+                kwargs["usd"] = value.replace('$', '')
+            else:
+                kwargs["shares"] = value
 
 
 def _format_dict(d: dict, indent: int = 0) -> str:
@@ -479,22 +511,7 @@ async def openbb_cli(body: dict = Body(...)):
         base = raw_cmd.split(".")[0]
         if base in aliases:
             command = aliases[base]
-            # Put the rest of the tokens into placeholders if needed
-            extra_tokens = path_tokens[1:]
-            if base == "ratio" and len(extra_tokens) >= 2:
-                kwargs["symbol1"] = extra_tokens[0].upper()
-                kwargs["symbol2"] = extra_tokens[1].upper()
-            elif base in ("bs", "fft", "hmm", "mc", "positions", "quote", "price", "historical", "history", "profile", "income", "balance", "cash", "dividends", "earnings", "estimates", "insiders", "institutional", "short", "etf_holdings", "index_members", "gainers", "losers", "active") and len(extra_tokens) >= 1:
-                kwargs["symbol"] = extra_tokens[0].upper()
-            elif base in ("buy", "sell") and len(extra_tokens) >= 2:
-                kwargs["symbol"] = extra_tokens[0].upper()
-                val = extra_tokens[1].lower()
-                if val.endswith('$') or val.startswith('$'):
-                    kwargs["usd"] = val.replace('$', '')
-                else:
-                    kwargs["shares"] = val
-            elif base == "modify" and len(extra_tokens) >= 1:
-                kwargs["symbol"] = extra_tokens[0].upper()
+            _apply_alias_positionals(base, path_tokens[1:], kwargs)
         
 
     kwargs.update(_parse_args(rest_tokens))
@@ -555,8 +572,21 @@ async def openbb_cli(body: dict = Body(...)):
                 should_sell = True
                 
             if should_sell:
+                # --- REAL BROKER EXECUTION ---
+                venue = kwargs.get("venue", "ibkr")
+                execution_confirmed = False
+                
+                if venue == "ibkr" and ibkr_service._ib_connected():
+                    try:
+                        res = await ibkr_service.place_market_order(sym, shares, "SELL")
+                        if "error" not in res:
+                            current_price = float(res.get("avgFillPrice", current_price))
+                            execution_confirmed = True
+                    except Exception as e:
+                        print(f"[Liquidation] Broker error for {sym}: {e}")
+
                 # Add to liquidated list with detailed PnL
-                liquidated_symbols.append(f"{sym} ({'+' if pnl >= 0 else ''}${pnl:,.2f})")
+                liquidated_symbols.append(f"{sym} ({'+' if pnl >= 0 else ''}${pnl:,.2f}){' 🚀' if execution_confirmed else ''}")
                 duckdb_repo.add_transaction(
                     type_str="SELL",
                     symbol=sym,
@@ -572,15 +602,29 @@ async def openbb_cli(body: dict = Body(...)):
             criteria = "TODO" if is_all else ("EN ROJO" if is_losers else (f"SYMBOL {target_symbol}" if target_symbol else "N/A"))
             return {"output": f"⚠️ No se encontraron activos que cumplan el criterio: [{criteria}].\n\nSi quieres vender TODO independientemente del PnL, usa: 'portfolio liquidate --all' o dile a Qwen 'vende absolutamente todo'."}
             
-        success = duckdb_repo.save_portfolio(keep_holdings, portfolio_id)
+        success = duckdb_repo.add_transaction_batch_update_portfolio(keep_holdings, portfolio_id) # Using a safer batch update if available
+        # Fallback to save_portfolio if batch not found
+        if not hasattr(duckdb_repo, "add_transaction_batch_update_portfolio"):
+            success = duckdb_repo.save_portfolio(keep_holdings, portfolio_id)
+
         if success:
-            total_realized = sum(float(s.split('($')[1].split(')')[0].replace(',','')) for s in liquidated_symbols if '($' in s)
+            total_realized = 0.0
+            for s in liquidated_symbols:
+                if '($' in s:
+                    try:
+                        # Extract value between ($ and )
+                        val_str = s.split('($')[1].split(')')[0].replace(',','')
+                        total_realized += float(val_str)
+                    except: pass
+
+            broker_msg = "\n🚀 Real broker orders transmitted for positions marked with 🚀." if any("🚀" in s for s in liquidated_symbols) else ""
             return {"output": (
                 f"🚨 LIQUIDATION COMPLETE 🚨\n"
                 f"Total Positions Sold: {len(liquidated_symbols)}\n"
                 f"Details: {', '.join(liquidated_symbols)}\n"
-                f"PROFIT/LOSS REALIZED THIS RUN: {'+' if total_realized >= 0 else ''}${total_realized:,.2f}\n\n"
-                f"✅ Cash updated in balance sheets."
+                f"PROFIT/LOSS REALIZED THIS RUN: {'+' if total_realized >= 0 else ''}${total_realized:,.2f}\n"
+                f"{broker_msg}\n\n"
+                f"✅ Local database updated."
             )}
         else:
             return {"output": "Error: Database failed to persist the liquidation.", "type": "error"}
@@ -590,10 +634,23 @@ async def openbb_cli(body: dict = Body(...)):
         symbol = kwargs.get("symbol")
         shares = float(kwargs.get("shares", 0))
         usd_val = str(kwargs.get("usd", "0")).lower()
+        # Accept symbol as positional or flag (robust)
+        if not symbol:
+            # Try to recover from positional argument
+            if "symbol" not in kwargs and len(path_tokens) > 1:
+                symbol = path_tokens[1].upper()
+            # Also try from extra_tokens (for cases like ': buy AAPL ...')
+            if not symbol and len(rest_tokens) == 0 and len(path_tokens) > 1:
+                symbol = path_tokens[1].upper()
+        # Final fallback: if still missing, try from kwargs
+        if not symbol and "symbol" in kwargs:
+            symbol = kwargs["symbol"].upper()
         if not symbol or (shares <= 0 and usd_val == "0"):
-            return {"output": "Usage: buy --symbol AAPL --shares 10 (OR --usd 5000) [--price 150] [--sl 140] [--tp 180]", "type": "error"}
+            return {"output": "Usage: buy AAPL --shares 10 --venue ibkr\n   o\nUsage: buy --symbol AAPL --shares 10 --venue ibkr [--asset-type stock|forex|future|crypto] [--exchange SMART] [--currency USD] [--last-trade-date 202506]", "type": "error"}
         
-        symbol = symbol.upper()
+        asset_type = str(kwargs.get("asset_type", "stock")).lower()
+        venue = str(kwargs.get("venue", "ibkr")).lower()
+        symbol = ibkr_service._to_app_symbol(symbol) if asset_type in {"forex", "fx", "cash"} else symbol.upper()
         price_str = str(kwargs.get("price", "0")).lower()
         # Simple handling for 'k' notation
         if price_str.endswith('k'): price = float(price_str[:-1]) * 1000
@@ -601,17 +658,59 @@ async def openbb_cli(body: dict = Body(...)):
             try: price = float(price_str)
             except ValueError: price = 0
         
-        if price <= 0:
+        if price <= 0 and (usd_val != "0" or venue != "ibkr"):
             quote = await get_quote.execute(symbol)
-            if "error" in quote: return {"output": f"Error fetching price: {quote['error']}", "type": "error"}
+            if "error" in quote:
+                return {"output": f"Error fetching price for {symbol}: {quote['error']}", "type": "error"}
             price = float(quote.get("price", 0))
 
         # Calculate shares from USD if provided
         if usd_val != "0":
+            if price <= 0:
+                return {"output": f"Error fetching price for {symbol}: unable to size order from USD amount.", "type": "error"}
             total_usd = float(usd_val[:-1]) * 1000 if usd_val.endswith('k') else float(usd_val)
             shares = total_usd / price
 
         portfolio_id = str(kwargs.get("portfolio", "main")).lower()
+        execution_msg = ""
+        
+        # --- REAL BROKER EXECUTION ---
+        if venue == "ibkr":
+            try:
+                # place_market_order will internally call connect() if needed.
+                # However, for UX clarity we can log a small info here if we suspect it might take time.
+                pass
+            except Exception:
+                pass
+            try:
+                res = await ibkr_service.place_market_order(
+                    symbol,
+                    shares,
+                    "BUY",
+                    asset_type=asset_type,
+                    currency=str(kwargs.get("currency", "USD")),
+                    exchange=kwargs.get("exchange"),
+                    primary_exchange=kwargs.get("primary_exchange"),
+                    last_trade_date=kwargs.get("last_trade_date"),
+                )
+                if "error" in res:
+                    return {"output": f"❌ IBKR Order Failed: {res['error']}", "type": "error"}
+                symbol = str(res.get("symbol", symbol)).upper()
+                price = float(res.get("avgFillPrice", price))
+                execution_msg = f"🚀 [IBKR] ORDER EXECUTED LIVE ({res.get('asset_type', asset_type)})"
+            except Exception as e:
+                return {"output": f"❌ IBKR System Error: {str(e)}", "type": "error"}
+        elif venue == "ctrader" and ctrader_service.get_status()["connected"]:
+            try:
+                # cTrader uses units, not lots here in the CLI for simplicity
+                units = int(shares) # Or use lot conversion if specified
+                res = ctrader_service.place_market_order(os.getenv("CTRADER_ACCOUNT_ID"), symbol, units, "BUY")
+                execution_msg = "🚀 [cTrader] ORDER EXECUTED LIVE"
+                # Price update would require parsing response
+            except Exception as e:
+                return {"output": f"❌ cTrader System Error: {str(e)}", "type": "error"}
+        else:
+            execution_msg = "✅ [SIMULATION] ORDER EXECUTED"
 
         # Add Transaction
         duckdb_repo.add_transaction("BUY", symbol, shares, price, portfolio_id=portfolio_id)
@@ -636,23 +735,25 @@ async def openbb_cli(body: dict = Body(...)):
                 "entryPrice": price,
                 "factor": 1.0,
                 "sector": "Other",
-                "type": "stock",
+                "type": asset_type,
                 "purchaseDate": datetime.now().strftime("%Y-%m-%d"),
                 "sl": float(kwargs.get("sl")) if kwargs.get("sl") else None,
                 "tp": float(kwargs.get("tp")) if kwargs.get("tp") else None
             })
         
         duckdb_repo.save_portfolio(holdings, portfolio_id)
-        return {"output": f"✅ BUY ORDER EXECUTED [{portfolio_id.upper()}]\nSymbol: {symbol}\nShares: {shares}\nPrice:  ${price:,.4f}\nTotal:  ${(shares*price):,.2f}\nSL:     {kwargs.get('sl') or 'None'} | TP: {kwargs.get('tp') or 'None'}"}
+        return {"output": f"{execution_msg}\nSymbol: {symbol}\nShares: {shares:.4f}\nPrice:  ${price:,.4f}\nTotal:  ${(shares*price):,.2f}\nSL:     {kwargs.get('sl') or 'None'} | TP: {kwargs.get('tp') or 'None'}"}
 
     if command == "portfolio.sell":
         symbol = kwargs.get("symbol")
         shares = float(kwargs.get("shares", 0))
         usd_val = str(kwargs.get("usd", "0")).lower()
         if not symbol or (shares <= 0 and usd_val == "0"):
-            return {"output": "Usage: sell --symbol AAPL --shares 5 (OR --usd 1000) [--price 160]", "type": "error"}
+            return {"output": "Usage: sell --symbol AAPL --shares 5 [--venue ibkr] [--asset-type stock|forex|future|crypto] [--exchange SMART] [--currency USD] [--last-trade-date 202506]", "type": "error"}
         
-        symbol = symbol.upper()
+        asset_type = str(kwargs.get("asset_type", "stock")).lower()
+        venue = str(kwargs.get("venue", "ibkr")).lower()
+        symbol = ibkr_service._to_app_symbol(symbol) if asset_type in {"forex", "fx", "cash"} else symbol.upper()
         portfolio_id = str(kwargs.get("portfolio", "main")).lower()
         holdings = duckdb_repo.get_portfolio(portfolio_id)
         existing = next((h for h in holdings if h['symbol'] == symbol), None)
@@ -665,17 +766,50 @@ async def openbb_cli(body: dict = Body(...)):
             try: price = float(price_str)
             except ValueError: price = 0
 
-        if price <= 0:
+        if price <= 0 and (usd_val != "0" or venue != "ibkr"):
             quote = await get_quote.execute(symbol)
             price = float(quote.get("price", existing['entryPrice']))
+        elif price <= 0:
+            price = float(existing['entryPrice'] or 0)
 
         # Calculate shares from USD if provided
         if usd_val != "0":
+            if price <= 0:
+                return {"output": f"Error fetching price for {symbol}: unable to size order from USD amount.", "type": "error"}
             total_usd = float(usd_val[:-1]) * 1000 if usd_val.endswith('k') else float(usd_val)
             shares = total_usd / price
 
         if existing['shares'] < shares:
-            return {"output": f"❌ Insufficient shares for {symbol}. Available: {existing['shares']:.4f} ($ {existing['shares']*price:,.2f})", "type": "error"}
+            return {"output": f"❌ Insufficient shares for {symbol}. Available: {existing['shares']:.4f}", "type": "error"}
+
+        execution_msg = ""
+
+        # --- REAL BROKER EXECUTION ---
+        if venue == "ibkr":
+            try:
+                pass
+            except Exception:
+                pass
+            try:
+                res = await ibkr_service.place_market_order(
+                    symbol,
+                    shares,
+                    "SELL",
+                    asset_type=asset_type,
+                    currency=str(kwargs.get("currency", "USD")),
+                    exchange=kwargs.get("exchange"),
+                    primary_exchange=kwargs.get("primary_exchange"),
+                    last_trade_date=kwargs.get("last_trade_date"),
+                )
+                if "error" in res:
+                    return {"output": f"❌ IBKR Order Failed: {res['error']}", "type": "error"}
+                symbol = str(res.get("symbol", symbol)).upper()
+                price = float(res.get("avgFillPrice", price))
+                execution_msg = f"🚀 [IBKR] SELL ORDER EXECUTED LIVE ({res.get('asset_type', asset_type)})"
+            except Exception as e:
+                return {"output": f"❌ IBKR System Error: {str(e)}", "type": "error"}
+        else:
+            execution_msg = "✅ [SIMULATION] SELL ORDER EXECUTED"
 
         # Calculate PnL
         pnl = (price - existing['entryPrice']) * shares
@@ -687,7 +821,7 @@ async def openbb_cli(body: dict = Body(...)):
             holdings = [h for h in holdings if h['symbol'] != symbol]
         
         duckdb_repo.save_portfolio(holdings, portfolio_id)
-        return {"output": f"✅ SELL ORDER EXECUTED [{portfolio_id.upper()}]\nSymbol: {symbol}\nShares: {shares}\nPrice:  ${price:,.4f}\nTotal:  ${(shares*price):,.2f}\nRealized PnL: {'+' if pnl >= 0 else ''}${pnl:,.2f}"}
+        return {"output": f"{execution_msg}\nSymbol: {symbol}\nShares: {shares:.4f}\nPrice:  ${price:,.4f}\nTotal:  ${(shares*price):,.2f}\nRealized PnL: {'+' if pnl >= 0 else ''}${pnl:,.2f}"}
 
     if command == "portfolio.modify":
         symbol = kwargs.get("symbol")

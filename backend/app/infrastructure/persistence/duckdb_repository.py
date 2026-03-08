@@ -3,7 +3,7 @@ DuckDB Repository — Implements IHistoricalRepository.
 Stores OHLCV data locally for instant chart loading.
 
 PERFORMANCE: Fast transient connections (no persistent lock).
-Write operations use a threading.Lock to serialize.
+Write operations use a threading.RLock to serialize.
 Windows-safe: no persistent file lock that blocks other modules.
 """
 
@@ -16,7 +16,7 @@ from ...domain.interfaces.data_repository import IHistoricalRepository
 from ...domain.interfaces.portfolio_repository import IPortfolioRepository
 from ...domain.entities.market import Candle
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "../../../data/market.duckdb")
+DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../data/market.duckdb"))
 
 
 class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
@@ -24,24 +24,56 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
     def __init__(self):
         os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
         self.db_path = DB_PATH
-        self._write_lock = threading.Lock()
-        self._init_schema()
+        self._write_lock = threading.RLock()
+        self._initialized = False
+        try:
+            self._ensure_initialized()
+        except duckdb.IOException as exc:
+            if self._is_lock_error(exc):
+                print("[DuckDB] Database locked during startup; schema initialization deferred.")
+            else:
+                raise
 
-    def _connect(self, read_only=False, retries=5, delay=0.2):
-        """Fast transient connection with minimal retries. Always read_write to avoid configuration conflicts."""
-        for i in range(retries):
+    @staticmethod
+    def _is_lock_error(exc: Exception) -> bool:
+        message = str(exc).lower()
+        return (
+            "used by another process" in message
+            or "cannot access the file" in message
+            or "io error" in message
+        )
+
+    def _open_connection(self, read_only: bool = False, retries: int = 5, delay: float = 0.2):
+        last_exc = None
+        for attempt in range(retries):
             try:
-                # Force read_only=False to prevent "different configuration" errors
-                return duckdb.connect(self.db_path, read_only=False)
-            except Exception as e:
-                if i < retries - 1 and ("used by another process" in str(e).lower() or "io error" in str(e).lower()):
-                    time.sleep(delay)
-                else:
-                    raise
-        raise Exception(f"Could not connect to DuckDB after {retries} retries")
+                return duckdb.connect(self.db_path, read_only=read_only)
+            except duckdb.IOException as exc:
+                last_exc = exc
+                if attempt < retries - 1 and self._is_lock_error(exc):
+                    time.sleep(delay * (attempt + 1))
+                    continue
+                raise
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError("Could not connect to DuckDB")
+
+    def _ensure_initialized(self):
+        if self._initialized:
+            return
+        with self._write_lock:
+            if self._initialized:
+                return
+            self._init_schema()
+            self._initialized = True
+
+    def _connect(self, read_only=False):
+        """Open a short-lived DuckDB connection for the current operation."""
+        self._ensure_initialized()
+        return self._open_connection(read_only=read_only)
 
     def _init_schema(self):
-        conn = self._connect()
+        conn = self._open_connection(read_only=False)
         try:
             # PERFORMANCE PRAGMAS
             conn.execute("PRAGMA memory_limit='1GB'")
@@ -575,7 +607,7 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
                             t.get('shares'), t.get('value'), t.get('shares_total'),
                             t.get('sec_form_4'), t.get('sec_url'), t.get('type')
                         ])
-                        count += conn.get_connection().cursor().rowcount
+                        count += 1
                     except Exception as e:
                         # Skip individual failures (e.g. malformed dates)
                         continue

@@ -36,11 +36,11 @@ class CrawlerService:
         Designed to be called periodically (e.g., once a day or every few hours).
         """
         if self.is_running:
-            logger.info("⚠️ [Crawler] Cycle already in progress. Skipping.")
+            logger.info("[Crawler] Cycle already in progress. Skipping.")
             return
 
         self.is_running = True
-        logger.info(f"🕸️ [Crawler] Starting pre-fetch cycle for {len(self.universe)} symbols...")
+        logger.info(f"[Crawler] Starting pre-fetch cycle for {len(self.universe)} symbols...")
         
         for symbol in self.universe:
             try:
@@ -58,7 +58,7 @@ class CrawlerService:
                 logger.error(f"[Crawler] Error syncing {symbol}: {e}")
 
         self.is_running = False
-        logger.info("🕸️ [Crawler] Cycle complete.")
+        logger.info("[Crawler] Cycle complete.")
 
     async def crawl_single_step(self):
         """
@@ -67,7 +67,7 @@ class CrawlerService:
         """
         if self._current_index >= len(self.universe):
             self._current_index = 0
-            logger.info("🕸️ [Crawler] Universe reached end. Restarting drip...")
+            logger.info("[Crawler] Universe reached end. Restarting drip...")
 
         symbol = self.universe[self._current_index]
         try:

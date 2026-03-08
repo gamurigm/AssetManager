@@ -1,8 +1,18 @@
 import os
+import asyncio
+import sys
+import nest_asyncio
 from pathlib import Path
-from dotenv import load_dotenv
 
-# Load .env FIRST before anything else
+# MANDATORY: On Windows, ProactorEventLoop often breaks ib_insync/nest_asyncio.
+# We force SelectorEventLoopPolicy BEFORE any loop is created.
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
+nest_asyncio.apply()
+
+from dotenv import load_dotenv
+# Load .env ASAP
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 import logfire
@@ -54,6 +64,7 @@ sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
 from .services.scheduler_service import start_scheduler, stop_scheduler, broadcast_prices_job
 from .services.realtime_service import realtime_service
 from .services.ctrader_service import ctrader_service
+from .services.ibkr_service import ibkr_service
 from .services.simulation_service import simulation_service
 from .services.portfolio_policy_realtime_service import portfolio_policy_realtime_service
 
@@ -70,6 +81,10 @@ async def lifespan(app: FastAPI):
     simulation_service.configure_realtime(sio)
     start_scheduler(sio) # Pass SIO to scheduler for broadcasting
     ctrader_service.start()
+    
+    # Attempt IBKR connection in background
+    asyncio.create_task(ibkr_service.connect())
+    
     yield
     # Shutdown
     realtime_service.remove_tick_listener(portfolio_policy_realtime_service.handle_price_update)
@@ -185,7 +200,7 @@ if __name__ == "__main__":
         host="0.0.0.0", 
         port=8282, 
         reload=False, 
-        workers=4,
+        workers=1,
         loop="auto",
         http="auto",
         log_level="info"

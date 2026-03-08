@@ -216,7 +216,7 @@ class KalmanPriceFilterService:
     def _get_deps(self):
         if self._mds is None:
             from .market_data import market_data_service
-            from .duckdb_store import duckdb_repo
+            from ..core.container import duckdb_repo
 
             self._mds = market_data_service
             self._repo = duckdb_repo

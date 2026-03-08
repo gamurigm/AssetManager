@@ -90,6 +90,21 @@ export default function TradingPanel() {
         }
     };
 
+    const handleConnect = async () => {
+        setLoading(true);
+        try {
+            const res = await fetch("http://localhost:8282/api/v1/trading/connect/ibkr", { method: "POST" });
+            if (res.ok) {
+                const data = await res.json();
+                setStatus(data);
+            }
+        } catch (e) {
+            console.error("Failed to trigger IBKR connection", e);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const isConnected = status?.connected ?? false;
 
     return (
@@ -98,21 +113,33 @@ export default function TradingPanel() {
             <div className="px-6 py-4 border-b border-border/15 flex items-center justify-between bg-card/40 dark:bg-white/3">
                 <div className="flex items-center gap-3">
                     <div className={`h-8 w-8 rounded-lg flex items-center justify-center border ${isConnected ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-red/10 border-red/20 text-red'}`}>
-                        <ShoppingCart size={16} />
+                        {isConnected ? <Zap size={16} /> : <Link2Off size={16} />}
                     </div>
                     <div>
                         <h3 className="text-xs font-black uppercase tracking-widest text-foreground leading-none">Order Terminal</h3>
                         <p className={`text-[9px] font-bold mt-1 uppercase tracking-tighter ${isConnected ? 'text-emerald-500/70' : 'text-red/70'}`}>
-                            {isConnected ? `IBKR Connected @ ${status?.active_port}` : "Offline — Check TWS"}
+                            {isConnected ? `IBKR Connected @ ${status?.active_port}` : "Offline — TWS Link Inactive"}
                         </p>
                     </div>
                 </div>
-                <button
-                    onClick={fetchStatus}
-                    className="h-8 w-8 rounded-lg bg-card-hover/40 border border-border/20 flex items-center justify-center text-muted hover:text-foreground transition-all active:rotate-180"
-                >
-                    <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-                </button>
+                <div className="flex items-center gap-2">
+                    {!isConnected && (
+                        <button
+                            onClick={handleConnect}
+                            disabled={loading}
+                            className="px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[9px] font-black uppercase tracking-tighter hover:bg-emerald-500/20 transition-all flex items-center gap-2"
+                        >
+                            <Link size={10} />
+                            Try Connect
+                        </button>
+                    )}
+                    <button
+                        onClick={fetchStatus}
+                        className="h-8 w-8 rounded-lg bg-card-hover/40 border border-border/20 flex items-center justify-center text-muted hover:text-foreground transition-all active:rotate-180"
+                    >
+                        <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
+                    </button>
+                </div>
             </div>
 
             <div className="flex-1 overflow-y-auto p-6 space-y-8 no-scrollbar">
