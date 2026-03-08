@@ -38,6 +38,7 @@ htmlcov/
 .tox/
 .nox/
 .ipynb_checkpoints/
+kffqf.ipynb
 
 # --- Node.js / Next.js ---
 node_modules/
@@ -86,6 +87,7 @@ cmake_install.cmake
 
 # --- Logs & Temp Files ---
 *.log
+*.txt
 *.tmp
 *.bak
 *.swp
