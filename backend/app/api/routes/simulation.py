@@ -53,6 +53,8 @@ class SimulationRequest(BaseModel):
     pip_value: float = Field(default=1.0, gt=0)
     run_bootstrap: bool = Field(default=False)
     bootstrap_iterations: int = Field(default=1000, gt=0)
+    debug_lookbehind_guard: bool = Field(default=False)
+    use_atr_slippage: bool = Field(default=False)
 
 
 class TradeRecordResponse(BaseModel):
@@ -114,6 +116,8 @@ async def run_simulation(request: SimulationRequest):
         pip_value=request.pip_value,
         run_bootstrap=request.run_bootstrap,
         bootstrap_iterations=request.bootstrap_iterations,
+        debug_lookbehind_guard=request.debug_lookbehind_guard,
+        use_atr_slippage=request.use_atr_slippage,
     )
 
     try:

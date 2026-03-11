@@ -48,6 +48,7 @@ class StrategyConfig:
     wait_retest_max_m1: int = 30          # Max M1 candles to wait for price to return to FVG
 
     # Execution
+    p_atr_slippage: float = 0.20          # Entry slippage = factor × ATR_M1
     rr_target: float = 3.0               # Risk/Reward ratio (fixed)
     buffer_sl_factor: float = 0.10       # SL buffer = factor × ATR_M1
     max_spread: float = 0.0005           # Max allowed spread at entry
@@ -191,6 +192,7 @@ class KPIResult:
     profit_factor: float      # Σ wins_usd / Σ losses_usd
     max_drawdown_pct: float   # Peak-to-trough on running equity
     sharpe_ratio: float
+    sortino_ratio: float
     avg_rr_realized: float    # Actual RR achieved (not target)
     total_r: float            # Sum of pnl_r across all trades
     final_equity: float
@@ -206,6 +208,7 @@ class KPIResult:
             "profit_factor": round(self.profit_factor, 4),
             "max_drawdown_pct": round(self.max_drawdown_pct, 4),
             "sharpe_ratio": round(self.sharpe_ratio, 4),
+            "sortino_ratio": round(self.sortino_ratio, 4),
             "avg_rr_realized": round(self.avg_rr_realized, 4),
             "total_r": round(self.total_r, 4),
             "final_equity": round(self.final_equity, 2),

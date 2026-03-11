@@ -47,9 +47,9 @@ class BacktestConfig:
     pip_value: float = 1.0  # 1.0 per pip/unit (set per instrument)
     run_bootstrap: bool = False
     bootstrap_iterations: int = 10000
-    # --- Cross-Validation & Walk-Forward ---
-    run_cv: bool = False         # set True to run PurgedKFold CV instead of a single backtest
-    run_wfa: bool = False        # set True to run Walk-Forward Validation
+    # --- Quality Assurance & Auditing ---
+    debug_lookbehind_guard: bool = False  # If True, enforces strict temporal access
+    use_atr_slippage: bool = False       # If True, slippage is dynamic (0.2 * ATR)
     cv_n_splits: int = 5         # K folds (for CV) or num test windows (for WFA)
     cv_embargo_days: int = 5     # calendar days to exclude around each test window (for CV)
     
@@ -497,6 +497,11 @@ class BacktestRunner:
             m5 = session["m5"]
             m1 = session["m1"]
 
+            # AUDIT: Look-ahead guard proxy
+            from .engine.validation import LookAheadGuardProxy
+            if run_config.debug_lookbehind_guard:
+                m1 = LookAheadGuardProxy(m1)
+
             if not m1 or not m5:
                 missing_days += 1
                 continue
@@ -537,7 +542,10 @@ class BacktestRunner:
                 confirmation_idx = self._find_candle_index(m1, signal.timestamp)
                 remaining_m1 = m1[confirmation_idx + 1:] if confirmation_idx >= 0 else []
 
-                record = self._simulate_trade(signal, remaining_m1, run_config.pip_value)
+                # Determine dynamic slippage (p_atr_slippage * ATR)
+                slippage_pips = (signal.atr_m1 * cfg.p_atr_slippage / 0.0001) if run_config.use_atr_slippage else 1.0
+
+                record = self._simulate_trade(signal, remaining_m1, run_config.pip_value, slippage_pips)
                 trades.append(record)
 
                 # Update equity
@@ -579,17 +587,26 @@ class BacktestRunner:
     #  Trade Simulation                                                   #
     # ================================================================== #
 
-    @staticmethod
     def _simulate_trade(
+        self,
         signal: TradeSignal,
         remaining_m1: List[CandleRow],
         pip_value: float = 1.0,
+        slippage_override: Optional[float] = None,
     ) -> TradeRecord:
         """
         Walk forward through M1 candles until SL or TP is hit.
-        Slippage model: 1 pip assumed on entry.
         """
-        slippage_pips = 1.0  # conservative fixed slippage
+        # Slippage model: ATR-based or fixed
+        if slippage_override is not None:
+             slippage_pips = slippage_override
+        elif signal.atr_m1 > 0:
+             # Default: 0.2 ATR slippage if not specified
+             slippage_pips = signal.atr_m1 * 0.2 / 0.0001 # in pips (approx)
+             # Better: just use pips directly
+             slippage_pips = 1.0
+        else:
+             slippage_pips = 1.0 
 
         for candle in remaining_m1:
             h = candle["high"]

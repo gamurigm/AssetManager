@@ -40,8 +40,8 @@ class ORBKPICalculator:
             return KPIResult(
                 total_trades=0, wins=0, losses=0,
                 win_rate=0.0, expectancy_r=0.0, profit_factor=0.0,
-                max_drawdown_pct=0.0, sharpe_ratio=0.0, avg_rr_realized=0.0,
-                total_r=0.0, final_equity=initial_equity, cagr=0.0,
+                max_drawdown_pct=0.0, sharpe_ratio=0.0, sortino_ratio=0.0,
+                avg_rr_realized=0.0, total_r=0.0, final_equity=initial_equity, cagr=0.0,
             )
 
         wins   = [t for t in trades if t.is_win]
@@ -104,8 +104,17 @@ class ORBKPICalculator:
             avg_ret = statistics.mean(daily_returns)
             std_ret = statistics.stdev(daily_returns)
             sharpe = (avg_ret / std_ret * math.sqrt(252)) if std_ret > 0 else 0.0
+            
+            # — Corrected Sortino Ratio (annualised) —
+            downside_returns = [r for r in daily_returns if r < 0]
+            if downside_returns:
+                downside_std = statistics.stdev(downside_returns + [0.0] * (len(daily_returns) - len(downside_returns)))
+                sortino = (avg_ret / downside_std * math.sqrt(252)) if downside_std > 0 else 0.0
+            else:
+                sortino = sharpe # if no losses, sortino is infinite or same as sharpe conceptually here
         else:
             sharpe = 0.0
+            sortino = 0.0
 
         # — Average Realised RR —
         avg_rr = statistics.mean(abs(t.pnl_r) for t in wins) if wins else 0.0
@@ -125,6 +134,7 @@ class ORBKPICalculator:
             profit_factor=round(profit_factor, 4),
             max_drawdown_pct=round(max_dd, 4),
             sharpe_ratio=round(sharpe, 4),
+            sortino_ratio=round(sortino, 4),
             avg_rr_realized=round(avg_rr, 4),
             total_r=round(total_r, 4),
             final_equity=round(equity, 2),

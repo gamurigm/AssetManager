@@ -125,6 +125,9 @@ export default function BacktestLab() {
     const [ivrShort, setIvrShort] = useState(true);
     const [ivCurrentSignal, setIvCurrentSignal] = useState<IVCurrentSignal | null>(null);
 
+    const [debugLookbehind, setDebugLookbehind] = useState(false);
+    const [useAtrSlippage, setUseAtrSlippage] = useState(false);
+
     const equityCurve = buildEquityCurve(trades, activeAccountSize);
     const liveKpis = deriveLiveKpis(trades, activeAccountSize);
     const displayKpis = completedResult?.kpis ?? liveKpis;
@@ -410,6 +413,8 @@ export default function BacktestLab() {
                     strategy_name: strategyName,
                     run_bootstrap: bootstrap,
                     bootstrap_iterations: parseInt(iterations, 10),
+                    debug_lookbehind_guard: debugLookbehind,
+                    use_atr_slippage: useAtrSlippage,
                 }),
             });
 
@@ -674,6 +679,36 @@ export default function BacktestLab() {
                                                 </div>
                                             )}
                                         </div>
+
+                                        <div className="p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5 space-y-4 shadow-inner shadow-emerald-500/5">
+                                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400">Strategy Integrity Audit</p>
+                                            
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2 text-muted-foreground">
+                                                    <ShieldCheck size={14} className="text-emerald-400" />
+                                                    <label className="text-[11px] font-bold uppercase tracking-widest">Look-ahead Guard</label>
+                                                </div>
+                                                <button
+                                                    onClick={() => setDebugLookbehind(!debugLookbehind)}
+                                                    className={`w-10 h-5 rounded-full relative transition-colors ${debugLookbehind ? "bg-emerald-500" : "bg-card-hover"}`}
+                                                >
+                                                    <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 shadow-sm transition-all ${debugLookbehind ? "left-5" : "left-0.5"}`} />
+                                                </button>
+                                            </div>
+
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2 text-muted-foreground">
+                                                    <Target size={14} className="text-orange-400" />
+                                                    <label className="text-[11px] font-bold uppercase tracking-widest">Dynamic Slippage</label>
+                                                </div>
+                                                <button
+                                                    onClick={() => setUseAtrSlippage(!useAtrSlippage)}
+                                                    className={`w-10 h-5 rounded-full relative transition-colors ${useAtrSlippage ? "bg-orange-500" : "bg-card-hover"}`}
+                                                >
+                                                    <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 shadow-sm transition-all ${useAtrSlippage ? "left-5" : "left-0.5"}`} />
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
 
                                     <button
@@ -715,7 +750,7 @@ export default function BacktestLab() {
                                         <MetricCard label="Profit Factor" value={formatRatio(displayKpis.profit_factor)} icon={Zap} variant="amber" />
                                         <MetricCard label="Max Drawdown" value={formatFractionPercent(displayKpis.max_drawdown_pct)} trend="down" icon={TrendingDown} variant="rose" />
                                         <MetricCard label="Expectancy" value={`${displayKpis.expectancy_r.toFixed(2)}R`} icon={Target} />
-                                        <MetricCard label="Efficiency" value={displayKpis.sharpe_ratio.toFixed(2)} subValue="Sharpe" icon={ShieldCheck} variant="cyan" />
+                                        <MetricCard label="Performance" value={displayKpis.sharpe_ratio.toFixed(2)} subValue={`${displayKpis.sortino_ratio.toFixed(2)} Sortino / Sharpe`} icon={ShieldCheck} variant="cyan" />
                                     </div>
 
                                     <div className="bg-card border border-border rounded-2xl p-8 space-y-8 shadow-sm">

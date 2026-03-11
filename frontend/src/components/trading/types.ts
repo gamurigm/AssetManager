@@ -7,6 +7,7 @@ export type KpiSnapshot = {
     profit_factor: number;
     max_drawdown_pct: number;
     sharpe_ratio: number;
+    sortino_ratio: number;
     avg_rr_realized: number;
     total_r: number;
     final_equity: number;
