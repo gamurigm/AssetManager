@@ -462,7 +462,7 @@ function ActivityPanel({ transactions, collapsed, togglePanel }: { transactions:
                                     <div className="text-right flex flex-col">
                                         <span className="text-xs font-mono font-bold">${(t.price * t.shares).toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
                                         <span className="text-[9px] text-muted font-bold tracking-tighter">{t.shares} units @ ${formatAssetPriceFixed(t.price, { symbol: t.symbol })}</span>
-                                    </div>
+                                                                                                                                                                        </div>
                                 </div>
                             ))}
                         </div>

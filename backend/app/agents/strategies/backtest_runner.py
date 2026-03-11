@@ -517,42 +517,45 @@ class BacktestRunner:
                 continue
 
             # Run strategy engine — pure, deterministic
-            signal = self._strategy.run_session(
+            session_signals = self._strategy.run_session(
                 m5_candles=m5,
                 m1_candles=m1,
                 account_size=current_equity,
                 config=cfg,
             )
 
-            if signal is None:
-                continue
+            # Process all signals sequentially
+            for signal in session_signals:
+                if breaker.is_triggered():
+                    break
 
-            # Hook for subclasses
-            self._on_signal(signal, session_date)
+                # Hook for subclasses
+                self._on_signal(signal, session_date)
 
-            # Simulate the trade against remaining M1 candles
-            confirmation_idx = self._find_candle_index(m1, signal.timestamp)
-            remaining_m1 = m1[confirmation_idx + 1:] if confirmation_idx >= 0 else []
+                # Simulate the trade against remaining M1 candles
+                # To avoid look-ahead bias and respect sequentiality, we find where the signal triggered
+                confirmation_idx = self._find_candle_index(m1, signal.timestamp)
+                remaining_m1 = m1[confirmation_idx + 1:] if confirmation_idx >= 0 else []
 
-            record = self._simulate_trade(signal, remaining_m1, run_config.pip_value)
-            trades.append(record)
+                record = self._simulate_trade(signal, remaining_m1, run_config.pip_value)
+                trades.append(record)
 
-            # Update equity
-            current_equity += record.pnl_usd
+                # Update equity
+                current_equity += record.pnl_usd
 
-            # Notify circuit breaker
-            risk_amount = run_config.account_size * cfg.risk_per_trade
-            loss_pct = risk_amount / run_config.account_size
+                # Notify circuit breaker
+                risk_amount = run_config.account_size * cfg.risk_per_trade
+                loss_pct = risk_amount / run_config.account_size
 
-            if record.is_loss:
-                breaker.record_loss(loss_pct)
-            elif record.is_win:
-                gain_pct = record.pnl_usd / run_config.account_size
-                breaker.record_win(gain_pct)
+                if record.is_loss:
+                    breaker.record_loss(loss_pct)
+                elif record.is_win:
+                    gain_pct = record.pnl_usd / run_config.account_size
+                    breaker.record_win(gain_pct)
 
-            self._on_trade_close(record, current_equity)
-            if self._on_trade_cb:
-                self._on_trade_cb(record, current_equity)
+                self._on_trade_close(record, current_equity)
+                if self._on_trade_cb:
+                    self._on_trade_cb(record, current_equity)
 
         return trades, trading_days, missing_days
 

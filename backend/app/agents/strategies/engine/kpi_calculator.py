@@ -67,22 +67,42 @@ class ORBKPICalculator:
         equity = initial_equity
         peak   = initial_equity
         max_dd = 0.0
-        daily_returns: List[float] = []
-
+        
+        # Group trades by date for daily return series
+        daily_pnl: Dict[str, float] = {}
+        
         for t in trades:
-            prev_equity = equity
+            # signal.timestamp is ISO-8601 like "2026-03-11T09:35:42Z"
+            day_key = t.signal.timestamp[:10]
+            daily_pnl[day_key] = daily_pnl.get(day_key, 0.0) + t.pnl_usd
+            
+            # Update equity & peak for max drawdown (per trade resolution is safer for DD)
             equity += t.pnl_usd
-            daily_returns.append((equity - prev_equity) / prev_equity if prev_equity > 0 else 0.0)
             if equity > peak:
                 peak = equity
             dd = (peak - equity) / peak if peak > 0 else 0.0
             max_dd = max(max_dd, dd)
 
-        # — Sharpe Ratio (annualised, risk-free ≈ 0) —
+        # — Corrected Sharpe Ratio (annualised) —
+        # Strategy returns are often sparse (e.g. 19 trades in 252 days).
+        # We MUST include 233 zero-return days to get a realistic volatility.
+        num_active_days = len(daily_pnl)
+        num_zero_days = max(0, trading_days - num_active_days)
+        
+        daily_returns: List[float] = []
+        running_equity_for_ret = initial_equity
+        
+        # Add active days
+        for pnl in daily_pnl.values():
+            daily_returns.append(pnl / running_equity_for_ret if running_equity_for_ret > 0 else 0.0)
+            running_equity_for_ret += pnl
+            
+        # Add inactive days
+        daily_returns.extend([0.0] * num_zero_days)
+
         if len(daily_returns) > 1:
             avg_ret = statistics.mean(daily_returns)
             std_ret = statistics.stdev(daily_returns)
-            # Annualise: √252 trading days
             sharpe = (avg_ret / std_ret * math.sqrt(252)) if std_ret > 0 else 0.0
         else:
             sharpe = 0.0

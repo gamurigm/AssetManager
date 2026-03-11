@@ -23,31 +23,23 @@ class DuckDBStore:
         os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
         self.db_path = DB_PATH
         self._initialized = False
-        self._main_conn = None
         self._lock = threading.Lock()
 
-    def _get_conn(self, retry_count=3):
-        """Get a connection (cursor) from the DuckDB database singleton."""
-        import threading
-        if not hasattr(self, '_lock'): self._lock = threading.Lock()
-        
-        with self._lock:
-            if self._main_conn is None:
-                for i in range(retry_count):
-                    try:
-                        self._main_conn = duckdb.connect(self.db_path, read_only=False)
-                        break
-                    except duckdb.IOException as e:
-                        if "used by another process" in str(e) and i < retry_count - 1:
-                            print(f"[DuckDB Store] Database locked, retrying in 1s... ({i+1}/{retry_count})")
-                            time.sleep(1)
-                            continue
-                        raise e
-            
-            if self._main_conn is None:
-                raise RuntimeError("Could not connect to DuckDB Store")
-                
-            return self._main_conn.cursor()
+    def _get_conn(self, read_only=False, retry_count=20):
+        """Get a transient connection to DuckDB."""
+        for i in range(retry_count):
+            try:
+                conn = duckdb.connect(self.db_path, read_only=read_only)
+                conn.execute("PRAGMA memory_limit='1GB'")
+                conn.execute("PRAGMA threads=4")
+                return conn
+            except duckdb.IOException as e:
+                err_str = str(e).lower()
+                if ("used by another process" in err_str or "locked" in err_str) and i < retry_count - 1:
+                    time.sleep(0.1)
+                    continue
+                raise e
+        raise RuntimeError("Could not connect to DuckDB Store")
 
     def _ensure_initialized(self):
         """Ensure schema is initialized exactly once."""
@@ -135,7 +127,7 @@ class DuckDBStore:
         Returns newest first, limited to `limit` rows.
         """
         self._ensure_initialized()
-        conn = self._get_conn()
+        conn = self._get_conn(read_only=True)
         try:
             result = conn.execute("""
                 SELECT date, open, high, low, close, volume, source
@@ -163,7 +155,7 @@ class DuckDBStore:
     def has_data(self, symbol: str, min_rows: int = 10) -> bool:
         """Check if we have enough historical data for a symbol."""
         self._ensure_initialized()
-        conn = self._get_conn()
+        conn = self._get_conn(read_only=True)
         try:
             count = conn.execute(
                 "SELECT COUNT(*) FROM ohlcv WHERE symbol = ?", [symbol]
@@ -175,7 +167,7 @@ class DuckDBStore:
     def get_latest_date(self, symbol: str) -> Optional[str]:
         """Get the most recent date we have data for."""
         self._ensure_initialized()
-        conn = self._get_conn()
+        conn = self._get_conn(read_only=True)
         try:
             result = conn.execute(
                 "SELECT MAX(date) FROM ohlcv WHERE symbol = ?", [symbol]
@@ -187,7 +179,7 @@ class DuckDBStore:
     def get_stats(self) -> Dict[str, Any]:
         """Get database statistics for monitoring."""
         self._ensure_initialized()
-        conn = self._get_conn()
+        conn = self._get_conn(read_only=True)
         try:
             total_candles = conn.execute("SELECT COUNT(*) FROM ohlcv").fetchone()[0]
             total_symbols = conn.execute("SELECT COUNT(DISTINCT symbol) FROM ohlcv").fetchone()[0]
@@ -216,7 +208,7 @@ class DuckDBStore:
     def get_universe(self, asset_type: str = None) -> List[Dict[str, Any]]:
         """Get all symbols in the universe, optionally filtered by type."""
         self._ensure_initialized()
-        conn = self._get_conn()
+        conn = self._get_conn(read_only=True)
         try:
             if asset_type:
                 result = conn.execute(

@@ -58,6 +58,7 @@ import { IvSmilePanel } from "@/components/trading/IvSmilePanel";
 import { ArchVolPanel } from "@/components/trading/ArchVolPanel";
 import { KalmanFilterPanel } from "@/components/trading/KalmanFilterPanel";
 import { BacktestPriceChart } from "@/components/trading/BacktestPriceChart";
+import { MetricCard, BacktestPanel, DataSection } from "@/components/trading/BacktestUI";
 
 import { cachedFetch } from "@/lib/cachedFetch";
 import {
@@ -490,14 +491,13 @@ export default function BacktestLab() {
                 {labView === "strategy" ? (
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                         <div className="lg:col-span-4 space-y-6">
-                            <div className="dark:bg-[#050505] bg-white border dark:border-white/10 border-zinc-200 rounded-[2rem] p-8 relative overflow-hidden shadow-2xl">
-                                <div className="absolute top-0 right-0 w-64 h-64 bg-[#00ffa3]/5 rounded-full blur-[100px] -mr-32 -mt-32" />
-
-                                <div className="relative space-y-8">
-                                    <div className="flex items-center gap-3 pb-6 border-b dark:border-white/5 border-zinc-200">
-                                        <FileTerminal size={18} className="text-accent" />
-                                        <h2 className="text-xs font-black uppercase tracking-[0.3em] dark:text-white/90 text-zinc-800">System Parameters</h2>
-                                    </div>
+                            <BacktestPanel
+                                variant="purple"
+                                title="System Parameters"
+                                subtitle="Strategy Configuration"
+                                headerIcon={FileTerminal}
+                            >
+                                <div className="space-y-8">
 
                                     <div className="space-y-5">
                                         <div>
@@ -685,7 +685,7 @@ export default function BacktestLab() {
                                         {launching ? "Starting..." : isRunning ? "Running..." : strategyName === "IV_REGIME" ? "Execute IV Regime" : "Launch Engine"}
                                     </button>
                                 </div>
-                            </div>
+                            </BacktestPanel>
                         </div>
 
                         <div className="lg:col-span-8 flex flex-col gap-6">
@@ -710,28 +710,12 @@ export default function BacktestLab() {
                                     )}
 
                                     <div className="grid grid-cols-2 lg:grid-cols-3 gap-6">
-                                        {[
-                                            { label: "Net Pnl", value: `${netProfit >= 0 ? "+" : ""}$${formatCurrency(netProfit)}`, color: netProfit >= 0 ? "text-emerald-500 drop-shadow-[0_0_8px_rgba(16,185,129,0.3)]" : "text-destructive drop-shadow-[0_0_8px_rgba(239,68,68,0.3)]", desc: `${displayKpis.total_r.toFixed(1)}R Drift`, icon: Activity },
-                                            { label: "Win Rate", value: formatFractionPercent(displayKpis.win_rate), color: "text-foreground", desc: `${displayKpis.wins}W / ${displayKpis.losses}L`, icon: PieChart },
-                                            { label: "Profit Factor", value: formatRatio(displayKpis.profit_factor), color: "text-yellow-500", desc: "Gross Ratio", icon: Zap },
-                                            { label: "Max Drawdown", value: formatFractionPercent(displayKpis.max_drawdown_pct), color: "text-destructive", desc: "Equity Risk", icon: TrendingDown },
-                                            { label: "Expectancy", value: `${displayKpis.expectancy_r.toFixed(2)}R`, color: "text-orange-500", desc: "Per Unit Risk", icon: Target },
-                                            { label: "Efficiency", value: formatRatio(displayKpis.sharpe_ratio), color: "text-cyan-500", desc: "Sharpe Ratio", icon: ShieldCheck }
-                                        ].map((kpi, i) => (
-                                            <div key={i} className="bg-card border border-border rounded-2xl p-5 shadow-sm group hover:border-accent/40 transition-all">
-                                                <div className="flex items-center justify-between mb-3">
-                                                    <p className="text-[9px] font-black uppercase tracking-[0.3em] text-muted-foreground group-hover:text-accent/60 transition-colors">{kpi.label}</p>
-                                                    <kpi.icon size={12} className="text-muted/40 group-hover:text-accent/40" />
-                                                </div>
-                                                <p className={`text-2xl font-black font-mono tracking-tighter mt-1 ${kpi.color}`}>
-                                                    {kpi.value}
-                                                </p>
-                                                <p className="text-[9px] font-bold text-muted-foreground/60 mt-2 flex items-center gap-2 uppercase tracking-[0.15em]">
-                                                    <span className={`h-1 w-1 rounded-full ${i === 0 ? (netProfit >= 0 ? "bg-emerald-500" : "bg-destructive") : "bg-muted-foreground/20"}`} />
-                                                    {kpi.desc}
-                                                </p>
-                                            </div>
-                                        ))}
+                                        <MetricCard label="Net Pnl" value={`${netProfit >= 0 ? "+" : ""}$${formatCurrency(netProfit)}`} subValue={`${displayKpis.total_r.toFixed(1)}R Drift`} trend={netProfit >= 0 ? "up" : "down"} icon={Activity} />
+                                        <MetricCard label="Win Rate" value={formatFractionPercent(displayKpis.win_rate)} subValue={`${displayKpis.wins}W / ${displayKpis.losses}L`} icon={PieChart} />
+                                        <MetricCard label="Profit Factor" value={formatRatio(displayKpis.profit_factor)} icon={Zap} variant="amber" />
+                                        <MetricCard label="Max Drawdown" value={formatFractionPercent(displayKpis.max_drawdown_pct)} trend="down" icon={TrendingDown} variant="rose" />
+                                        <MetricCard label="Expectancy" value={`${displayKpis.expectancy_r.toFixed(2)}R`} icon={Target} />
+                                        <MetricCard label="Efficiency" value={displayKpis.sharpe_ratio.toFixed(2)} subValue="Sharpe" icon={ShieldCheck} variant="cyan" />
                                     </div>
 
                                     <div className="bg-card border border-border rounded-2xl p-8 space-y-8 shadow-sm">

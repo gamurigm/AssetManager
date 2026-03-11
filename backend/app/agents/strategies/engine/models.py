@@ -28,12 +28,12 @@ class StrategyConfig:
     min_range_pips: float = 0.1            # Minimum ORB range to trade that day
 
     # Breakout validation
-    vol_ruptura_ratio: float = 0.50         # Volume multiplier on breakout candle
+    vol_ruptura_ratio: float = 0.40         # Volume multiplier on breakout candle (relaxed from 1.3/0.5)
     body_ratio_breakout: float = 0.10       # Min body/range ratio on breakout candle
 
     # FVG
-    min_fvg_size_atr: float = 0.10         # FVG size ≥ factor × ATR_M1
-    wait_fvg_max_m1: int = 15              # Max M1 candles to wait for an FVG to form after breakout
+    min_fvg_size_atr: float = 0.20         # FVG size ≥ factor × ATR_M1 (relaxed from 0.5)
+    wait_fvg_max_m1: int = 20              # Max M1 candles to wait for an FVG to form after breakout
 
     # FCR candle (M5 impulse filter — optional)
     k1_atr_fcr: float = 1.5               # Range ≥ k1 × ATR_M5
@@ -42,7 +42,7 @@ class StrategyConfig:
 
     # Engulfing (confirmation in M1)
     p_cuerpo_min: float = 0.10            # Body ≥ p_cuerpo_min × ATR_M1
-    p_vol_min: float = 0.50               # Volume ≥ p_vol_min × avg_vol_M1
+    p_vol_min: float = 0.40               # Volume ≥ p_vol_min × avg_vol_M1 (relaxed from 1.2/0.5)
 
     # Retest patience
     wait_retest_max_m1: int = 30          # Max M1 candles to wait for price to return to FVG
@@ -55,7 +55,7 @@ class StrategyConfig:
 
     # Risk
     risk_per_trade: float = 0.005        # Fraction of account to risk (0.5%)
-    max_trades_per_day: int = 2
+    max_trades_per_day: int = 3
     max_concurrent_trades: int = 1
 
     # Circuit breakers

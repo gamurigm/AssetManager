@@ -62,6 +62,7 @@ sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
 
 from .services.scheduler_service import start_scheduler, stop_scheduler, broadcast_prices_job
 from .services.realtime_service import realtime_service
+from .services.kafka_consumer_service import kafka_consumer_service
 from .services.ctrader_service import ctrader_service
 from .services.ibkr_service import ibkr_service
 from .services.simulation_service import simulation_service
@@ -75,6 +76,7 @@ _logging.getLogger("twisted").setLevel(_logging.CRITICAL)
 async def lifespan(app: FastAPI):
     # Startup
     realtime_service.configure_streaming(sio)
+    kafka_consumer_service.start(sio)
     portfolio_policy_realtime_service.configure(sio)
     realtime_service.add_tick_listener(portfolio_policy_realtime_service.handle_price_update)
     simulation_service.configure_realtime(sio)
@@ -87,6 +89,7 @@ async def lifespan(app: FastAPI):
     yield
     # Shutdown
     ibkr_service.disconnect()
+    kafka_consumer_service.stop()
     realtime_service.remove_tick_listener(portfolio_policy_realtime_service.handle_price_update)
     realtime_service.shutdown_streaming()
     stop_scheduler()
@@ -162,17 +165,23 @@ async def disconnect(sid):
 
 @sio.on("join_symbol")
 async def join_symbol(sid, symbol: str):
-    normalized_symbol = symbol.upper()
-    logger.info(f"[Socket] Client {sid} joining room: {normalized_symbol}")
-    await sio.enter_room(sid, normalized_symbol)
-    realtime_service.subscribe(sid, normalized_symbol)
+    try:
+        normalized_symbol = symbol.upper()
+        logger.info(f"[Socket] Client {sid} joining room: {normalized_symbol}")
+        await sio.enter_room(sid, normalized_symbol)
+        realtime_service.subscribe(sid, normalized_symbol)
+    except KeyError:
+        logger.warning(f"[Socket] Failed to join room: Client {sid} disconnected.")
 
 @sio.on("leave_symbol")
 async def leave_symbol(sid, symbol: str):
-    normalized_symbol = symbol.upper()
-    logger.info(f"[Socket] Client {sid} leaving room: {normalized_symbol}")
-    await sio.leave_room(sid, normalized_symbol)
-    realtime_service.unsubscribe(sid, normalized_symbol)
+    try:
+        normalized_symbol = symbol.upper()
+        logger.info(f"[Socket] Client {sid} leaving room: {normalized_symbol}")
+        await sio.leave_room(sid, normalized_symbol)
+        realtime_service.unsubscribe(sid, normalized_symbol)
+    except KeyError:
+        logger.warning(f"[Socket] Failed to leave room: Client {sid} disconnected.")
 
 
 @sio.on("subscribe_portfolio_policy")

@@ -294,10 +294,13 @@ class SimulationService:
             return {"signal": None, "reason": "Insufficient intraday data for live signal.", "source": result.get("source")}
 
         engine = StrategyFactory.create(strategy_name)
-        signal: Optional[TradeSignal] = engine.run_session(m5, m1, account_size, config)
+        session_signals: List[TradeSignal] = engine.run_session(m5, m1, account_size, config)
 
-        if signal is None:
+        if not session_signals:
             return {"signal": None, "reason": "No valid setup found in current session.", "source": result.get("source")}
+
+        # Return the most recent signal for live display
+        signal = session_signals[-1]
 
         return {
             "signal": {

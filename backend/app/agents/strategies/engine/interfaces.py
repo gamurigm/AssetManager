@@ -38,7 +38,7 @@ class IStrategyEngine(Protocol):
         m1_candles: List[CandleRow],    # Session M1 candles starting at 9:35
         account_size: float,
         config: StrategyConfig,
-    ) -> Optional[TradeSignal]:
+    ) -> List[TradeSignal]:
         """
         Evaluate one trading session.
         Returns a TradeSignal if all conditions are met, otherwise None.

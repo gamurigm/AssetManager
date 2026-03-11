@@ -34,3 +34,4 @@ ib_insync
 crochet
 ctrader-open-api
 service_identity
+confluent-kafka
