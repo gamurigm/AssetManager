@@ -11,10 +11,8 @@ import {
 } from "recharts";
 import { LiveTrade, RegimeData } from "./types";
 import { buildRegimeRuns, REGIME_FILL } from "./utils";
-import {
-    getCachedOHLCV, setCachedOHLCV,
-    getCachedRegime, setCachedRegime,
-} from "./analyticsCache";
+import { getCachedOHLCV, setCachedOHLCV, getCachedRegime, setCachedRegime } from "./analyticsCache";
+import { cachedFetch } from "@/lib/cachedFetch";
 
 const API_BASE = "http://127.0.0.1:8282";
 
@@ -75,9 +73,11 @@ export function BacktestPriceChart({
         }
 
         setLoading(true);
-        fetch(`${API_BASE}/api/v1/market/historical/${symbol}?limit=600`)
-            .then(r => r.json())
+        let isMounted = true;
+        cachedFetch(`${API_BASE}/api/v1/market/historical/${symbol}?limit=600`)
+            .then(res => res.json())
             .then(d => {
+                if (!isMounted) return;
                 const raw = d.historical ?? [];
                 if (raw.length > 0) setCachedOHLCV(symbol, raw);
 
@@ -93,25 +93,36 @@ export function BacktestPriceChart({
 
                 setChartData(mergeHistWithTrades(hist, trades));
             })
-            .catch(err => console.error("[BacktestPriceChart] Fetch error:", err))
-            .finally(() => setLoading(false));
+            .catch(err => {
+                if (!isMounted) return;
+                console.error("[BacktestPriceChart] Fetch error:", err);
+            })
+            .finally(() => {
+                if (isMounted) setLoading(false);
+            });
+
+        return () => { isMounted = false; };
     }, [symbol, startDate, endDate, trades.length]);
 
     // ── fetch volatility regimes (with cache) ────────────────────────────────
     useEffect(() => {
         if (!symbol) return;
-        const cached = getCachedRegime(symbol);
+        const cached = getCachedRegime(symbol); 
         if (cached) {
             setRegimeData(cached);
             return;
         }
-        fetch(`${API_BASE}/api/v1/analytics/volatility-regimes/${symbol}?days=600&window=20`)
-            .then(r => r.json())
+        let isMounted = true;
+        cachedFetch(`${API_BASE}/api/v1/analytics/volatility-regimes/${symbol}?days=600&window=20`)
+            .then(r => r.ok ? r.json() : null)
             .then((d: RegimeData) => {
-                setCachedRegime(symbol, d);
+                if (!isMounted) return;
+                setCachedRegime(symbol, d); 
                 setRegimeData(d);
             })
             .catch(() => {/* regime overlay is optional – silently skip */ });
+
+        return () => { isMounted = false; };
     }, [symbol]);
 
     if (loading) {

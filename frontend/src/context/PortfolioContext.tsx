@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, ReactNode, useCallback } from "react";
 import { useSocket } from "@/context/SocketContext";
+import { cachedFetch } from "@/lib/cachedFetch";
 
 interface Holding {
     symbol: string;
@@ -50,8 +51,8 @@ export function PortfolioProvider({ children }: { children: ReactNode }) {
     const refreshPortfolio = useCallback(async () => {
         try {
             const [hRes, pnlRes] = await Promise.all([
-                fetch(`http://127.0.0.1:8282/api/v1/portfolios/?portfolio_id=${activePortfolio}`),
-                fetch(`http://127.0.0.1:8282/api/v1/trading/history?portfolio_id=${activePortfolio}`)
+                cachedFetch(`http://127.0.0.1:8282/api/v1/portfolios/?portfolio_id=${activePortfolio}`),
+                cachedFetch(`http://127.0.0.1:8282/api/v1/trading/history?portfolio_id=${activePortfolio}`)
             ]);
 
             const hData = await hRes.json();

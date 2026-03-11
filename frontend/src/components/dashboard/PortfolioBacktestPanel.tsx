@@ -20,6 +20,7 @@ import {
     Wallet,
 } from "lucide-react";
 
+import { cachedFetch } from "@/lib/cachedFetch";
 import { usePortfolio } from "@/context/PortfolioContext";
 import { usePortfolioPolicy } from "@/hooks/usePortfolioPolicy";
 import type { DashboardHolding } from "@/types/dashboard";
@@ -231,7 +232,7 @@ export default function PortfolioBacktestPanel({
     const loadEngineStatus = async () => {
         setLoadingEngines(true);
         try {
-            const response = await fetch(`${API_BASE}/api/v1/portfolios/backtest/engines`);
+            const response = await cachedFetch(`${API_BASE}/api/v1/portfolios/backtest/engines`);
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
             }

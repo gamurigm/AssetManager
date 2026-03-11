@@ -58,6 +58,8 @@ import { IvSmilePanel } from "@/components/trading/IvSmilePanel";
 import { ArchVolPanel } from "@/components/trading/ArchVolPanel";
 import { KalmanFilterPanel } from "@/components/trading/KalmanFilterPanel";
 import { BacktestPriceChart } from "@/components/trading/BacktestPriceChart";
+
+import { cachedFetch } from "@/lib/cachedFetch";
 import {
     getCachedIvSmile, setCachedIvSmile,
     getCachedArchVol, setCachedArchVol,
@@ -152,7 +154,7 @@ export default function BacktestLab() {
                 setIvLoading(false);
             } else {
                 setIvLoading(true);
-                fetch(`${API_BASE}/api/v1/analytics/implied-vol/${sym}`)
+                cachedFetch(`${API_BASE}/api/v1/analytics/implied-vol/${sym}`)
                     .then(r => r.ok ? r.json() : null)
                     .then(d => {
                         if (d?.expirations) {
@@ -171,7 +173,7 @@ export default function BacktestLab() {
                 setArchLoading(false);
             } else {
                 setArchLoading(true);
-                fetch(`${API_BASE}/api/v1/analytics/arch-vol/${sym}`)
+                cachedFetch(`${API_BASE}/api/v1/analytics/arch-vol/${sym}`)
                     .then(r => r.ok ? r.json() : null)
                     .then(d => {
                         if (d?.conditional_vol) {
@@ -190,7 +192,7 @@ export default function BacktestLab() {
                 setKalmanLoading(false);
             } else {
                 setKalmanLoading(true);
-                fetch(`${API_BASE}/api/v1/analytics/kalman-filter/${sym}?days=300&measurement_noise_mult=4`)
+                cachedFetch(`${API_BASE}/api/v1/analytics/kalman-filter/${sym}?days=300&measurement_noise_mult=4`)
                     .then(r => r.ok ? r.json() : null)
                     .then(d => {
                         if (d?.series) {
@@ -212,7 +214,7 @@ export default function BacktestLab() {
 
         const hydrateCompletedTrades = async (simId: string) => {
             try {
-                const response = await fetch(`${API_BASE}/api/v1/simulation/results/${encodeURIComponent(simId)}`);
+                const response = await cachedFetch(`${API_BASE}/api/v1/simulation/results/${encodeURIComponent(simId)}`);
                 if (!response.ok) return;
                 const detail = await response.json();
                 if (Array.isArray(detail?.trades)) {

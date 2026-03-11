@@ -5,6 +5,7 @@ import { TrendingUp, Activity, DollarSign, RefreshCw } from "lucide-react";
 import React, { useEffect, useState, useRef } from "react";
 import { createChart, ColorType, BaselineSeries } from "lightweight-charts";
 import { usePortfolio } from "@/context/PortfolioContext";
+import { cachedFetch } from "@/lib/cachedFetch";
 
 export default function ManagerDashboard() {
     const { activePortfolio } = usePortfolio();
@@ -17,7 +18,11 @@ export default function ManagerDashboard() {
 
     const fetchHistory = async () => {
         try {
-            const res = await fetch(`http://127.0.0.1:8282/api/v1/portfolios/history?portfolio_id=${activePortfolio}`);
+            const res = await cachedFetch(`http://127.0.0.1:8282/api/v1/portfolios/history?portfolio_id=${activePortfolio}`);
+            if (!res.ok) {
+                console.error("Failed to fetch equity history:", res.statusText);
+                return;
+            }
             const data = await res.json();
             setHistory(data);
             if (data.length > 0) {
