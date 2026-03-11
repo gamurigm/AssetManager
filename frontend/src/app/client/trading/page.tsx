@@ -134,77 +134,78 @@ export default function BacktestLab() {
     const profitHistogram = buildHistogramData(bootstrapLive?.net_profit_samples ?? []);
     const drawdownHistogram = buildHistogramData(bootstrapLive?.max_drawdown_samples ?? []);
 
-    // Fetch IV smile whenever a backtest completes on a new symbol (with cache)
+    // ── PREFETCH: eagerly load analytics as soon as the symbol changes ──────
+    // This fires IMMEDIATELY on symbol change, not after backtest completion.
+    // All 3 endpoints are fetched in parallel. Backend cache (10min TTL)
+    // + frontend cache (5min TTL) ensures near-instant response on repeat.
     useEffect(() => {
-        if (!completedResult) return;
-        const sym = completedResult.symbol;
-        const cached = getCachedIvSmile(sym);
-        if (cached) {
-            setIvData(cached);
-            setIvLoading(false);
-            return;
-        }
-        setIvLoading(true);
-        setIvData(null);
-        fetch(`${API_BASE}/api/v1/analytics/implied-vol/${sym}`)
-            .then(r => r.ok ? r.json() : null)
-            .then(d => {
-                if (d?.expirations) {
-                    setCachedIvSmile(sym, d);
-                    setIvData(d);
-                }
-            })
-            .catch(() => { })
-            .finally(() => setIvLoading(false));
-    }, [completedResult?.symbol]);
+        if (!symbol || symbol.length < 1) return;
 
-    // Fetch ARCH/GARCH conditional vol whenever a backtest completes (with cache)
-    useEffect(() => {
-        if (!completedResult) return;
-        const sym = completedResult.symbol;
-        const cached = getCachedArchVol(sym);
-        if (cached) {
-            setArchData(cached);
-            setArchLoading(false);
-            return;
-        }
-        setArchLoading(true);
-        setArchData(null);
-        fetch(`${API_BASE}/api/v1/analytics/arch-vol/${sym}`)
-            .then(r => r.ok ? r.json() : null)
-            .then(d => {
-                if (d?.conditional_vol) {
-                    setCachedArchVol(sym, d);
-                    setArchData(d);
-                }
-            })
-            .catch(() => { })
-            .finally(() => setArchLoading(false));
-    }, [completedResult?.symbol]);
+        const sym = symbol.toUpperCase();
 
-    // Fetch Kalman filter (with cache)
-    useEffect(() => {
-        if (!completedResult) return;
-        const sym = completedResult.symbol;
-        const cached = getCachedKalman(sym);
-        if (cached) {
-            setKalmanData(cached);
-            setKalmanLoading(false);
-            return;
-        }
-        setKalmanLoading(true);
-        setKalmanData(null);
-        fetch(`${API_BASE}/api/v1/analytics/kalman-filter/${sym}?days=300&measurement_noise_mult=4`)
-            .then(r => r.ok ? r.json() : null)
-            .then(d => {
-                if (d?.series) {
-                    setCachedKalman(sym, d);
-                    setKalmanData(d);
-                }
-            })
-            .catch(() => { })
-            .finally(() => setKalmanLoading(false));
-    }, [completedResult?.symbol]);
+        // Debounce: wait 400ms after the user stops typing
+        const timer = setTimeout(() => {
+            // ── IV Smile ──
+            const cachedIv = getCachedIvSmile(sym);
+            if (cachedIv) {
+                setIvData(cachedIv);
+                setIvLoading(false);
+            } else {
+                setIvLoading(true);
+                fetch(`${API_BASE}/api/v1/analytics/implied-vol/${sym}`)
+                    .then(r => r.ok ? r.json() : null)
+                    .then(d => {
+                        if (d?.expirations) {
+                            setCachedIvSmile(sym, d);
+                            setIvData(d);
+                        }
+                    })
+                    .catch(() => { })
+                    .finally(() => setIvLoading(false));
+            }
+
+            // ── ARCH / GARCH ──
+            const cachedArch = getCachedArchVol(sym);
+            if (cachedArch) {
+                setArchData(cachedArch);
+                setArchLoading(false);
+            } else {
+                setArchLoading(true);
+                fetch(`${API_BASE}/api/v1/analytics/arch-vol/${sym}`)
+                    .then(r => r.ok ? r.json() : null)
+                    .then(d => {
+                        if (d?.conditional_vol) {
+                            setCachedArchVol(sym, d);
+                            setArchData(d);
+                        }
+                    })
+                    .catch(() => { })
+                    .finally(() => setArchLoading(false));
+            }
+
+            // ── Kalman Filter ──
+            const cachedKalman = getCachedKalman(sym);
+            if (cachedKalman) {
+                setKalmanData(cachedKalman);
+                setKalmanLoading(false);
+            } else {
+                setKalmanLoading(true);
+                fetch(`${API_BASE}/api/v1/analytics/kalman-filter/${sym}?days=300&measurement_noise_mult=4`)
+                    .then(r => r.ok ? r.json() : null)
+                    .then(d => {
+                        if (d?.series) {
+                            setCachedKalman(sym, d);
+                            setKalmanData(d);
+                        }
+                    })
+                    .catch(() => { })
+                    .finally(() => setKalmanLoading(false));
+            }
+        }, 400);
+
+        return () => clearTimeout(timer);
+    }, [symbol]);
+
 
     useEffect(() => {
         if (!socket || !activeSim) return;

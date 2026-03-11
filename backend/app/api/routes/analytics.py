@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
 from ...core.container import get_historical, duckdb_repo
+from ...core.analytics_cache import analytics_cache
 from ...analytics.models.hmm import MarketRegimeModel
 from ...services.math_core import math_core
 from ...services.asset_classification_service import classify_assets
@@ -268,11 +269,15 @@ async def get_volatility_regimes(
     Returns state sequence, 3×3 transition matrix, per-state return
     distributions and the most probable next state.
     """
+    cached = analytics_cache.get("regimes", symbol.upper())
+    if cached is not None:
+        return cached
     result = await markov_vol_service.get_volatility_regimes(
         symbol.upper(), days=days, window=window
     )
     if "error" in result:
         raise HTTPException(status_code=404, detail=result["error"])
+    analytics_cache.set("regimes", symbol.upper(), result)
     return result
 
 
@@ -290,9 +295,13 @@ async def get_implied_volatility(
     Mid-price (bid+ask)/2 is used as the market price; lastPrice is the
     fallback when bid/ask are zero.
     """
+    cached = analytics_cache.get("iv", symbol.upper())
+    if cached is not None:
+        return cached
     result = await implied_vol_service.get_iv_smile(symbol.upper(), rf=rf)
     if "error" in result:
         raise HTTPException(status_code=404, detail=result["error"])
+    analytics_cache.set("iv", symbol.upper(), result)
     return result
 
 
@@ -309,9 +318,13 @@ async def get_arch_volatility(
     multi-horizon vol forecasts (1d / 5d / 21d), parametric VaR, and the
     Engle LM test for remaining ARCH effects in the standardised residuals.
     """
+    cached = analytics_cache.get("arch", symbol.upper())
+    if cached is not None:
+        return cached
     result = await arch_vol_service.get_garch(symbol.upper(), days=days)
     if "error" in result:
         raise HTTPException(status_code=404, detail=result["error"])
+    analytics_cache.set("arch", symbol.upper(), result)
     return result
 
 
@@ -336,6 +349,9 @@ async def get_kalman_filter(
     Returns the filtered series, innovation diagnostics, current gain / spread,
     and the offline AR(1) calibration used as the transition model.
     """
+    cached = analytics_cache.get("kalman", symbol.upper())
+    if cached is not None:
+        return cached
     result = await kalman_price_filter_service.get_price_filter(
         symbol.upper(),
         days=days,
@@ -343,5 +359,6 @@ async def get_kalman_filter(
     )
     if "error" in result:
         raise HTTPException(status_code=404, detail=result["error"])
+    analytics_cache.set("kalman", symbol.upper(), result)
     return result
 
