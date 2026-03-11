@@ -27,7 +27,7 @@ from .engine import (
     ORBFVGEngine, ORBKPICalculator,
     FoldResult, CrossValidationResult,
 )
-from .engine.purged_kfold import PurgedKFoldSplitter
+from .engine.purged_kfold import PurgedKFoldSplitter, WalkForwardSplitter
 from ...services.intraday_repository import IIntradayRepository, CandleRow, intraday_repository
 
 
@@ -47,10 +47,15 @@ class BacktestConfig:
     pip_value: float = 1.0  # 1.0 per pip/unit (set per instrument)
     run_bootstrap: bool = False
     bootstrap_iterations: int = 10000
-    # --- Cross-Validation (PurgedKFold) ---
+    # --- Cross-Validation & Walk-Forward ---
     run_cv: bool = False         # set True to run PurgedKFold CV instead of a single backtest
-    cv_n_splits: int = 5         # K folds
-    cv_embargo_days: int = 5     # calendar days to exclude around each test window
+    run_wfa: bool = False        # set True to run Walk-Forward Validation
+    cv_n_splits: int = 5         # K folds (for CV) or num test windows (for WFA)
+    cv_embargo_days: int = 5     # calendar days to exclude around each test window (for CV)
+    
+    # --- Survivorship Bias Protection ---
+    # To truly avoid survivorship bias, the `symbol` or universe should reflect
+    # Point-in-Time membership (including merged/delisted assets) for any given time t.
 
     def strategy_config(self) -> StrategyConfig:
         return StrategyConfig.from_dict(self.strategy_params) if self.strategy_params else StrategyConfig.default()
@@ -351,6 +356,109 @@ class BacktestRunner:
                 mean_profit_factor=cv_result.mean_profit_factor,
             )
             return cv_result
+
+    # ================================================================== #
+    #  Walk-Forward Validation (WFA)                                      #
+    # ================================================================== #
+
+    async def run_wfa(self, config: BacktestConfig) -> CrossValidationResult:
+        """
+        Execute Walk-Forward Validation (Expanding Window).
+        
+        Tests the strategy over strictly rolling or expanding chronological out-of-sample windows.
+        No random folds, no data from the future is ever mixed into previous periods.
+        """
+        import statistics as stats_lib
+
+        with logfire.span("BacktestRunner.run_wfa", symbol=config.symbol, n_splits=config.cv_n_splits):
+            strategy_cfg = config.strategy_config()
+
+            m1_candles, m5_candles = await self._fetch_candles(config)
+            if not m1_candles:
+                logfire.warning("run_wfa: no M1 candles", symbol=config.symbol)
+                return CrossValidationResult(
+                    n_splits=config.cv_n_splits, embargo_days=0, folds=[],
+                    mean_win_rate=0.0, std_win_rate=0.0, mean_profit_factor=0.0, std_profit_factor=0.0,
+                    mean_sharpe=0.0, std_sharpe=0.0, mean_expectancy_r=0.0, std_expectancy_r=0.0,
+                )
+
+            all_sessions = self._split_into_sessions(m1_candles, m5_candles)
+
+            if len(all_sessions) < config.cv_n_splits * 2:
+                raise ValueError("Not enough sessions to perform meaningful Walk-Forward Validation splits.")
+
+            splitter = WalkForwardSplitter(
+                n_splits=config.cv_n_splits,
+                train_size=None,
+                expanding=True,
+            )
+
+            fold_results: List[FoldResult] = []
+
+            for fold_idx, (train_sessions, test_sessions) in enumerate(splitter.split(all_sessions)):
+                if not test_sessions:
+                    logfire.warning(f"run_wfa: window {fold_idx} has no test sessions — skipping")
+                    continue
+
+                test_start = str(test_sessions[0]["date"])
+                test_end   = str(test_sessions[-1]["date"])
+
+                logfire.info(
+                    f"[WFA] Window {fold_idx}/{config.cv_n_splits - 1}",
+                    test_start=test_start, test_end=test_end,
+                    train_sessions=len(train_sessions), test_sessions=len(test_sessions),
+                )
+
+                # Pure out-of-sample evaluation on test_sessions
+                trades, trading_days, _ = self._run_session_loop(test_sessions, strategy_cfg, config)
+                kpis = self._kpi_calc.compute(trades, config.account_size, trading_days)
+
+                fold_results.append(FoldResult(
+                    fold_index=fold_idx,
+                    train_days=len(train_sessions),
+                    test_days=len(test_sessions),
+                    test_start=test_start,
+                    test_end=test_end,
+                    kpis=kpis,
+                    trades=trades,
+                ))
+
+            if not fold_results:
+                return CrossValidationResult(
+                    n_splits=config.cv_n_splits, embargo_days=0, folds=[],
+                    mean_win_rate=0.0, std_win_rate=0.0, mean_profit_factor=0.0, std_profit_factor=0.0,
+                    mean_sharpe=0.0, std_sharpe=0.0, mean_expectancy_r=0.0, std_expectancy_r=0.0,
+                )
+
+            def _safe_std(values):
+                return stats_lib.stdev(values) if len(values) > 1 else 0.0
+
+            win_rates       = [f.kpis.win_rate for f in fold_results]
+            profit_factors  = [f.kpis.profit_factor for f in fold_results]
+            sharpes         = [f.kpis.sharpe_ratio for f in fold_results]
+            expectancies    = [f.kpis.expectancy_r for f in fold_results]
+
+            wfa_result = CrossValidationResult(
+                n_splits=config.cv_n_splits,
+                embargo_days=0,
+                folds=fold_results,
+                mean_win_rate=stats_lib.mean(win_rates),
+                std_win_rate=_safe_std(win_rates),
+                mean_profit_factor=stats_lib.mean(profit_factors),
+                std_profit_factor=_safe_std(profit_factors),
+                mean_sharpe=stats_lib.mean(sharpes),
+                std_sharpe=_safe_std(sharpes),
+                mean_expectancy_r=stats_lib.mean(expectancies),
+                std_expectancy_r=_safe_std(expectancies),
+            )
+
+            logfire.info(
+                "WFA Validation completed",
+                windows=len(fold_results),
+                mean_win_rate=wfa_result.mean_win_rate,
+                mean_profit_factor=wfa_result.mean_profit_factor,
+            )
+            return wfa_result
 
     # ================================================================== #
     #  Template Method — session loop                                     #

@@ -71,12 +71,14 @@ class ORBFVGEngine:
         state = SessionState()
         state.orb = orb
 
-        atr_m1 = compute_ATR(m1_candles[-20:], period=14)
-        avg_vol_m1 = compute_avg_volume(m1_candles[-20:], period=20)
-
         prev_candle: Optional[CandleRow] = None
 
         for idx, candle in enumerate(m1_candles):
+            # Avoid Look-Ahead Bias: compute indicators using only data up to time t
+            current_buffer = m1_candles[max(0, idx - 19) : idx + 1]
+            atr_m1 = compute_ATR(current_buffer, period=14)
+            avg_vol_m1 = compute_avg_volume(current_buffer, period=20)
+
             # ---------------------------------------------------------- #
             # PASO 2: Detect breakout (only when no breakout yet)         #
             # ---------------------------------------------------------- #

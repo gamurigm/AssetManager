@@ -43,6 +43,14 @@ class IStrategyEngine(Protocol):
         Evaluate one trading session.
         Returns a TradeSignal if all conditions are met, otherwise None.
         Must be a pure function: no I/O, no side effects.
+
+        ⚠️ CRITICAL RULE: AVOIDING LOOK-AHEAD BIAS
+        Every concrete strategy implementation MUST respect the following:
+        1. When iterating over `m1_candles`, any feature, signal, or indicator
+           calculated at index `i` MUST ONLY use `m1_candles[:i + 1]`.
+        2. NEVER calculate indicators using the entire `m1_candles` array before
+           or during the loop, as this injects future data into past decisions.
+        3. Do not use future returns or statistics that "peek ahead".
         """
         ...
 

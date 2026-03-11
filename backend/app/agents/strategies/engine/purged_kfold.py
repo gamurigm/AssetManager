@@ -158,6 +158,73 @@ class PurgedKFoldSplitter:
         return True
 
 
+class WalkForwardSplitter:
+    """
+    Time-series Walk-Forward Validation splitter.
+    Provides expanding or rolling window cross-validation splits.
+
+    Parameters
+    ----------
+    n_splits : int
+        Number of test windows. 
+    train_size : int, float, or None
+        If float, proportion of total size for initial training window.
+        If int, number of sessions for initial training window.
+        If None, uses `total_size / (n_splits + 1)`.
+    expanding : bool
+        If True, the training window expands over time.
+        If False, the training window rolls (fixed size).
+    """
+
+    def __init__(self, n_splits: int = 5, train_size=None, expanding: bool = True) -> None:
+        if n_splits < 1:
+            raise ValueError("n_splits must be >= 1")
+        self.n_splits = n_splits
+        self.train_size = train_size
+        self.expanding = expanding
+
+    def split(self, sessions: List[Dict]) -> Iterator[Tuple[List[Dict], List[Dict]]]:
+        """
+        Yield (train_sessions, test_sessions) for each fold sequentially.
+        """
+        sessions = _ensure_sorted(sessions)
+        n = len(sessions)
+        
+        if self.train_size is None:
+            train_len = n // (self.n_splits + 1)
+        elif isinstance(self.train_size, float):
+            train_len = int(n * self.train_size)
+        else:
+            train_len = self.train_size
+
+        if train_len <= 0 or train_len >= n:
+            raise ValueError(f"Invalid train_len {train_len} for {n} sessions.")
+
+        test_len = (n - train_len) // self.n_splits
+        if test_len <= 0:
+            raise ValueError(f"Cannot form {self.n_splits} test windows with {n - train_len} remaining sessions.")
+
+        for i in range(self.n_splits):
+            test_start = train_len + i * test_len
+            test_end = test_start + test_len if i < self.n_splits - 1 else n
+            
+            train_start = 0 if self.expanding else i * test_len
+            
+            train_sessions = sessions[train_start:test_start]
+            test_sessions = sessions[test_start:test_end]
+            
+            yield train_sessions, test_sessions
+
+    def get_test_date_ranges(self, sessions: List[Dict]) -> List[Tuple[date, date]]:
+        ranges = []
+        for _, test_sessions in self.split(sessions):
+            if test_sessions:
+                ranges.append(
+                    (_to_date(test_sessions[0]["date"]), _to_date(test_sessions[-1]["date"]))
+                )
+        return ranges
+
+
 # ------------------------------------------------------------------ #
 #  Helpers (module-private)                                           #
 # ------------------------------------------------------------------ #
