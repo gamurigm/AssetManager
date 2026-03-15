@@ -103,11 +103,12 @@ test_config.json
 *.pptx
 *.xlsx
 
-# All markdown except README and workflow docs
-**/*.md
-!**/README.md
-!.agent/workflows/*.md
-!AGENTS.md
+# --- Media & Documents ---
+# *.png
+# **/*.md
+# !**/README.md
+# !.agent/workflows/*.md
+# !AGENTS.md
 
 # --- External Repos (cloned separately) ---
 external_repos/
