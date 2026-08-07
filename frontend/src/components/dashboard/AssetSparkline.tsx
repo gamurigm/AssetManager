@@ -4,6 +4,7 @@ import React, { useEffect, useState } from "react";
 import { LineChart, Line, ResponsiveContainer, YAxis, ReferenceLine } from "recharts";
 import { useSocket } from "@/context/SocketContext";
 import { formatAssetPriceFixed } from "@/lib/marketFormatting";
+import { cachedFetch } from "@/lib/cachedFetch";
 
 const sparklineCache: Record<string, any[]> = {};
 
@@ -20,7 +21,7 @@ const AssetSparkline = React.memo(({ symbol, color, entryPrice }: AssetSparkline
     useEffect(() => {
         if (sparklineCache[symbol]?.length > 0) return;
         let isMounted = true;
-        fetch(`http://127.0.0.1:8282/api/v1/market/historical/${encodeURIComponent(symbol)}?limit=60`)
+        cachedFetch(`http://127.0.0.1:8282/api/v1/market/historical/${encodeURIComponent(symbol)}?limit=60`)
             .then(r => r.json())
             .then(d => {
                 if (!isMounted) return;

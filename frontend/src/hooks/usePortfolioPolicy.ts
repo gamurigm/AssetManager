@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useSocket } from "@/context/SocketContext";
+import { cachedFetch } from "@/lib/cachedFetch";
 import type {
     PolicyAllocation,
     PortfolioPolicyDeltaEvent,

@@ -20,8 +20,10 @@ import {
     Wallet,
 } from "lucide-react";
 
+import { cachedFetch } from "@/lib/cachedFetch";
 import { usePortfolio } from "@/context/PortfolioContext";
 import { usePortfolioPolicy } from "@/hooks/usePortfolioPolicy";
+import { MetricCard, BacktestPanel, DataSection } from "@/components/trading/BacktestUI";
 import type { DashboardHolding } from "@/types/dashboard";
 
 const API_BASE = "http://127.0.0.1:8282";
@@ -231,7 +233,7 @@ export default function PortfolioBacktestPanel({
     const loadEngineStatus = async () => {
         setLoadingEngines(true);
         try {
-            const response = await fetch(`${API_BASE}/api/v1/portfolios/backtest/engines`);
+            const response = await cachedFetch(`${API_BASE}/api/v1/portfolios/backtest/engines`);
             if (!response.ok) {
                 throw new Error(`HTTP ${response.status}`);
             }
@@ -426,16 +428,11 @@ export default function PortfolioBacktestPanel({
     return (
         <div className="p-5 space-y-5">
             <div className="grid grid-cols-1 xl:grid-cols-[1.2fr_0.8fr] gap-5">
-                <div className="rounded-3xl border border-cyan-500/20 bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.12),transparent_45%),linear-gradient(180deg,rgba(15,23,42,0.55),rgba(15,23,42,0.2))] overflow-hidden">
-                    <div className="px-5 py-4 border-b border-white/5 flex items-start justify-between gap-4">
-                        <div>
-                            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-cyan-200/80">Portfolio Simulator</p>
-                            <h3 className="text-lg font-black tracking-tight text-white mt-1">Buy On Start Date, Then Backtest</h3>
-                            <p className="text-xs text-muted mt-1 max-w-xl">
-                                Launch a portfolio-level historical run from the current saved basket or a manual weighted list.
-                                The backend can route to a standalone C++ service, embedded C++ engine, or Python fallback.
-                            </p>
-                        </div>
+                <BacktestPanel
+                    variant="cyan"
+                    title="Portfolio Simulator"
+                    subtitle="Buy On Start Date, Then Backtest"
+                    headerRight={
                         <button
                             onClick={() => void loadEngineStatus()}
                             className="shrink-0 h-10 px-3 rounded-2xl border border-white/10 bg-black/20 text-xs font-black uppercase tracking-widest text-cyan-100/80 hover:bg-black/30 transition-colors flex items-center gap-2"
@@ -443,9 +440,9 @@ export default function PortfolioBacktestPanel({
                             {loadingEngines ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
                             Engines
                         </button>
-                    </div>
-
-                    <div className="p-5 space-y-5">
+                    }
+                >
+                    <div className="space-y-5">
                         <div className="flex flex-wrap gap-2">
                             {(["portfolio", "manual"] as SourceMode[]).map((mode) => (
                                 <button
@@ -468,7 +465,7 @@ export default function PortfolioBacktestPanel({
                                     type="date"
                                     value={startDate}
                                     onChange={(event) => setStartDate(event.target.value)}
-                                    className="w-full rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
+                                    className="w-full rounded-2xl border border-border bg-background/40 px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
                                 />
                             </label>
                             <label className="space-y-1.5">
@@ -477,7 +474,7 @@ export default function PortfolioBacktestPanel({
                                     type="date"
                                     value={endDate}
                                     onChange={(event) => setEndDate(event.target.value)}
-                                    className="w-full rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
+                                    className="w-full rounded-2xl border border-border bg-background/40 px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
                                 />
                             </label>
                             <label className="space-y-1.5">
@@ -488,7 +485,7 @@ export default function PortfolioBacktestPanel({
                                     step="100"
                                     value={initialCash}
                                     onChange={(event) => setInitialCash(event.target.value)}
-                                    className="w-full rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
+                                    className="w-full rounded-2xl border border-border bg-background/40 px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
                                 />
                             </label>
                             <label className="space-y-1.5">
@@ -496,7 +493,7 @@ export default function PortfolioBacktestPanel({
                                 <select
                                     value={executionMode}
                                     onChange={(event) => setExecutionMode(event.target.value as ExecutionMode)}
-                                    className="w-full rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
+                                    className="w-full rounded-2xl border border-border bg-background/40 px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
                                 >
                                     <option value="auto">Auto</option>
                                     <option value="remote">C++ Remote</option>
@@ -512,7 +509,7 @@ export default function PortfolioBacktestPanel({
                                 <select
                                     value={rebalanceFrequency}
                                     onChange={(event) => setRebalanceFrequency(event.target.value)}
-                                    className="w-full rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
+                                    className="w-full rounded-2xl border border-border bg-background/40 px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
                                 >
                                     <option value="none">None</option>
                                     <option value="weekly">Weekly</option>
@@ -529,7 +526,7 @@ export default function PortfolioBacktestPanel({
                                     step="1"
                                     value={feeBps}
                                     onChange={(event) => setFeeBps(event.target.value)}
-                                    className="w-full rounded-2xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
+                                    className="w-full rounded-2xl border border-border bg-background/40 px-3 py-2.5 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
                                 />
                             </label>
                         </div>
@@ -541,12 +538,9 @@ export default function PortfolioBacktestPanel({
                                     value={manualBasket}
                                     onChange={(event) => setManualBasket(event.target.value)}
                                     rows={7}
-                                    className="w-full rounded-3xl border border-white/10 bg-black/20 px-4 py-3 text-sm text-white font-mono resize-y focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
+                                    className="w-full rounded-3xl border border-border bg-background/40 px-4 py-3 text-sm text-foreground font-mono resize-y focus:outline-none focus:ring-2 focus:ring-cyan-400/30"
                                     placeholder={"AAPL,60\nMSFT,25\nGLD,15,1.0"}
                                 />
-                                <p className="text-[10px] text-muted/80 font-mono">
-                                    One line per asset: symbol, weight%, optional factor. If you omit weights, the backend distributes the basket evenly.
-                                </p>
                             </label>
                         ) : (
                             <div className="rounded-3xl border border-white/10 bg-black/15 px-4 py-4">
@@ -590,7 +584,7 @@ export default function PortfolioBacktestPanel({
                             {running ? "Running Backtest" : "Run Portfolio Backtest"}
                         </button>
                     </div>
-                </div>
+                </BacktestPanel>
 
                 <div className="rounded-3xl border border-white/10 bg-black/15 overflow-hidden">
                     <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between gap-3">
@@ -728,20 +722,17 @@ export default function PortfolioBacktestPanel({
 
             {result && (
                 <>
-                    <div className="grid grid-cols-2 xl:grid-cols-5 gap-3">
-                        {[
-                            { label: "Engine", value: engineLabel(result.engine), tone: "text-cyan-200" },
-                            { label: "Final Equity", value: `$${formatCurrency(result.kpis.final_equity)}`, tone: "text-white" },
-                            { label: "Total Return", value: formatPercent(result.kpis.total_return_pct), tone: result.kpis.total_return_pct >= 0 ? "text-green" : "text-red" },
-                            { label: "Sharpe", value: result.kpis.sharpe_ratio.toFixed(2), tone: "text-amber-300" },
-                            { label: "Max Drawdown", value: formatPercent(result.kpis.max_drawdown_pct), tone: "text-red" },
-                        ].map((card) => (
-                            <div key={card.label} className="rounded-2xl border border-white/10 bg-card-hover/20 px-4 py-3">
-                                <p className="text-[10px] font-black uppercase tracking-widest text-muted">{card.label}</p>
-                                <p className={`text-lg font-black mt-2 ${card.tone}`}>{card.value}</p>
-                            </div>
-                        ))}
-                    </div>
+                <div className="grid grid-cols-2 xl:grid-cols-5 gap-3">
+                    <MetricCard label="Engine" value={engineLabel(result.engine)} variant="cyan" />
+                    <MetricCard label="Final Equity" value={`$${formatCurrency(result.kpis.final_equity)}`} />
+                    <MetricCard
+                        label="Total Return"
+                        value={formatPercent(result.kpis.total_return_pct)}
+                        variant={result.kpis.total_return_pct >= 0 ? "emerald" : "rose"}
+                    />
+                    <MetricCard label="Sharpe" value={result.kpis.sharpe_ratio.toFixed(2)} variant="amber" />
+                    <MetricCard label="Max Drawdown" value={formatPercent(result.kpis.max_drawdown_pct)} variant="rose" />
+                </div>
 
                     <div className="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-5">
                         <div className="rounded-3xl border border-white/10 bg-card-hover/20 overflow-hidden">

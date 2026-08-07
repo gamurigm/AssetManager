@@ -15,7 +15,9 @@ from __future__ import annotations
 
 import asyncio
 import os
+import threading
 import uuid
+from dataclasses import dataclass
 from typing import Dict, List, Optional
 from datetime import datetime, timezone
 import logfire
@@ -34,6 +36,32 @@ from .market_data import market_data_service
 #  Request / Response schemas (simple dicts — Pydantic models live in routes) #
 # --------------------------------------------------------------------------- #
 
+@dataclass
+class SimulationJob:
+    sim_id: str
+    symbol: str
+    strategy_name: str
+    status: str
+    created_at: str
+    updated_at: str
+    result: Optional[BacktestResult] = None
+    error: Optional[str] = None
+
+    def as_dict(self) -> dict:
+        payload = {
+            "sim_id": self.sim_id,
+            "symbol": self.symbol,
+            "strategy": self.strategy_name,
+            "status": self.status,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }
+        if self.result is not None:
+            payload["summary"] = self.result.summary()
+        if self.error:
+            payload["error"] = self.error
+        return payload
+
 class SimulationService:
     """
     Façade that hides the composition details of BacktestRunner, StrategyFactory,
@@ -42,8 +70,27 @@ class SimulationService:
     S: only orchestrates simulation runs — no business logic itself.
     """
 
-    def __init__(self) -> None:
-        self._results: Dict[str, Optional[BacktestResult]] = {}
+    def __init__(
+        self,
+        *,
+        max_active_jobs: Optional[int] = None,
+        max_history: Optional[int] = None,
+    ) -> None:
+        self._jobs: Dict[str, SimulationJob] = {}
+        self._tasks: set[asyncio.Task] = set()
+        self._lock = threading.RLock()
+        self._max_active_jobs = max(
+            1,
+            max_active_jobs
+            if max_active_jobs is not None
+            else int(os.getenv("SIMULATION_MAX_ACTIVE_JOBS", "4")),
+        )
+        self._max_history = max(
+            10,
+            max_history
+            if max_history is not None
+            else int(os.getenv("SIMULATION_MAX_HISTORY", "100")),
+        )
         self._sio = None
 
     # ================================================================== #
@@ -55,10 +102,64 @@ class SimulationService:
         self._sio = sio
 
     def pre_register(self, symbol: str, strategy_name: str) -> str:
-        """Reserve a sim_id before the backtest starts (fills in None as placeholder)."""
+        """Reserve a bounded, queryable simulation job before execution starts."""
         sim_id = self._generate_sim_id(symbol, strategy_name)
-        self._results[sim_id] = None
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            active = sum(
+                job.status in {"queued", "running"}
+                for job in self._jobs.values()
+            )
+            if active >= self._max_active_jobs:
+                raise ValueError(
+                    f"Simulation capacity reached ({self._max_active_jobs} active jobs)"
+                )
+            self._prune_jobs_locked()
+            self._jobs[sim_id] = SimulationJob(
+                sim_id=sim_id,
+                symbol=symbol.strip().upper(),
+                strategy_name=strategy_name,
+                status="queued",
+                created_at=now,
+                updated_at=now,
+            )
         return sim_id
+
+    def start_background(self, config: BacktestConfig) -> str:
+        """Create and retain one background task through the service façade."""
+        sim_id = self.pre_register(config.symbol, config.strategy_name)
+        task = asyncio.create_task(self.run_backtest_background(sim_id, config))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+        return sim_id
+
+    def _prune_jobs_locked(self) -> None:
+        completed = [
+            job for job in self._jobs.values()
+            if job.status in {"completed", "failed"}
+        ]
+        overflow = len(self._jobs) - self._max_history + 1
+        if overflow <= 0:
+            return
+        for job in sorted(completed, key=lambda item: item.updated_at)[:overflow]:
+            self._jobs.pop(job.sim_id, None)
+
+    def _set_job_state(
+        self,
+        sim_id: str,
+        status: str,
+        *,
+        result: Optional[BacktestResult] = None,
+        error: Optional[str] = None,
+    ) -> None:
+        with self._lock:
+            job = self._jobs.get(sim_id)
+            if job is None:
+                return
+            job.status = status
+            job.updated_at = datetime.now(timezone.utc).isoformat()
+            job.result = result
+            job.error = error
 
     async def _generate_pdf_report(self, result: BacktestResult) -> Optional[str]:
         """Generate a PDF report in a worker thread and return its filename."""
@@ -109,8 +210,12 @@ class SimulationService:
                         "outcome":        record.outcome,
                         "pnl_r":          round(record.pnl_r, 3),
                         "pnl_usd":        round(record.pnl_usd, 2),
+                        "gross_pnl_usd":  round(record.gross_pnl_usd, 2),
+                        "fees_usd":       round(record.fees_usd, 2),
+                        "entry_price":    record.entry_price,
                         "exit_price":     record.exit_price,
                         "exit_timestamp": str(record.exit_timestamp),
+                        "execution_note": record.execution_note,
                     },
                     "equity": round(equity, 2),
                 }),
@@ -141,6 +246,7 @@ class SimulationService:
         Emits Socket.IO events: backtest_progress, backtest_trade,
         backtest_bootstrap_ready, backtest_complete, backtest_error.
         """
+        self._set_job_state(sim_id, "running")
         loop = asyncio.get_running_loop()
         on_progress, on_trade, on_bootstrap = self._make_callbacks(sim_id, loop)
         try:
@@ -163,7 +269,7 @@ class SimulationService:
             except Exception as pdf_err:
                 logfire.error(f"PDF generation failed for {sim_id}: {pdf_err}")
 
-            self._results[sim_id] = result
+            self._set_job_state(sim_id, "completed", result=result)
 
             report_url = (
                 f"http://localhost:8282/view-reports/{report_filename}"
@@ -187,7 +293,7 @@ class SimulationService:
 
         except Exception as exc:
             logfire.error(f"run_backtest_background failed [{sim_id}]: {exc}")
-            self._results.pop(sim_id, None)
+            self._set_job_state(sim_id, "failed", error=str(exc))
             if self._sio:
                 await self._sio.emit("backtest_error", {
                     "sim_id": sim_id,
@@ -207,6 +313,12 @@ class SimulationService:
         strategy_name: str = "ORB_FVG_ENGULFING",
         strategy_params: Optional[dict] = None,
         pip_value: float = 1.0,
+        use_atr_slippage: bool = False,
+        atr_slippage_factor: float = 0.20,
+        fixed_slippage_price: float = 0.0,
+        commission_per_trade: float = 0.0,
+        intrabar_fill_policy: str = "conservative",
+        mark_expired_to_market: bool = True,
         run_bootstrap: bool = False,
         bootstrap_iterations: int = 1000,
     ) -> tuple[str, BacktestResult]:
@@ -228,6 +340,12 @@ class SimulationService:
             strategy_name=strategy_name,
             strategy_params=strategy_params or {},
             pip_value=pip_value,
+            use_atr_slippage=use_atr_slippage,
+            atr_slippage_factor=atr_slippage_factor,
+            fixed_slippage_price=fixed_slippage_price,
+            commission_per_trade=commission_per_trade,
+            intrabar_fill_policy=intrabar_fill_policy,
+            mark_expired_to_market=mark_expired_to_market,
             run_bootstrap=run_bootstrap,
             bootstrap_iterations=bootstrap_iterations
         )
@@ -244,7 +362,17 @@ class SimulationService:
             logfire.error(f"PDF generation failed for sync run: {pdf_err}")
 
         sim_id = self._generate_sim_id(symbol, strategy_name)
-        self._results[sim_id] = result
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock:
+            self._jobs[sim_id] = SimulationJob(
+                sim_id=sim_id,
+                symbol=config.symbol,
+                strategy_name=config.strategy_name,
+                status="completed",
+                created_at=now,
+                updated_at=now,
+                result=result,
+            )
 
         return sim_id, result
 
@@ -253,16 +381,28 @@ class SimulationService:
     # ================================================================== #
 
     def get_result(self, sim_id: str) -> Optional[BacktestResult]:
-        return self._results.get(sim_id)
+        with self._lock:
+            job = self._jobs.get(sim_id)
+            return job.result if job else None
+
+    def get_job(self, sim_id: str) -> Optional[dict]:
+        with self._lock:
+            job = self._jobs.get(sim_id)
+            return job.as_dict() if job else None
 
     def is_pending(self, sim_id: str) -> bool:
-        return sim_id in self._results and self._results[sim_id] is None
+        with self._lock:
+            job = self._jobs.get(sim_id)
+            return bool(job and job.status in {"queued", "running"})
 
     def list_simulations(self) -> List[dict]:
-        return [
-            {"sim_id": sid, "status": "running"} if r is None else {"sim_id": sid, "status": "completed", "summary": r.summary()}
-            for sid, r in self._results.items()
-        ]
+        with self._lock:
+            jobs = sorted(
+                self._jobs.values(),
+                key=lambda item: item.created_at,
+                reverse=True,
+            )
+            return [job.as_dict() for job in jobs]
 
     # ================================================================== #
     #  Live signal (today's session)                                      #
@@ -294,10 +434,13 @@ class SimulationService:
             return {"signal": None, "reason": "Insufficient intraday data for live signal.", "source": result.get("source")}
 
         engine = StrategyFactory.create(strategy_name)
-        signal: Optional[TradeSignal] = engine.run_session(m5, m1, account_size, config)
+        session_signals: List[TradeSignal] = engine.run_session(m5, m1, account_size, config)
 
-        if signal is None:
+        if not session_signals:
             return {"signal": None, "reason": "No valid setup found in current session.", "source": result.get("source")}
+
+        # Return the most recent signal for live display
+        signal = session_signals[-1]
 
         return {
             "signal": {

@@ -69,16 +69,13 @@ class FinancialMathCore:
     def risk_adjusted_return(
         expected_return_annual: float,
         annual_volatility: float,
-        capital_at_risk: float,
     ) -> float:
         """
-        RAR = E(R) / (σ · C)
-
-        Where C is the total capital at risk (AUM).
+        Dimensionless return-to-risk ratio: E(R) / annual volatility.
         """
-        if annual_volatility == 0 or capital_at_risk == 0:
+        if annual_volatility == 0:
             return 0.0
-        return expected_return_annual / (annual_volatility * capital_at_risk)
+        return expected_return_annual / annual_volatility
 
     # ── Gradient Descent → Linear Regression (Momentum) ─────────────
     @staticmethod

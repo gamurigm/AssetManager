@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import type { CandleData, QuoteData } from "@/types/dashboard";
 import { useSocket } from "@/context/SocketContext";
+import { cachedFetch } from "@/lib/cachedFetch";
 
 const API_BASE = "http://127.0.0.1:8282";
 const CACHE_PREFIX = "symbolChart_";
@@ -64,8 +65,8 @@ export function useChartData(symbol: string) {
         const fetchData = async () => {
             try {
                 const [histRes, quoteRes] = await Promise.all([
-                    fetch(`${API_BASE}/api/v1/market/historical/${encodeURIComponent(symbol)}?limit=10000`),
-                    fetch(`${API_BASE}/api/v1/market/quote/${encodeURIComponent(symbol)}`),
+                    cachedFetch(`${API_BASE}/api/v1/market/historical/${encodeURIComponent(symbol)}?limit=10000`),
+                    cachedFetch(`${API_BASE}/api/v1/market/quote/${encodeURIComponent(symbol)}`),
                 ]);
 
                 if (histRes.ok) {

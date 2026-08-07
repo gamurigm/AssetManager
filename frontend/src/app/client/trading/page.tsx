@@ -26,9 +26,6 @@ import {
     BarChart,
     CartesianGrid,
     Cell,
-    ComposedChart,
-    Line,
-    ReferenceArea,
     ResponsiveContainer,
     Tooltip,
     XAxis,
@@ -47,989 +44,117 @@ const PortfolioBacktestPanel = dynamic(() => import("@/components/dashboard/Port
     ),
 });
 
-const API_BASE = "http://127.0.0.1:8282";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8282";
 
-type KpiSnapshot = {
-    total_trades: number;
-    wins: number;
-    losses: number;
-    win_rate: number;
-    expectancy_r: number;
-    profit_factor: number;
-    max_drawdown_pct: number;
-    sharpe_ratio: number;
-    avg_rr_realized: number;
-    total_r: number;
-    final_equity: number;
-    cagr: number;
+import { 
+    KpiSnapshot, LiveTrade, ProgressState, BootstrapLiveData, 
+    CompletedResult, IVCurrentSignal, ArchVolData, KalmanFilterData, IvSmileData 
+} from "@/components/trading/types";
+import { 
+    formatCurrency, formatRatio, formatFractionPercent, 
+    formatTimestampLabel, buildEquityCurve, deriveLiveKpis, buildHistogramData 
+} from "@/components/trading/utils";
+import { IvSmilePanel } from "@/components/trading/IvSmilePanel";
+import { ArchVolPanel } from "@/components/trading/ArchVolPanel";
+import { KalmanFilterPanel } from "@/components/trading/KalmanFilterPanel";
+import { BacktestPriceChart } from "@/components/trading/BacktestPriceChart";
+import { MetricCard, BacktestPanel } from "@/components/trading/BacktestUI";
+
+import { cachedFetch } from "@/lib/cachedFetch";
+import {
+    getCachedIvSmile, setCachedIvSmile,
+    getCachedArchVol, setCachedArchVol,
+    getCachedKalman, setCachedKalman,
+} from "@/components/trading/analyticsCache";
+
+type BacktestProgressEvent = {
+    sim_id?: string;
+    day?: number;
+    total?: number;
+    pct?: number;
 };
 
-type LiveTrade = {
-    signal_id: string;
-    timestamp: string;
-    direction: string;
-    entry: number;
-    stop: number;
-    tp: number;
-    outcome: string;
-    pnl_r: number;
-    pnl_usd: number;
-    exit_price?: number;
-    exit_timestamp?: string;
+type BacktestTradeEvent = {
+    sim_id?: string;
+    trade?: LiveTrade;
 };
 
-type ProgressState = {
-    day: number;
-    total: number;
-    pct: number;
+function apiErrorMessage(detail: unknown, fallback: string): string {
+    if (typeof detail === "string" && detail.trim()) return detail;
+    if (Array.isArray(detail)) {
+        const messages = detail
+            .map((item) => {
+                if (!item || typeof item !== "object") return null;
+                const message = "msg" in item ? item.msg : null;
+                return typeof message === "string" ? message : null;
+            })
+            .filter((message): message is string => Boolean(message));
+        if (messages.length) return messages.join(" ");
+    }
+    if (detail && typeof detail === "object") {
+        const record = detail as Record<string, unknown>;
+        for (const key of ["error", "message"]) {
+            const value = record[key];
+            if (typeof value === "string" && value.trim()) return value;
+        }
+    }
+    return fallback;
+}
+
+function normalizeKpis(payload: unknown, fallbackEquity: number): KpiSnapshot {
+    const source = payload && typeof payload === "object"
+        ? payload as Record<string, unknown>
+        : {};
+    const value = (key: keyof KpiSnapshot, fallback = 0) => {
+        const parsed = Number(source[key]);
+        return Number.isFinite(parsed) ? parsed : fallback;
+    };
+    const wins = value("wins");
+    const losses = value("losses");
+    const rawProfitFactor = source.profit_factor;
+    const profitFactor = rawProfitFactor === null && wins > 0 && losses === 0
+        ? Number.POSITIVE_INFINITY
+        : value("profit_factor");
+
+    return {
+        total_trades: value("total_trades"),
+        wins,
+        losses,
+        win_rate: value("win_rate"),
+        expectancy_r: value("expectancy_r"),
+        profit_factor: profitFactor,
+        max_drawdown_pct: value("max_drawdown_pct"),
+        sharpe_ratio: value("sharpe_ratio"),
+        sortino_ratio: value("sortino_ratio"),
+        avg_rr_realized: value("avg_rr_realized"),
+        total_r: value("total_r"),
+        final_equity: value("final_equity", fallbackEquity),
+        cagr: value("cagr"),
+    };
+}
+
+type BacktestBootstrapEvent = {
+    sim_id?: string;
+    iterations?: number;
+    net_profit_95_ci?: [number, number];
+    max_drawdown_95_ci_pct?: [number, number];
+    net_profit_samples?: number[];
+    max_drawdown_samples?: number[];
 };
 
-type BootstrapLiveData = {
-    iterations: number;
-    net_profit_95_ci: [number, number];
-    max_drawdown_95_ci_pct: [number, number];
-    net_profit_samples: number[];
-    max_drawdown_samples: number[];
-};
-
-type CompletedResult = {
-    sim_id: string;
-    symbol: string;
-    strategy: string;
-    status: string;
-    kpis: KpiSnapshot;
-    trading_days: number;
-    total_trades: number;
-    bootstrap?: {
-        iterations: number;
-        net_profit_95_ci: [number, number];
-        max_drawdown_95_ci_pct: [number, number];
-    } | null;
+type BacktestCompleteEvent = {
+    sim_id?: string;
+    kpis?: unknown;
+    trading_days?: number;
+    total_trades?: number;
+    bootstrap?: CompletedResult["bootstrap"];
     report_url?: string | null;
 };
 
-type EquityPoint = {
-    label: string;
-    equity: number;
-};
-
-function formatCurrency(value: number) {
-    return value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-
-function formatRatio(value: number) {
-    if (!Number.isFinite(value)) return "Inf";
-    return value.toFixed(2);
-}
-
-function formatFractionPercent(value: number) {
-    return `${(value * 100).toFixed(2)}%`;
-}
-
-function formatTimestampLabel(value?: string, index?: number) {
-    if (!value) return index === 0 ? "Start" : `Trade ${index}`;
-    return value.replace("T", " ").slice(5, 16);
-}
-
-function buildEquityCurve(trades: LiveTrade[], initialEquity: number): EquityPoint[] {
-    const points: EquityPoint[] = [{ label: "Start", equity: initialEquity }];
-    let runningEquity = initialEquity;
-
-    trades.forEach((trade, index) => {
-        runningEquity += Number(trade.pnl_usd || 0);
-        points.push({
-            label: formatTimestampLabel(trade.exit_timestamp || trade.timestamp, index + 1),
-            equity: Number(runningEquity.toFixed(2)),
-        });
-    });
-
-    return points;
-}
-
-function deriveLiveKpis(trades: LiveTrade[], initialEquity: number): KpiSnapshot {
-    if (trades.length === 0) {
-        return {
-            total_trades: 0,
-            wins: 0,
-            losses: 0,
-            win_rate: 0,
-            expectancy_r: 0,
-            profit_factor: 0,
-            max_drawdown_pct: 0,
-            sharpe_ratio: 0,
-            avg_rr_realized: 0,
-            total_r: 0,
-            final_equity: initialEquity,
-            cagr: 0,
-        };
-    }
-
-    const wins = trades.filter((trade) => trade.pnl_usd > 0);
-    const losses = trades.filter((trade) => trade.pnl_usd < 0);
-    const totalTrades = trades.length;
-    const winRate = wins.length / totalTrades;
-    const avgWinR = wins.length ? wins.reduce((sum, trade) => sum + trade.pnl_r, 0) / wins.length : 0;
-    const avgLossR = losses.length ? losses.reduce((sum, trade) => sum + Math.abs(trade.pnl_r), 0) / losses.length : 0;
-    const expectancy = (winRate * avgWinR) - ((1 - winRate) * avgLossR);
-    const grossProfit = wins.reduce((sum, trade) => sum + trade.pnl_usd, 0);
-    const grossLoss = losses.reduce((sum, trade) => sum + Math.abs(trade.pnl_usd), 0);
-    const profitFactor = grossLoss > 0 ? grossProfit / grossLoss : (grossProfit > 0 ? Number.POSITIVE_INFINITY : 0);
-
-    let equity = initialEquity;
-    let peak = initialEquity;
-    let maxDrawdown = 0;
-    const returns: number[] = [];
-
-    trades.forEach((trade) => {
-        const previousEquity = equity;
-        equity += trade.pnl_usd;
-        returns.push(previousEquity > 0 ? (equity - previousEquity) / previousEquity : 0);
-        if (equity > peak) peak = equity;
-        const drawdown = peak > 0 ? (peak - equity) / peak : 0;
-        if (drawdown > maxDrawdown) maxDrawdown = drawdown;
-    });
-
-    let sharpe = 0;
-    if (returns.length > 1) {
-        const avg = returns.reduce((sum, value) => sum + value, 0) / returns.length;
-        const variance = returns.reduce((sum, value) => sum + ((value - avg) ** 2), 0) / (returns.length - 1);
-        const std = Math.sqrt(variance);
-        sharpe = std > 0 ? (avg / std) * Math.sqrt(252) : 0;
-    }
-
-    const totalR = trades.reduce((sum, trade) => sum + trade.pnl_r, 0);
-    const avgRR = wins.length ? wins.reduce((sum, trade) => sum + Math.abs(trade.pnl_r), 0) / wins.length : 0;
-
-    return {
-        total_trades: totalTrades,
-        wins: wins.length,
-        losses: losses.length,
-        win_rate: Number(winRate.toFixed(4)),
-        expectancy_r: Number(expectancy.toFixed(4)),
-        profit_factor: Number.isFinite(profitFactor) ? Number(profitFactor.toFixed(4)) : Number.POSITIVE_INFINITY,
-        max_drawdown_pct: Number(maxDrawdown.toFixed(4)),
-        sharpe_ratio: Number(sharpe.toFixed(4)),
-        avg_rr_realized: Number(avgRR.toFixed(4)),
-        total_r: Number(totalR.toFixed(4)),
-        final_equity: Number(equity.toFixed(2)),
-        cagr: 0,
-    };
-}
-
-function buildHistogramData(samples: number[], bins = 18) {
-    if (samples.length === 0) return [];
-
-    const min = Math.min(...samples);
-    const max = Math.max(...samples);
-    if (min === max) {
-        return [{ label: min.toFixed(0), count: samples.length, color: min >= 0 ? "#22c55e" : "#ef4444" }];
-    }
-
-    const width = (max - min) / bins;
-    const histogram = Array.from({ length: bins }, (_, index) => ({
-        from: min + index * width,
-        to: min + (index + 1) * width,
-        count: 0,
-    }));
-
-    samples.forEach((sample) => {
-        const bucket = Math.min(bins - 1, Math.floor((sample - min) / width));
-        histogram[bucket].count += 1;
-    });
-
-    return histogram.map((bucket) => ({
-        label: bucket.from.toFixed(0),
-        count: bucket.count,
-        color: (bucket.from + bucket.to) / 2 >= 0 ? "#00ffa3" : "#ff2e2e",
-    }));
-}
-
-// ─── Regime types ─────────────────────────────────────────────────────────────
-type RegimeDist = {
-    mean_ret: number;
-    std_ret: number;
-    annualized_vol_pct: number;
-    annualized_ret_pct: number;
-    sharpe: number;
-    count: number;
-    label: string;
-    color: string;
-};
-type RegimeData = {
-    regime_sequence: { date: string; state: number; vol: number; ret: number }[];
-    state_colors: Record<string, string>;
-    state_labels: Record<string, string>;
-    distributions: Record<string, RegimeDist>;
-    transition_matrix: number[][];
-    current_label: string;
-    next_probs: Record<string, number>;
-};
-
-const REGIME_FILL: Record<number, string> = { 0: "#00ffa3", 1: "#ffa300", 2: "#ff2e2e" };
-
-// ─── IV Smile types ──────────────────────────────────────────────────────────
-type IvContract = {
-    strike: number;
-    moneyness_pct: number;
-    type: string;
-    iv: number;
-    iv_pct: number;
-    market_price: number;
-    bid: number;
-    ask: number;
-    volume: number;
-    open_interest: number;
-};
-type IvExpiration = {
-    exp_date: string;
-    dte: number;
-    atm_iv: number | null;
-    smile: IvContract[];
-};
-type IvSmileData = {
-    symbol: string;
-    spot: number;
-    rf: number;
-    as_of: string;
-    expirations: IvExpiration[];
-};
-
-function IvSmilePanel({ data }: { data: IvSmileData }) {
-    const [selectedIdx, setSelectedIdx] = useState(0);
-
-    const exp = data.expirations[selectedIdx];
-    if (!exp) return null;
-
-    const calls = exp.smile.filter(c => c.type === "CALL").sort((a, b) => a.strike - b.strike);
-    const puts = exp.smile.filter(c => c.type === "PUT").sort((a, b) => a.strike - b.strike);
-
-    // Build unified strike axis
-    const allStrikes = Array.from(new Set([...calls.map(c => c.strike), ...puts.map(c => c.strike)])).sort((a, b) => a - b);
-    const callMap = Object.fromEntries(calls.map(c => [c.strike, c]));
-    const putMap = Object.fromEntries(puts.map(c => [c.strike, c]));
-    const chartData = allStrikes.map(k => ({
-        strike: k,
-        label: `$${k}`,
-        callIv: callMap[k]?.iv_pct ?? null,
-        putIv: putMap[k]?.iv_pct ?? null,
-        callPrice: callMap[k]?.market_price ?? null,
-        putPrice: putMap[k]?.market_price ?? null,
-        moneyness: putMap[k]?.moneyness_pct ?? callMap[k]?.moneyness_pct ?? 0,
-    }));
-
-    return (
-        <div className="bg-[#050505] rounded-3xl border border-white/10 p-6 shadow-2xl">
-            {/* Header */}
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-                <div>
-                    <p className="text-[10px] font-black uppercase tracking-[0.3em] text-white/50">Implied Volatility Smile — {data.symbol}</p>
-                    <p className="text-[9px] font-bold text-white/20 mt-1 uppercase tracking-widest">Black-Scholes inversion · σ(K) curve · spot ${data.spot.toFixed(2)}</p>
-                </div>
-                <div className="flex items-center gap-3">
-                    {exp.atm_iv != null && (
-                        <div className="px-3 py-1.5 rounded-xl bg-[#d1ff00]/5 border border-[#d1ff00]/20 text-[10px] font-black uppercase tracking-widest text-[#d1ff00]">
-                            ATM IV {exp.atm_iv.toFixed(1)}%
-                        </div>
-                    )}
-                    <select
-                        value={selectedIdx}
-                        onChange={e => setSelectedIdx(Number(e.target.value))}
-                        className="bg-black border border-white/10 rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest focus:outline-none focus:ring-1 focus:ring-[#00ffa3]/30 text-white/50"
-                    >
-                        {data.expirations.map((ex, i) => (
-                            <option key={ex.exp_date} value={i}>
-                                {ex.exp_date} &nbsp;({ex.dte}d)
-                            </option>
-                        ))}
-                    </select>
-                </div>
-            </div>
-
-            {/* Legend */}
-            <div className="flex items-center gap-5 mb-5 text-[9px] font-bold text-white/20 uppercase tracking-[0.15em]">
-                <span className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-sm bg-[#00ffa3]/20 border border-[#00ffa3]/40" /> IV Calls</span>
-                <span className="flex items-center gap-2"><span className="inline-block w-3 h-3 rounded-sm bg-[#ffa300]/20 border border-[#ffa300]/40" /> IV Puts</span>
-                <span className="flex items-center gap-1.5 ml-2 text-white/5">|</span>
-                <span className="flex items-center gap-1.5">Spot ≈ ${data.spot.toFixed(0)}</span>
-                <span className="flex items-center gap-1.5 font-black text-[#00ffa3]">r = {(data.rf * 100).toFixed(1)}%</span>
-            </div>
-
-            {/* Chart */}
-            <div className="h-64">
-                <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={chartData} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                        <XAxis
-                            dataKey="label"
-                            tick={{ fill: "#9ca3af", fontSize: 9 }}
-                            minTickGap={28}
-                        />
-                        <YAxis
-                            tick={{ fill: "#9ca3af", fontSize: 9 }}
-                            tickFormatter={v => `${Number(v).toFixed(0)}%`}
-                            width={42}
-                            domain={[0, "auto"]}
-                        />
-                        <Tooltip
-                            content={({ active, payload, label }) => {
-                                if (!active || !payload?.length) return null;
-                                const d: any = payload[0]?.payload;
-                                return (
-                                    <div className="bg-black border border-white/10 rounded-xl px-4 py-3 text-[10px] font-black uppercase tracking-widest shadow-2xl space-y-2">
-                                        <p className="text-white border-b border-white/5 pb-2 mb-2">{label}</p>
-                                        <p className="text-white/30">Moneyness: {d.moneyness > 0 ? "+" : ""}{d.moneyness?.toFixed(1)}%</p>
-                                        {d.callIv != null && <p className="text-[#00ffa3]">CALL IV: {d.callIv.toFixed(1)}%  ·  ${d.callPrice?.toFixed(2)}</p>}
-                                        {d.putIv != null && <p className="text-[#ffa300]">PUT  IV: {d.putIv.toFixed(1)}%  ·  ${d.putPrice?.toFixed(2)}</p>}
-                                    </div>
-                                );
-                            }}
-                        />
-                        {/* Spot reference */}
-                        <ReferenceArea
-                            x1={`$${Math.floor(data.spot)}`}
-                            x2={`$${Math.ceil(data.spot)}`}
-                            fill="rgba(99,102,241,0.12)"
-                            stroke="rgba(99,102,241,0.4)"
-                            strokeWidth={1}
-                        />
-                        <Line type="monotone" dataKey="callIv" name="CALL IV" stroke="#00ffa3" strokeWidth={3} dot={false} connectNulls isAnimationActive={false} />
-                        <Line type="monotone" dataKey="putIv" name="PUT IV" stroke="#ffa300" strokeWidth={2} strokeDasharray="5 5" dot={false} connectNulls isAnimationActive={false} />
-                    </ComposedChart>
-                </ResponsiveContainer>
-            </div>
-
-            {/* Per-expiration stats */}
-            <div className="mt-3 flex flex-wrap gap-4 text-[10px] font-mono text-muted">
-                <span>Calls: <span className="text-white">{calls.length}</span></span>
-                <span>Puts: <span className="text-white">{puts.length}</span></span>
-                <span>DTE: <span className="text-white">{exp.dte}d</span></span>
-                {calls.length > 2 && (() => {
-                    const ivs = calls.map(c => c.iv_pct);
-                    const skew = ivs[0] - ivs[ivs.length - 1];
-                    return <span>Put-Call Skew: <span className={skew > 0 ? "text-red-400" : "text-emerald-400"}>{skew.toFixed(1)}%</span></span>;
-                })()}
-                <span className="text-muted/50">as of {data.as_of}</span>
-            </div>
-        </div>
-    );
-}
-
-function buildRegimeRuns(
-    sequence: { date: string; state: number }[],
-    startDate: string,
-    endDate: string,
-): { x1: string; x2: string; state: number }[] {
-    const filtered = sequence.filter(p => p.date >= startDate && p.date <= endDate);
-    if (filtered.length === 0) return [];
-    const runs: { x1: string; x2: string; state: number }[] = [];
-    let runStart = filtered[0].date.substring(5);
-    let runState = filtered[0].state;
-    for (let i = 1; i < filtered.length; i++) {
-        if (filtered[i].state !== runState) {
-            runs.push({ x1: runStart, x2: filtered[i - 1].date.substring(5), state: runState });
-            runStart = filtered[i].date.substring(5);
-            runState = filtered[i].state;
-        }
-    }
-    runs.push({ x1: runStart, x2: filtered[filtered.length - 1].date.substring(5), state: runState });
-    return runs;
-}
-
-// ─── IV Regime Strategy types ────────────────────────────────────────────────
-type IVOptionContext = {
-    available: boolean;
+type BacktestErrorEvent = {
+    sim_id?: string;
     error?: string;
-    signal_mode?: string;
-    direction_bias?: "LONG" | "SHORT" | "FLAT";
-    exp_date?: string;
-    dte?: number;
-    strike?: number;
-    moneyness_pct?: number | null;
-    atm_iv_pct?: number | null;
-    atm_call_iv_pct?: number | null;
-    atm_put_iv_pct?: number | null;
-    skew_pct?: number | null;
-    call_price?: number | null;
-    put_price?: number | null;
-    iv_realized_spread_pct?: number | null;
-    iv_realized_ratio?: number | null;
-    source?: string;
-    as_of?: string;
 };
-
-type IVCurrentSignal = {
-    date: string;
-    close: number;
-    iv_rank: number;
-    regime: string;
-    momentum_pct: number;
-    direction: "LONG" | "SHORT" | "FLAT";
-    proxy_direction?: "LONG" | "SHORT" | "FLAT";
-    signal_source?: string;
-    daily_vol_pct?: number;
-    realized_vol_ann_pct?: number;
-    option_context?: IVOptionContext;
-};
-
-// ─── ARCH / GARCH types ───────────────────────────────────────────────────────
-type ArchVolPoint = {
-    date: string;
-    sigma_pct: number;      // daily conditional vol %
-    sigma_ann_pct: number;  // annualised conditional vol %
-    ret_pct: number;        // log-return %
-};
-type ArchVolData = {
-    symbol: string;
-    n_obs: number;
-    model: string;
-    params: {
-        mu: number;
-        omega: string;
-        alpha: number;
-        beta: number;
-        persistence: number;
-    };
-    fit: { log_likelihood: number; aic: number; bic: number };
-    long_run_vol_ann_pct: number;
-    current_sigma_ann_pct: number;
-    forecast: { h1_ann_pct: number; h5_ann_pct: number; h21_ann_pct: number };
-    var_daily: { var_95_pct: number; var_99_pct: number };
-    arch_lm_test: { stat: number; p_value: number; adequate: boolean | null };
-    conditional_vol: ArchVolPoint[];
-};
-
-type KalmanFilterPoint = {
-    date: string;
-    observed: number;
-    predicted: number;
-    filtered: number;
-    innovation: number;
-    innovation_z: number;
-    gain: number;
-    variance: number;
-    lower_1sigma: number;
-    upper_1sigma: number;
-    mean_gap_pct: number | null;
-};
-
-type KalmanFilterData = {
-    symbol: string;
-    n_obs: number;
-    model: string;
-    ou_interpretation: boolean;
-    calibration: {
-        alpha: number;
-        beta: number;
-        residual_std: number;
-        process_noise_q: number;
-        measurement_noise_r: number;
-        measurement_noise_mult: number;
-        stationary: boolean;
-        long_run_mean: number | null;
-        half_life_days: number | null;
-    };
-    diagnostics: {
-        rmse_filtered_vs_observed: number;
-        mean_abs_innovation: number;
-        avg_gain: number;
-        last_gain: number;
-        last_innovation_z: number;
-        smoothness_ratio: number;
-    };
-    current_state: {
-        observed: number;
-        predicted: number;
-        filtered: number;
-        innovation: number;
-        innovation_z: number;
-        gain: number;
-        variance: number;
-        lower_1sigma: number;
-        upper_1sigma: number;
-        spread_pct: number;
-        pull_signal: "UP" | "DOWN" | "NEUTRAL";
-        mean_gap_pct: number | null;
-    };
-    series: KalmanFilterPoint[];
-};
-
-function ArchVolPanel({ data }: { data: ArchVolData }) {
-    // ── Thin the series for chart performance (max 300 points)
-    const thinned = (() => {
-        const n = data.conditional_vol.length;
-        if (n <= 300) return data.conditional_vol;
-        const step = Math.ceil(n / 300);
-        return data.conditional_vol.filter((_, i) => i % step === 0 || i === n - 1);
-    })();
-
-    const persist = data.params.persistence;
-    const halflife = persist < 1
-        ? Math.round(Math.log(0.5) / Math.log(persist))
-        : Infinity;
-
-    const adequate = data.arch_lm_test.adequate;
-    const lmBadge = adequate === null
-        ? { label: "LM test N/A", cls: "bg-zinc-700/40 border-zinc-600/30 text-zinc-400" }
-        : adequate
-            ? { label: "Model adequate (LM p=" + data.arch_lm_test.p_value + ")", cls: "bg-emerald-500/10 border-emerald-500/30 text-emerald-300" }
-            : { label: "ARCH effects remain (p=" + data.arch_lm_test.p_value + ")", cls: "bg-amber-500/10 border-amber-500/30 text-amber-300" };
-
-    return (
-        <div className="bg-[#050505] rounded-3xl border border-white/10 p-6 shadow-2xl">
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-                <div>
-                    <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-white/50">{data.model} Dynamic Volatility — {data.symbol}</h3>
-                    <p className="text-[9px] font-bold text-white/20 mt-1 uppercase tracking-widest">
-                        MLE parameter audit · α={data.params.alpha.toFixed(3)} β={data.params.beta.toFixed(3)} · persistence {(data.params.persistence * 100).toFixed(1)}%
-                    </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                    <span className={`px-3 py-1.5 rounded-lg border text-xs font-mono font-bold ${lmBadge.cls}`}>
-                        {lmBadge.label}
-                    </span>
-                    <span className="px-3 py-1.5 rounded-lg bg-violet-500/10 border border-violet-500/30 text-violet-300 text-xs font-mono font-bold">
-                        Current σ {data.current_sigma_ann_pct.toFixed(1)}% p.a.
-                    </span>
-                </div>
-            </div>
-
-            {/* Conditional Vol chart */}
-            <div className="h-44 mb-5">
-                <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={thinned} margin={{ top: 4, right: 8, bottom: 0, left: 32 }}>
-                        <defs>
-                            <linearGradient id="volGradient" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor="#00ffa3" stopOpacity={0.2} />
-                                <stop offset="95%" stopColor="#00ffa3" stopOpacity={0} />
-                            </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                        <XAxis dataKey="date" tick={{ fontSize: 9 }} tickLine={false} axisLine={false}
-                            tickFormatter={(v: string) => v.substring(5)} interval="preserveStartEnd" />
-                        <YAxis tick={{ fontSize: 9 }} tickLine={false} axisLine={false}
-                            tickFormatter={(v: number) => `${v.toFixed(0)}%`} />
-                        <Tooltip
-                            contentStyle={{ background: "#1a1a2e", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 11 }}
-                            formatter={(value: number | string | undefined) => [`${Number(value ?? 0).toFixed(2)}%`, "Ann. Vol σ"]}
-                            labelFormatter={(label) => `Date: ${String(label ?? "")}`}
-                            content={({ active, payload }) => {
-                                if (!active || !payload?.length) return null;
-                                const d = payload[0].payload;
-                                return (
-                                    <div className="bg-black border border-white/10 rounded-xl px-4 py-3 text-[10px] font-black uppercase tracking-widest shadow-2xl space-y-2">
-                                        <p className="text-white border-b border-white/5 pb-2 mb-2">{d.date}</p>
-                                        <p className="text-[#00ffa3]">ANN VOL: {d.sigma_ann_pct.toFixed(2)}%</p>
-                                        <p className="text-white/40">DAILY σ: {d.sigma_pct.toFixed(2)}%</p>
-                                        <p className={d.ret_pct >= 0 ? "text-[#00ffa3]" : "text-[#ff2e2e]"}>RETURN: {d.ret_pct.toFixed(2)}%</p>
-                                    </div>
-                                );
-                            }}
-                        />
-                        <Area type="monotone" dataKey="sigma_ann_pct" stroke="#00ffa3" strokeWidth={3} fill="url(#volGradient)" isAnimationActive={false} />
-                    </AreaChart>
-                </ResponsiveContainer>
-            </div>
-
-            {/* Params row */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-                {[
-                    { label: "α (ARCH)", value: data.params.alpha.toFixed(4), hint: "shock sensitivity" },
-                    { label: "β (GARCH)", value: data.params.beta.toFixed(4), hint: "vol persistence" },
-                    { label: "α + β", value: data.params.persistence.toFixed(4), hint: `half-life ~${halflife}d` },
-                    { label: "Long-run σ", value: `${data.long_run_vol_ann_pct.toFixed(1)}%`, hint: "unconditional ann." },
-                ].map(({ label, value, hint }) => (
-                    <div key={label} className="bg-muted/10 rounded-xl p-3 border border-border/50">
-                        <p className="text-xs text-muted mb-1">{label}</p>
-                        <p className="text-lg font-bold font-mono text-foreground">{value}</p>
-                        <p className="text-[10px] text-muted/70">{hint}</p>
-                    </div>
-                ))}
-            </div>
-
-            {/* Forecast + VaR row */}
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                {[
-                    { label: "1-day forecast", value: `${data.forecast.h1_ann_pct.toFixed(1)}%` },
-                    { label: "5-day forecast", value: `${data.forecast.h5_ann_pct.toFixed(1)}%` },
-                    { label: "21-day forecast", value: `${data.forecast.h21_ann_pct.toFixed(1)}%` },
-                    { label: "VaR 95% (daily)", value: `−${data.var_daily.var_95_pct.toFixed(2)}%`, cls: "text-amber-400" },
-                    { label: "VaR 99% (daily)", value: `−${data.var_daily.var_99_pct.toFixed(2)}%`, cls: "text-red-400" },
-                ].map(({ label, value, cls }) => (
-                    <div key={label} className="bg-muted/10 rounded-xl p-3 border border-border/50">
-                        <p className="text-xs text-muted mb-1">{label}</p>
-                        <p className={`text-base font-bold font-mono ${cls ?? "text-violet-300"}`}>{value}</p>
-                    </div>
-                ))}
-            </div>
-
-            {/* Fit quality */}
-            <div className="mt-3 flex flex-wrap gap-4 text-[10px] text-muted font-mono">
-                <span>LL = {data.fit.log_likelihood.toFixed(1)}</span>
-                <span>AIC = {data.fit.aic.toFixed(1)}</span>
-                <span>BIC = {data.fit.bic.toFixed(1)}</span>
-                <span>ω = {data.params.omega}</span>
-            </div>
-        </div>
-    );
-}
-
-function KalmanFilterPanel({ data }: { data: KalmanFilterData }) {
-    const thinned = (() => {
-        const n = data.series.length;
-        if (n <= 300) return data.series;
-        const step = Math.ceil(n / 300);
-        return data.series.filter((_, i) => i % step === 0 || i === n - 1);
-    })();
-
-    const regimeBadge = data.ou_interpretation
-        ? { label: "OU-compatible mean reversion", cls: "bg-emerald-500/10 border-emerald-500/30 text-emerald-300" }
-        : { label: "AR(1) latent-state filter", cls: "bg-sky-500/10 border-sky-500/30 text-sky-300" };
-
-    const spreadCls = data.current_state.spread_pct > 0.0
-        ? "text-emerald-300"
-        : data.current_state.spread_pct < 0.0
-            ? "text-red-300"
-            : "text-zinc-300";
-
-    return (
-        <div className="bg-[#050505] rounded-3xl border border-white/10 p-6 shadow-2xl">
-            <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-                <div>
-                    <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-white/50">Kalman State Filter — {data.symbol}</h3>
-                    <p className="text-[9px] font-bold text-white/20 mt-1 uppercase tracking-widest">
-                        AR(1) latent state on closes · {data.n_obs.toLocaleString()} observations · best interpreted on mean-reverting instruments
-                    </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                    <span className={`px-3 py-1.5 rounded-lg border text-xs font-mono font-bold ${regimeBadge.cls}`}>
-                        {regimeBadge.label}
-                    </span>
-                    <span className="px-3 py-1.5 rounded-lg bg-fuchsia-500/10 border border-fuchsia-500/30 text-fuchsia-300 text-xs font-mono font-bold">
-                        K {data.current_state.gain.toFixed(3)}
-                    </span>
-                </div>
-            </div>
-
-            <div className="h-44 mb-5">
-                <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={thinned} margin={{ top: 4, right: 8, bottom: 0, left: 24 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                        <XAxis
-                            dataKey="date"
-                            tick={{ fontSize: 9 }}
-                            tickLine={false}
-                            axisLine={false}
-                            tickFormatter={(v: string) => v.substring(5)}
-                            interval="preserveStartEnd"
-                        />
-                        <YAxis
-                            tick={{ fontSize: 9 }}
-                            tickLine={false}
-                            axisLine={false}
-                            tickFormatter={(v: number) => `$${Number(v).toFixed(0)}`}
-                            width={50}
-                        />
-                        <Tooltip
-                            contentStyle={{ background: "#1a1a2e", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, fontSize: 11 }}
-                            formatter={(value, name) => {
-                                const numericValue = Number(value ?? 0);
-                                const seriesName = String(name ?? "");
-                                if (seriesName === "Observed") return [`$${numericValue.toFixed(2)}`, seriesName];
-                                if (seriesName === "Predicted") return [`$${numericValue.toFixed(2)}`, seriesName];
-                                if (seriesName === "Filtered") return [`$${numericValue.toFixed(2)}`, seriesName];
-                                return [numericValue, seriesName];
-                            }}
-                            labelFormatter={(label) => `Date: ${String(label ?? "")}`}
-                        />
-                        <Line
-                            type="monotone"
-                            dataKey="observed"
-                            name="Observed"
-                            stroke="rgba(148,163,184,0.95)"
-                            strokeWidth={1.1}
-                            dot={false}
-                            isAnimationActive={false}
-                        />
-                        <Line
-                            type="monotone"
-                            dataKey="predicted"
-                            name="Predicted"
-                            stroke="rgba(244,114,182,0.7)"
-                            strokeWidth={1.1}
-                            strokeDasharray="4 3"
-                            dot={false}
-                            isAnimationActive={false}
-                        />
-                        <Line
-                            type="monotone"
-                            dataKey="filtered"
-                            name="Filtered"
-                            stroke="#34d399"
-                            strokeWidth={1.8}
-                            dot={false}
-                            isAnimationActive={false}
-                        />
-                    </ComposedChart>
-                </ResponsiveContainer>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-4">
-                {[
-                    { label: "β / ϕ", value: data.calibration.beta.toFixed(4), hint: data.calibration.stationary ? "stationary transition" : "near-unit / trending" },
-                    { label: "Half-life", value: data.calibration.half_life_days != null ? `${data.calibration.half_life_days.toFixed(1)}d` : "N/A", hint: "OU only" },
-                    { label: "Long-run mean θ", value: data.calibration.long_run_mean != null ? `$${data.calibration.long_run_mean.toFixed(2)}` : "N/A", hint: "offline calibration" },
-                    { label: "Latest Gain K", value: data.current_state.gain.toFixed(3), hint: `${(data.current_state.gain * 100).toFixed(1)}% trust in quote` },
-                    { label: "Filtered Spread", value: `${data.current_state.spread_pct >= 0 ? "+" : ""}${data.current_state.spread_pct.toFixed(2)}%`, hint: data.current_state.pull_signal, cls: spreadCls },
-                    { label: "Innovation z", value: `${data.current_state.innovation_z >= 0 ? "+" : ""}${data.current_state.innovation_z.toFixed(2)}`, hint: "last standardized surprise" },
-                ].map(({ label, value, hint, cls }) => (
-                    <div key={label} className="bg-muted/10 rounded-xl p-3 border border-border/50">
-                        <p className="text-xs text-muted mb-1">{label}</p>
-                        <p className={`text-lg font-bold font-mono ${cls ?? "text-foreground"}`}>{value}</p>
-                        <p className="text-[10px] text-muted/70">{hint}</p>
-                    </div>
-                ))}
-            </div>
-
-            <div className="flex flex-wrap gap-4 text-[10px] text-muted font-mono">
-                <span>α = {data.calibration.alpha.toFixed(4)}</span>
-                <span>Q = {data.calibration.process_noise_q.toFixed(4)}</span>
-                <span>R = {data.calibration.measurement_noise_r.toFixed(4)}</span>
-                <span>R/Q mult = {data.calibration.measurement_noise_mult.toFixed(2)}x</span>
-                <span>RMSE = {data.diagnostics.rmse_filtered_vs_observed.toFixed(3)}</span>
-                <span>Smoothness = {data.diagnostics.smoothness_ratio.toFixed(3)}</span>
-            </div>
-        </div>
-    );
-}
-
-// ─── Backtest Price Chart with Trade Markers ──────────────────────────────────
-function BacktestPriceChart({
-    trades, symbol, startDate, endDate,
-}: {
-    trades: LiveTrade[];
-    symbol: string;
-    startDate: string;
-    endDate: string;
-}) {
-    const [chartData, setChartData] = useState<any[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [regimeData, setRegimeData] = useState<RegimeData | null>(null);
-
-    // ── fetch OHLCV ──────────────────────────────────────────────────────────
-    useEffect(() => {
-        if (!symbol || !startDate || !endDate || trades.length === 0) return;
-        setLoading(true);
-        fetch(`${API_BASE}/api/v1/market/historical/${symbol}?limit=600`)
-            .then(r => r.json())
-            .then(d => {
-                const hist = (d.historical ?? [])
-                    .filter((c: any) => c.date >= startDate && c.date <= endDate)
-                    .sort((a: any, b: any) => a.date.localeCompare(b.date));
-
-                if (hist.length === 0) {
-                    console.warn(`[BacktestPriceChart] No OHLC data for ${symbol} between ${startDate} and ${endDate}`);
-                    setLoading(false);
-                    return;
-                }
-
-                const closes = hist.map((c: any) => c.close as number);
-                const toDate = (ts: string | undefined) => ts ? ts.substring(0, 10) : "";
-
-                const merged = hist.map((c: any, i: number) => {
-                    const dateStr: string = c.date;
-                    const win = closes.slice(Math.max(0, i - 19), i + 1);
-                    const sma20 = win.reduce((s: number, v: number) => s + v, 0) / win.length;
-                    const entriesHere = trades.filter(t => toDate(t.timestamp) === dateStr);
-                    const exitsHere = trades.filter(t =>
-                        toDate(t.exit_timestamp || t.timestamp) === dateStr && t.exit_price != null
-                    );
-                    const entry = entriesHere[0];
-                    const exit = exitsHere[0];
-                    return {
-                        date: dateStr,
-                        label: dateStr.substring(5),
-                        close: c.close,
-                        sma20: Math.round(sma20 * 100) / 100,
-                        entryPrice: entry?.entry ?? null,
-                        _entryDir: entry?.direction ?? null,
-                        _entryOutcome: entry?.outcome ?? null,
-                        _entryId: entry?.signal_id ?? null,
-                        exitPrice: exit?.exit_price ?? null,
-                        _exitOutcome: exit?.outcome ?? null,
-                    };
-                });
-                setChartData(merged);
-            })
-            .catch(err => console.error("[BacktestPriceChart] Fetch error:", err))
-            .finally(() => setLoading(false));
-    }, [symbol, startDate, endDate, trades.length]);
-
-    // ── fetch volatility regimes ─────────────────────────────────────────────
-    useEffect(() => {
-        if (!symbol) return;
-        fetch(`${API_BASE}/api/v1/analytics/volatility-regimes/${symbol}?days=600&window=20`)
-            .then(r => r.json())
-            .then((d: RegimeData) => setRegimeData(d))
-            .catch(() => {/* regime overlay is optional – silently skip */ });
-    }, [symbol]);
-
-    if (loading) {
-        return (
-            <div className="h-48 flex items-center justify-center gap-3">
-                <div className="h-4 w-4 border-2 border-accent border-t-transparent rounded-full animate-spin" />
-                <span className="text-xs text-muted font-mono uppercase tracking-widest animate-pulse">Loading price data…</span>
-            </div>
-        );
-    }
-
-    if (chartData.length === 0) return null;
-
-    const wins = trades.filter(t => t.outcome === "win_tp").length;
-    const losses = trades.filter(t => t.outcome === "loss_sl").length;
-
-    const regimeRuns = regimeData
-        ? buildRegimeRuns(regimeData.regime_sequence, startDate, endDate)
-        : [];
-
-    const dists = regimeData?.distributions ?? {};
-
-    // Custom dot renderers
-    const EntryDot = (props: any) => {
-        const { cx, cy, payload } = props;
-        if (!payload || payload.entryPrice == null || cx == null || cy == null) return null;
-        const isLong = payload._entryDir === "LONG";
-        const won = payload._entryOutcome === "win_tp";
-        const fill = won ? "#00ffa3" : "#ff2e2e"; // Neon green for win, neon red for loss
-        return isLong
-            ? <polygon key={payload._entryId} points={`${cx},${cy - 10} ${cx - 6},${cy + 2} ${cx + 6},${cy + 2}`} fill={fill} stroke="#0f172a" strokeWidth={0.8} opacity={0.95} />
-            : <polygon key={payload._entryId} points={`${cx},${cy + 10} ${cx - 6},${cy - 2} ${cx + 6},${cy - 2}`} fill={fill} stroke="#0f172a" strokeWidth={0.8} opacity={0.95} />;
-    };
-
-    const ExitDot = (props: any) => {
-        const { cx, cy, payload } = props;
-        if (!payload || payload.exitPrice == null || cx == null || cy == null) return null;
-        const won = payload._exitOutcome === "win_tp";
-        const fill = won ? "#00ffa3" : "#ff2e2e"; // Neon green for win, neon red for loss
-        return <rect key={payload._entryId + "_exit"} x={cx - 4} y={cy - 4} width={8} height={8} fill={fill} stroke="#0f172a" strokeWidth={0.8} opacity={0.9} />;
-    };
-
-    return (
-        <div className="bg-[#050505] rounded-3xl border border-white/10 p-6 shadow-2xl overflow-hidden min-h-[420px]">
-            <div className="flex items-center justify-between mb-8 pb-6 border-b border-white/5">
-                <div>
-                    <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-white/50">Mechanical Precision Audit — {symbol}</h3>
-                    <p className="text-[9px] font-bold text-white/20 mt-1 uppercase tracking-widest">
-                        Daily close propagation · SMA(20) baseline · Signal Magnitude Analysis
-                    </p>
-                </div>
-                <div className="flex items-center gap-4">
-                    <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest">
-                        <span className="h-2 w-2 rounded-full bg-[#00ffa3] shadow-[0_0_8px_#00ffa3]" />
-                        <span className="text-white/60">Long Entry</span>
-                    </div>
-                    <div className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest">
-                        <span className="h-2 w-2 rounded-full bg-[#ff2e2e] shadow-[0_0_8px_#ff2e2e]" />
-                        <span className="text-white/60">Short Entry</span>
-                    </div>
-                </div>
-            </div>
-
-            <div className="h-80">
-                <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart data={chartData} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" vertical={false} />
-                        <XAxis
-                            dataKey="label"
-                            tick={{ fill: "#ffffff", fontSize: 9, opacity: 0.3 }}
-                            minTickGap={40}
-                            axisLine={false}
-                            tickLine={false}
-                        />
-                        <YAxis
-                            tick={{ fill: "#ffffff", fontSize: 9, opacity: 0.3 }}
-                            tickFormatter={(v) => `$${v.toFixed(0)}`}
-                            width={50}
-                            domain={["auto", "auto"]}
-                            axisLine={false}
-                            tickLine={false}
-                        />
-                        <Tooltip
-                            content={({ active, payload }) => {
-                                if (!active || !payload?.length) return null;
-                                const d = payload[0].payload;
-                                return (
-                                    <div className="bg-black border border-white/10 rounded-xl px-4 py-3 text-[10px] font-black uppercase tracking-widest shadow-2xl space-y-2">
-                                        <p className="text-white border-b border-white/5 pb-2 mb-2">{d.label}</p>
-                                        <p className="text-white/40">CLOSE: <span className="text-white">${d.close.toFixed(2)}</span></p>
-                                        <p className="text-white/40">SMA20: <span className="text-white/60">${d.sma20.toFixed(2)}</span></p>
-                                    </div>
-                                );
-                            }}
-                        />
-                        {/* Regime background bands — rendered first so they sit behind price */}
-                        {regimeRuns.map((run, i) => (
-                            <ReferenceArea
-                                key={`regime-${i}`}
-                                x1={run.x1}
-                                x2={run.x2}
-                                fill={REGIME_FILL[run.state]}
-                                fillOpacity={0.10}
-                                stroke="none"
-                                ifOverflow="visible"
-                            />
-                        ))}
-                        <Line type="monotone" dataKey="close" stroke="#ffffff" strokeOpacity={0.1} strokeWidth={1} dot={false} isAnimationActive={false} />
-                        <Line type="monotone" dataKey="sma20" stroke="#ffffff" strokeOpacity={0.05} strokeWidth={1} strokeDasharray="3 3" dot={false} isAnimationActive={false} />
-                        <Line
-                            type="monotone"
-                            dataKey="entryPrice"
-                            stroke="transparent"
-                            dot={<EntryDot />}
-                            isAnimationActive={false}
-                            connectNulls={false}
-                        />
-                        <Line
-                            type="monotone"
-                            dataKey="exitPrice"
-                            stroke="transparent"
-                            dot={<ExitDot />}
-                            isAnimationActive={false}
-                            connectNulls={false}
-                        />
-                    </ComposedChart>
-                </ResponsiveContainer>
-            </div>
-
-            {/* Regime distribution summary */}
-            {Object.keys(dists).length > 0 && (
-                <div className="mt-4 grid grid-cols-3 gap-2">
-                    {[0, 1, 2].map(s => {
-                        const d = dists[String(s)];
-                        if (!d) return null;
-                        return (
-                            <div
-                                key={s}
-                                className="rounded-xl border p-3 space-y-1"
-                                style={{ borderColor: `${REGIME_FILL[s]}40`, background: `${REGIME_FILL[s]}0a` }}
-                            >
-                                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: REGIME_FILL[s] }}>
-                                    {d.label}
-                                </p>
-                                <p className="text-[10px] text-muted font-mono">
-                                    μ {d.annualized_ret_pct > 0 ? "+" : ""}{d.annualized_ret_pct.toFixed(1)}% / yr
-                                </p>
-                                <p className="text-[10px] text-muted font-mono">σ {d.annualized_vol_pct.toFixed(1)}% ann.</p>
-                                <p className="text-[10px] text-muted font-mono">Sharpe {d.sharpe.toFixed(2)}</p>
-                                <p className="text-[10px] text-muted/60 font-mono">{d.count} days</p>
-                            </div>
-                        );
-                    })}
-                </div>
-            )}
-        </div>
-    );
-}
-
 
 export default function BacktestLab() {
     const { socket, connected, reconnect } = useSocket();
@@ -1089,6 +214,14 @@ export default function BacktestLab() {
     const [ivrShort, setIvrShort] = useState(true);
     const [ivCurrentSignal, setIvCurrentSignal] = useState<IVCurrentSignal | null>(null);
 
+    const [debugLookbehind, setDebugLookbehind] = useState(false);
+    const [useAtrSlippage, setUseAtrSlippage] = useState(false);
+    const [fixedSlippagePrice, setFixedSlippagePrice] = useState("0");
+    const [atrSlippageFactor, setAtrSlippageFactor] = useState("0.2");
+    const [commissionPerTrade, setCommissionPerTrade] = useState("0");
+    const [intrabarFillPolicy, setIntrabarFillPolicy] = useState<"conservative" | "optimistic">("conservative");
+    const [markExpiredToMarket, setMarkExpiredToMarket] = useState(true);
+
     const equityCurve = buildEquityCurve(trades, activeAccountSize);
     const liveKpis = deriveLiveKpis(trades, activeAccountSize);
     const displayKpis = completedResult?.kpis ?? liveKpis;
@@ -1101,47 +234,85 @@ export default function BacktestLab() {
     const profitHistogram = buildHistogramData(bootstrapLive?.net_profit_samples ?? []);
     const drawdownHistogram = buildHistogramData(bootstrapLive?.max_drawdown_samples ?? []);
 
-    // Fetch IV smile whenever a backtest completes on a new symbol
+    // ── PREFETCH: eagerly load analytics as soon as the symbol changes ──────
+    // This fires IMMEDIATELY on symbol change, not after backtest completion.
+    // All 3 endpoints are fetched in parallel. Backend cache (10min TTL)
+    // + frontend cache (5min TTL) ensures near-instant response on repeat.
     useEffect(() => {
-        if (!completedResult) return;
-        setIvLoading(true);
-        setIvData(null);
-        fetch(`${API_BASE}/api/v1/analytics/implied-vol/${completedResult.symbol}`)
-            .then(r => r.ok ? r.json() : null)
-            .then(d => d?.expirations ? setIvData(d) : null)
-            .catch(() => { })
-            .finally(() => setIvLoading(false));
-    }, [completedResult?.symbol]);
+        if (!symbol || symbol.length < 1) return;
 
-    // Fetch ARCH/GARCH conditional vol whenever a backtest completes
-    useEffect(() => {
-        if (!completedResult) return;
-        setArchLoading(true);
-        setArchData(null);
-        fetch(`${API_BASE}/api/v1/analytics/arch-vol/${completedResult.symbol}`)
-            .then(r => r.ok ? r.json() : null)
-            .then(d => d?.conditional_vol ? setArchData(d) : null)
-            .catch(() => { })
-            .finally(() => setArchLoading(false));
-    }, [completedResult?.symbol]);
+        const sym = symbol.toUpperCase();
 
-    useEffect(() => {
-        if (!completedResult) return;
-        setKalmanLoading(true);
-        setKalmanData(null);
-        fetch(`${API_BASE}/api/v1/analytics/kalman-filter/${completedResult.symbol}?days=300&measurement_noise_mult=4`)
-            .then(r => r.ok ? r.json() : null)
-            .then(d => d?.series ? setKalmanData(d) : null)
-            .catch(() => { })
-            .finally(() => setKalmanLoading(false));
-    }, [completedResult?.symbol]);
+        // Debounce: wait 400ms after the user stops typing
+        const timer = setTimeout(() => {
+            // ── IV Smile ──
+            const cachedIv = getCachedIvSmile(sym);
+            if (cachedIv) {
+                setIvData(cachedIv);
+                setIvLoading(false);
+            } else {
+                setIvLoading(true);
+                cachedFetch(`${API_BASE}/api/v1/analytics/implied-vol/${sym}`)
+                    .then(r => r.ok ? r.json() : null)
+                    .then(d => {
+                        if (d?.expirations) {
+                            setCachedIvSmile(sym, d);
+                            setIvData(d);
+                        }
+                    })
+                    .catch(() => { })
+                    .finally(() => setIvLoading(false));
+            }
+
+            // ── ARCH / GARCH ──
+            const cachedArch = getCachedArchVol(sym);
+            if (cachedArch) {
+                setArchData(cachedArch);
+                setArchLoading(false);
+            } else {
+                setArchLoading(true);
+                cachedFetch(`${API_BASE}/api/v1/analytics/arch-vol/${sym}`)
+                    .then(r => r.ok ? r.json() : null)
+                    .then(d => {
+                        if (d?.conditional_vol) {
+                            setCachedArchVol(sym, d);
+                            setArchData(d);
+                        }
+                    })
+                    .catch(() => { })
+                    .finally(() => setArchLoading(false));
+            }
+
+            // ── Kalman Filter ──
+            const cachedKalman = getCachedKalman(sym);
+            if (cachedKalman) {
+                setKalmanData(cachedKalman);
+                setKalmanLoading(false);
+            } else {
+                setKalmanLoading(true);
+                cachedFetch(`${API_BASE}/api/v1/analytics/kalman-filter/${sym}?days=300&measurement_noise_mult=4`)
+                    .then(r => r.ok ? r.json() : null)
+                    .then(d => {
+                        if (d?.series) {
+                            setCachedKalman(sym, d);
+                            setKalmanData(d);
+                        }
+                    })
+                    .catch(() => { })
+                    .finally(() => setKalmanLoading(false));
+            }
+        }, 400);
+
+        return () => clearTimeout(timer);
+    }, [symbol]);
+
 
     useEffect(() => {
         if (!socket || !activeSim) return;
 
         const hydrateCompletedTrades = async (simId: string) => {
             try {
-                const response = await fetch(`${API_BASE}/api/v1/simulation/results/${encodeURIComponent(simId)}`);
+                const response = await cachedFetch(`${API_BASE}/api/v1/simulation/results/${encodeURIComponent(simId)}`);
                 if (!response.ok) return;
                 const detail = await response.json();
                 if (Array.isArray(detail?.trades)) {
@@ -1152,7 +323,7 @@ export default function BacktestLab() {
             }
         };
 
-        const onProgress = (data: any) => {
+        const onProgress = (data: BacktestProgressEvent) => {
             if (data?.sim_id !== activeSim) return;
             setProgress({
                 day: Number(data.day || 0),
@@ -1161,16 +332,17 @@ export default function BacktestLab() {
             });
         };
 
-        const onTrade = (data: any) => {
+        const onTrade = (data: BacktestTradeEvent) => {
             if (data?.sim_id !== activeSim || !data.trade) return;
             setTrades((prev) => {
-                const alreadyExists = prev.some((trade) => trade.signal_id === data.trade.signal_id && trade.exit_timestamp === data.trade.exit_timestamp);
+                const incomingTrade = data.trade as LiveTrade;
+                const alreadyExists = prev.some((trade) => trade.signal_id === incomingTrade.signal_id && trade.exit_timestamp === incomingTrade.exit_timestamp);
                 if (alreadyExists) return prev;
-                return [...prev, data.trade as LiveTrade];
+                return [...prev, incomingTrade];
             });
         };
 
-        const onBootstrapReady = (data: any) => {
+        const onBootstrapReady = (data: BacktestBootstrapEvent) => {
             if (data?.sim_id !== activeSim) return;
             setBootstrapLive({
                 iterations: Number(data.iterations || 0),
@@ -1181,7 +353,7 @@ export default function BacktestLab() {
             });
         };
 
-        const onComplete = (data: any) => {
+        const onComplete = (data: BacktestCompleteEvent) => {
             if (data?.sim_id !== activeSim) return;
             setIsRunning(false);
             setProgress((prev) => ({
@@ -1194,16 +366,16 @@ export default function BacktestLab() {
                 symbol: activeSymbol,
                 strategy: strategyName,
                 status: "completed",
-                kpis: data.kpis,
+                kpis: normalizeKpis(data.kpis, activeAccountSize),
                 trading_days: Number(data.trading_days || 0),
                 total_trades: Number(data.total_trades || 0),
                 bootstrap: data.bootstrap ?? null,
                 report_url: data.report_url,
             });
-            void hydrateCompletedTrades(data.sim_id);
+            if (data.sim_id) void hydrateCompletedTrades(data.sim_id);
         };
 
-        const onError = (data: any) => {
+        const onError = (data: BacktestErrorEvent) => {
             if (data?.sim_id !== activeSim) return;
             setIsRunning(false);
             setErrorMessage(data?.error || "Backtest execution failed.");
@@ -1222,7 +394,90 @@ export default function BacktestLab() {
             socket.off("backtest_complete", onComplete);
             socket.off("backtest_error", onError);
         };
-    }, [socket, activeSim, activeSymbol]);
+    }, [socket, activeSim, activeSymbol, strategyName, activeAccountSize]);
+
+    useEffect(() => {
+        if (!activeSim || !isRunning) return;
+
+        let cancelled = false;
+        let timer: number | undefined;
+        let connectionFailures = 0;
+        const scheduleNext = (delay = 1500) => {
+            if (!cancelled) timer = window.setTimeout(poll, delay);
+        };
+        const poll = async () => {
+            try {
+                const response = await fetch(
+                    `${API_BASE}/api/v1/simulation/results/${encodeURIComponent(activeSim)}`,
+                    { cache: "no-store" },
+                );
+                connectionFailures = 0;
+                if (response.status === 202) {
+                    scheduleNext();
+                    return;
+                }
+
+                const payload: {
+                    detail?: string | { error?: string; message?: string };
+                    summary?: Record<string, unknown>;
+                    trades?: LiveTrade[];
+                } = await response.json();
+                if (!response.ok) {
+                    const detail = payload.detail;
+                    const message = typeof detail === "string"
+                        ? detail
+                        : detail?.error || detail?.message || "Backtest execution failed.";
+                    if (!cancelled) {
+                        setErrorMessage(message);
+                        setIsRunning(false);
+                    }
+                    return;
+                }
+
+                const summary = payload.summary ?? {};
+                const kpis = normalizeKpis(summary, activeAccountSize);
+                const tradingDays = Number(summary.trading_days ?? 0);
+                const reportPath = typeof summary.report_path === "string"
+                    ? summary.report_path
+                    : null;
+
+                if (!cancelled) {
+                    setTrades(Array.isArray(payload.trades) ? payload.trades : []);
+                    setProgress({ day: tradingDays, total: tradingDays, pct: 100 });
+                    setCompletedResult({
+                        sim_id: activeSim,
+                        symbol: String(summary.symbol ?? activeSymbol),
+                        strategy: String(summary.strategy ?? strategyName),
+                        status: "completed",
+                        kpis,
+                        trading_days: tradingDays,
+                        total_trades: kpis.total_trades,
+                        bootstrap: (summary.bootstrap as CompletedResult["bootstrap"]) ?? null,
+                        report_url: reportPath
+                            ? `${API_BASE}/view-reports/${encodeURIComponent(reportPath)}`
+                            : null,
+                    });
+                    setIsRunning(false);
+                }
+            } catch {
+                connectionFailures += 1;
+                if (connectionFailures >= 5) {
+                    if (!cancelled) {
+                        setErrorMessage("Lost contact with the simulation service. The job may still be running.");
+                        setIsRunning(false);
+                    }
+                    return;
+                }
+                scheduleNext(Math.min(1500 * (2 ** connectionFailures), 12_000));
+            }
+        };
+
+        void poll();
+        return () => {
+            cancelled = true;
+            if (timer !== undefined) window.clearTimeout(timer);
+        };
+    }, [activeSim, isRunning, activeAccountSize, activeSymbol, strategyName]);
 
     const handleRunIVRegime = async () => {
         const parsedAccount = parseFloat(account);
@@ -1266,11 +521,11 @@ export default function BacktestLab() {
 
             const data = await response.json();
             if (!response.ok) {
-                setErrorMessage(data?.detail || "IV Regime backtest failed.");
+                setErrorMessage(apiErrorMessage(data?.detail, "IV Regime backtest failed."));
                 return;
             }
 
-            const tradeList = (data.trades || []).map((t: any) => ({
+            const tradeList = (data.trades || []).map((t: LiveTrade) => ({
                 signal_id: t.signal_id,
                 timestamp: t.timestamp,
                 direction: t.direction,
@@ -1292,7 +547,7 @@ export default function BacktestLab() {
                 symbol,
                 strategy: "IV_REGIME",
                 status: "completed",
-                kpis: data.kpis,
+                kpis: normalizeKpis(data.kpis, parsedAccount),
                 trading_days: data.n_trading_days,
                 total_trades: data.kpis?.total_trades ?? 0,
                 bootstrap: null,
@@ -1310,6 +565,21 @@ export default function BacktestLab() {
         const parsedAccount = parseFloat(account);
         if (!Number.isFinite(parsedAccount) || parsedAccount <= 0) {
             setErrorMessage("Initial capital must be greater than 0.");
+            return;
+        }
+        const parsedSlippage = parseFloat(fixedSlippagePrice);
+        const parsedAtrSlippageFactor = parseFloat(atrSlippageFactor);
+        const parsedCommission = parseFloat(commissionPerTrade);
+        if (!Number.isFinite(parsedSlippage) || parsedSlippage < 0) {
+            setErrorMessage("Fixed slippage must be zero or greater.");
+            return;
+        }
+        if (!Number.isFinite(parsedCommission) || parsedCommission < 0) {
+            setErrorMessage("Commission per trade must be zero or greater.");
+            return;
+        }
+        if (!Number.isFinite(parsedAtrSlippageFactor) || parsedAtrSlippageFactor < 0) {
+            setErrorMessage("ATR slippage factor must be zero or greater.");
             return;
         }
 
@@ -1336,12 +606,19 @@ export default function BacktestLab() {
                     strategy_name: strategyName,
                     run_bootstrap: bootstrap,
                     bootstrap_iterations: parseInt(iterations, 10),
+                    debug_lookbehind_guard: debugLookbehind,
+                    use_atr_slippage: useAtrSlippage,
+                    atr_slippage_factor: parsedAtrSlippageFactor,
+                    fixed_slippage_price: parsedSlippage,
+                    commission_per_trade: parsedCommission,
+                    intrabar_fill_policy: intrabarFillPolicy,
+                    mark_expired_to_market: markExpiredToMarket,
                 }),
             });
 
             const data = await response.json();
             if (!response.ok) {
-                setErrorMessage(data?.detail || "Failed to launch simulation.");
+                setErrorMessage(apiErrorMessage(data?.detail, "Failed to launch simulation."));
                 return;
             }
 
@@ -1363,17 +640,17 @@ export default function BacktestLab() {
             <div className="p-6 lg:p-8 space-y-6 animate-fade-in relative">
                 <div className="flex items-center justify-between">
                     <div className="flex items-center gap-4">
-                        <div className="h-10 w-10 rounded-xl bg-[#00ffa3]/10 flex items-center justify-center border border-[#00ffa3]/20">
-                            <CandlestickChart size={20} className="text-[#00ffa3]" />
+                        <div className="h-10 w-10 rounded-xl bg-accent/10 flex items-center justify-center border border-accent/20">
+                            <CandlestickChart size={20} className="text-accent" />
                         </div>
                         <div>
-                            <h1 className="text-2xl font-black uppercase tracking-[0.25em] text-white">Advanced Simulation</h1>
+                            <h1 className="text-2xl font-black uppercase tracking-[0.25em] text-foreground">Advanced Simulation</h1>
                             <div className="flex items-center gap-3 mt-1">
-                                <span className="text-[10px] font-bold text-[#00ffa3]/60 uppercase tracking-widest">Stable v2.4</span>
-                                <div className="h-1 w-1 rounded-full bg-white/20" />
+                                <span className="text-[10px] font-bold text-accent/60 uppercase tracking-widest">Stable v2.4</span>
+                                <div className="h-1 w-1 rounded-full bg-muted-foreground/30" />
                                 <div className="flex items-center gap-1.5">
-                                    <div className="h-1.5 w-1.5 rounded-full bg-[#00ffa3] animate-pulse" />
-                                    <span className="text-[10px] font-bold text-white/50 uppercase tracking-widest">Engine Connected</span>
+                                    <div className="h-1.5 w-1.5 rounded-full bg-accent animate-pulse" />
+                                    <span className="text-[10px] font-bold text-muted-foreground/50 uppercase tracking-widest">Engine Connected</span>
                                 </div>
                             </div>
                         </div>
@@ -1398,7 +675,7 @@ export default function BacktestLab() {
                         onClick={() => setLabView("strategy")}
                         className={`px-4 py-2 rounded-xl border text-xs font-black uppercase tracking-widest transition-all ${labView === "strategy"
                             ? "bg-accent text-white border-accent shadow-accent/20 shadow-lg"
-                            : "bg-card border-border text-muted hover:text-white hover:border-accent/30"
+                            : "bg-card border-border text-muted hover:text-foreground hover:border-accent/30"
                             }`}
                     >
                         Strategy Backtests
@@ -1407,7 +684,7 @@ export default function BacktestLab() {
                         onClick={() => setLabView("portfolio")}
                         className={`px-4 py-2 rounded-xl border text-xs font-black uppercase tracking-widest transition-all ${labView === "portfolio"
                             ? "bg-cyan-600 text-white border-cyan-500 shadow-cyan-600/20 shadow-lg"
-                            : "bg-card border-border text-muted hover:text-white hover:border-cyan-400/30"
+                            : "bg-card border-border text-muted hover:text-foreground hover:border-cyan-400/30"
                             }`}
                     >
                         Portfolio Backtest
@@ -1417,14 +694,13 @@ export default function BacktestLab() {
                 {labView === "strategy" ? (
                     <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
                         <div className="lg:col-span-4 space-y-6">
-                            <div className="bg-[#050505] border border-white/10 rounded-[2rem] p-8 relative overflow-hidden shadow-2xl">
-                                <div className="absolute top-0 right-0 w-64 h-64 bg-[#00ffa3]/5 rounded-full blur-[100px] -mr-32 -mt-32" />
-
-                                <div className="relative space-y-8">
-                                    <div className="flex items-center gap-3 pb-6 border-b border-white/5">
-                                        <FileTerminal size={18} className="text-[#00ffa3]" />
-                                        <h2 className="text-xs font-black uppercase tracking-[0.3em] text-white/90">System Parameters</h2>
-                                    </div>
+                            <BacktestPanel
+                                variant="purple"
+                                title="System Parameters"
+                                subtitle="Strategy Configuration"
+                                headerIcon={FileTerminal}
+                            >
+                                <div className="space-y-8">
 
                                     <div className="space-y-5">
                                         <div>
@@ -1601,26 +877,146 @@ export default function BacktestLab() {
                                                 </div>
                                             )}
                                         </div>
+
+                                        <div className="p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5 space-y-4 shadow-inner shadow-emerald-500/5">
+                                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400">Validation</p>
+                                            
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2 text-muted-foreground">
+                                                    <ShieldCheck size={14} className="text-emerald-400" />
+                                                    <label className="text-[11px] font-bold uppercase tracking-widest">Look-ahead Guard</label>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    aria-pressed={debugLookbehind}
+                                                    onClick={() => setDebugLookbehind(!debugLookbehind)}
+                                                    className={`w-10 h-5 rounded-full relative transition-colors ${debugLookbehind ? "bg-emerald-500" : "bg-card-hover"}`}
+                                                >
+                                                    <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 shadow-sm transition-all ${debugLookbehind ? "left-5" : "left-0.5"}`} />
+                                                </button>
+                                            </div>
+
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex items-center gap-2 text-muted-foreground">
+                                                    <Target size={14} className="text-orange-400" />
+                                                    <label className="text-[11px] font-bold uppercase tracking-widest">ATR Slippage</label>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    aria-pressed={useAtrSlippage}
+                                                    onClick={() => setUseAtrSlippage(!useAtrSlippage)}
+                                                    className={`w-10 h-5 rounded-full relative transition-colors ${useAtrSlippage ? "bg-orange-500" : "bg-card-hover"}`}
+                                                >
+                                                    <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 shadow-sm transition-all ${useAtrSlippage ? "left-5" : "left-0.5"}`} />
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        <div className="p-4 rounded-xl border border-amber-500/25 bg-amber-500/5 space-y-4">
+                                            <div>
+                                                <p className="text-xs font-black uppercase tracking-[0.16em] text-amber-300">Execution realism</p>
+                                                <p className="mt-1 text-xs leading-5 text-muted">
+                                                    Costs and ambiguous candles are applied before KPIs.
+                                                </p>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <label htmlFor="fixed-slippage" className="text-xs text-muted block mb-1.5">Slippage · price units</label>
+                                                    <input
+                                                        id="fixed-slippage"
+                                                        type="number"
+                                                        min="0"
+                                                        step="0.0001"
+                                                        value={fixedSlippagePrice}
+                                                        onChange={(event) => setFixedSlippagePrice(event.target.value)}
+                                                        disabled={useAtrSlippage}
+                                                        className="w-full bg-background border border-border rounded-lg p-2.5 text-xs font-mono disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-amber-400/30"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label htmlFor="commission-per-trade" className="text-xs text-muted block mb-1.5">Commission · round trip</label>
+                                                    <input
+                                                        id="commission-per-trade"
+                                                        type="number"
+                                                        min="0"
+                                                        step="0.01"
+                                                        value={commissionPerTrade}
+                                                        onChange={(event) => setCommissionPerTrade(event.target.value)}
+                                                        className="w-full bg-background border border-border rounded-lg p-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-amber-400/30"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            {useAtrSlippage && (
+                                                <div>
+                                                    <label htmlFor="atr-slippage-factor" className="text-xs text-muted block mb-1.5">ATR slippage factor</label>
+                                                    <input
+                                                        id="atr-slippage-factor"
+                                                        type="number"
+                                                        min="0"
+                                                        max="5"
+                                                        step="0.05"
+                                                        value={atrSlippageFactor}
+                                                        onChange={(event) => setAtrSlippageFactor(event.target.value)}
+                                                        className="w-full bg-background border border-border rounded-lg p-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-amber-400/30"
+                                                    />
+                                                    <p className="mt-1 text-[11px] text-muted">Applied as ATR × factor at entry and exit.</p>
+                                                </div>
+                                            )}
+
+                                            <div>
+                                                <label htmlFor="intrabar-policy" className="text-xs text-muted block mb-1.5">When SL and TP touch the same candle</label>
+                                                <select
+                                                    id="intrabar-policy"
+                                                    value={intrabarFillPolicy}
+                                                    onChange={(event) => setIntrabarFillPolicy(event.target.value as "conservative" | "optimistic")}
+                                                    className="w-full bg-background border border-border rounded-lg p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-amber-400/30"
+                                                >
+                                                    <option value="conservative">Stop first · conservative (recommended)</option>
+                                                    <option value="optimistic">Target first · optimistic</option>
+                                                </select>
+                                            </div>
+
+                                            <div className="flex items-center justify-between gap-4">
+                                                <div>
+                                                    <p className="text-xs font-semibold text-foreground">Mark open positions to market</p>
+                                                    <p className="mt-0.5 text-xs text-muted">Uses the final available close instead of zero PnL.</p>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    aria-pressed={markExpiredToMarket}
+                                                    onClick={() => setMarkExpiredToMarket(!markExpiredToMarket)}
+                                                    className={`w-10 h-5 shrink-0 rounded-full relative transition-colors ${markExpiredToMarket ? "bg-amber-500" : "bg-card-hover"}`}
+                                                >
+                                                    <span className={`block w-4 h-4 rounded-full bg-white absolute top-0.5 shadow-sm transition-all ${markExpiredToMarket ? "left-5" : "left-0.5"}`} />
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
 
                                     <button
+                                        type="button"
                                         onClick={strategyName === "IV_REGIME" ? handleRunIVRegime : handleRunBacktest}
                                         disabled={launching || isRunning}
                                         className="w-full py-5 rounded-2xl bg-[#00ffa3] text-black font-black uppercase tracking-[0.3em] text-sm hover:scale-[1.02] active:scale-[0.98] transition-all shadow-[0_0_30px_rgba(0,255,163,0.3)] disabled:opacity-50 disabled:hover:scale-100 flex items-center justify-center gap-3"
                                     >
                                         {launching || isRunning ? <Loader2 className="animate-spin" size={20} /> : <Play size={18} className="fill-current" />}
-                                        {launching ? "Starting..." : isRunning ? "Running..." : strategyName === "IV_REGIME" ? "Execute IV Regime" : "Launch Engine"}
+                                        {launching ? "Starting..." : isRunning ? "Running..." : strategyName === "IV_REGIME" ? "Run IV regime" : "Run backtest"}
                                     </button>
+                                    <p className="text-center text-[11px] leading-5 text-muted">
+                                        Research mode only. This action does not send orders to a broker.
+                                    </p>
                                 </div>
-                            </div>
+                            </BacktestPanel>
                         </div>
 
                         <div className="lg:col-span-8 flex flex-col gap-6">
                             {!launching && !isRunning && !completedResult && !errorMessage && (
-                                <div className="flex-1 bg-[#050505] border border-white/5 border-dashed rounded-3xl flex flex-col items-center justify-center text-muted p-10 min-h-[520px]">
-                                    <Activity size={48} className="text-white/10 mb-6" />
-                                    <h3 className="text-lg font-black uppercase tracking-[0.2em] text-white/40">Engine Offline</h3>
-                                    <p className="text-[10px] mt-4 max-w-sm text-center font-bold uppercase tracking-widest text-white/20">Awaiting simulation parameters for real-time equity propagation.</p>
+                                <div className="flex-1 dark:bg-card bg-zinc-50 border dark:border-border border-zinc-200 border-dashed rounded-3xl flex flex-col items-center justify-center text-muted-foreground p-10 min-h-[520px]">
+                                    <Activity size={48} className="dark:text-muted/20 text-zinc-300 mb-6" />
+                                    <h3 className="text-lg font-black uppercase tracking-[0.2em] dark:text-muted-foreground/40 text-zinc-400">Ready to simulate</h3>
+                                    <p className="text-[10px] mt-4 max-w-sm text-center font-bold uppercase tracking-widest dark:text-muted-foreground/20 text-zinc-400">Choose inputs and run a historical simulation.</p>
                                 </div>
                             )}
 
@@ -1630,86 +1026,70 @@ export default function BacktestLab() {
                                         <div className="bg-[#ff2e2e]/5 border border-[#ff2e2e]/20 rounded-2xl p-5 flex items-start gap-4 text-[#ff2e2e]">
                                             <TriangleAlert size={20} className="mt-0.5" />
                                             <div>
-                                                <p className="font-black uppercase tracking-widest text-xs">Critical Exception</p>
+                                                <p className="font-black uppercase tracking-widest text-xs">Simulation error</p>
                                                 <p className="text-[11px] font-bold mt-1 text-[#ff2e2e]/80 uppercase tracking-widest">{errorMessage}</p>
                                             </div>
                                         </div>
                                     )}
 
                                     <div className="grid grid-cols-2 lg:grid-cols-3 gap-6">
-                                        {[
-                                            { label: "Net Pnl", value: `${netProfit >= 0 ? "+" : ""}$${formatCurrency(netProfit)}`, color: netProfit >= 0 ? "text-[#00ffa3] drop-shadow-[0_0_8px_rgba(0,255,163,0.4)]" : "text-[#ff2e2e] drop-shadow-[0_0_8px_rgba(255,46,46,0.4)]", desc: `${displayKpis.total_r.toFixed(1)}R Drift`, icon: Activity },
-                                            { label: "Win Rate", value: formatFractionPercent(displayKpis.win_rate), color: "text-white", desc: `${displayKpis.wins}W / ${displayKpis.losses}L`, icon: PieChart },
-                                            { label: "Profit Factor", value: formatRatio(displayKpis.profit_factor), color: "text-[#d1ff00]", desc: "Gross Ratio", icon: Zap },
-                                            { label: "Max Drawdown", value: formatFractionPercent(displayKpis.max_drawdown_pct), color: "text-[#ff2e2e]", desc: "Equity Risk", icon: TrendingDown },
-                                            { label: "Expectancy", value: `${displayKpis.expectancy_r.toFixed(2)}R`, color: "text-[#ffa300]", desc: "Per Unit Risk", icon: Target },
-                                            { label: "Efficiency", value: formatRatio(displayKpis.sharpe_ratio), color: "text-[#00e0ff]", desc: "Sharpe Ratio", icon: ShieldCheck }
-                                        ].map((kpi, i) => (
-                                            <div key={i} className="bg-[#050505] border border-white/10 rounded-2xl p-5 shadow-2xl group hover:border-[#00ffa3]/30 transition-all">
-                                                <div className="flex items-center justify-between mb-3">
-                                                    <p className="text-[9px] font-black uppercase tracking-[0.3em] text-white/40 group-hover:text-[#00ffa3]/60 transition-colors">{kpi.label}</p>
-                                                    <kpi.icon size={12} className="text-white/20 group-hover:text-[#00ffa3]/40" />
-                                                </div>
-                                                <p className={`text-2xl font-black font-mono tracking-tighter mt-1 ${kpi.color}`}>
-                                                    {kpi.value}
-                                                </p>
-                                                <p className="text-[9px] font-bold text-white/20 mt-2 flex items-center gap-2 uppercase tracking-[0.15em]">
-                                                    <span className={`h-1 w-1 rounded-full ${i === 0 ? (netProfit >= 0 ? "bg-[#00ffa3]" : "bg-[#ff2e2e]") : "bg-white/20"}`} />
-                                                    {kpi.desc}
-                                                </p>
-                                            </div>
-                                        ))}
+                                        <MetricCard label="Net Pnl" value={`${netProfit >= 0 ? "+" : ""}$${formatCurrency(netProfit)}`} subValue={`${displayKpis.total_r.toFixed(1)}R Drift`} trend={netProfit >= 0 ? "up" : "down"} icon={Activity} />
+                                        <MetricCard label="Win Rate" value={formatFractionPercent(displayKpis.win_rate)} subValue={`${displayKpis.wins}W / ${displayKpis.losses}L`} icon={PieChart} />
+                                        <MetricCard label="Profit Factor" value={formatRatio(displayKpis.profit_factor)} icon={Zap} variant="amber" />
+                                        <MetricCard label="Max Drawdown" value={formatFractionPercent(displayKpis.max_drawdown_pct)} trend="down" icon={TrendingDown} variant="rose" />
+                                        <MetricCard label="Expectancy" value={`${displayKpis.expectancy_r.toFixed(2)}R`} icon={Target} />
+                                        <MetricCard label="Performance" value={displayKpis.sharpe_ratio.toFixed(2)} subValue={`${displayKpis.sortino_ratio.toFixed(2)} Sortino / Sharpe`} icon={ShieldCheck} variant="cyan" />
                                     </div>
 
-                                    <div className="bg-[#050505] border border-white/10 rounded-2xl p-8 space-y-8 shadow-2xl">
+                                    <div className="bg-card border border-border rounded-2xl p-8 space-y-8 shadow-sm">
                                         <div className="flex flex-wrap items-center justify-between gap-4">
                                             <div>
-                                                <h3 className="text-[10px] font-black uppercase tracking-[0.4em] text-white/90">Live Simulation Status</h3>
-                                                <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest mt-1">
+                                                <h3 className="text-[10px] font-black uppercase tracking-[0.4em] text-foreground/90">Simulation status</h3>
+                                                <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest mt-1">
                                                     {activeSim ? `Identifier: ${activeSim}` : "Awaiting thread assignment..."}
                                                 </p>
                                             </div>
-                                            <div className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] border shadow-[0_0_15px_rgba(0,0,0,0.5)] ${isRunning ? "text-[#00ffa3] border-[#00ffa3]/30 bg-[#00ffa3]/5" : "text-[#00e0ff] border-[#00e0ff]/30 bg-[#00e0ff]/5"}`}>
-                                                {isRunning ? "Engine Running" : completedResult ? "Audit Completed" : launching ? "Core Initializing" : "System Idle"}
+                                            <div className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] border shadow-sm ${isRunning ? "text-emerald-500 border-emerald-500/30 bg-emerald-500/5" : "text-cyan-500 border-cyan-500/30 bg-cyan-500/5"}`}>
+                                                {isRunning ? "Running" : completedResult ? "Completed" : launching ? "Starting" : "Ready"}
                                             </div>
                                         </div>
 
                                         {(launching || isRunning) && (
                                             <div className="space-y-4">
                                                 <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-[0.2em]">
-                                                    <span className="text-white/40">Propagation Progress</span>
-                                                    <span className="font-mono text-[#00ffa3]">{progress.day}/{progress.total || "?"} SESSIONS</span>
+                                                    <span className="text-muted-foreground/60">Progress</span>
+                                                    <span className="font-mono text-accent">{progress.day}/{progress.total || "?"} SESSIONS</span>
                                                 </div>
-                                                <div className="w-full h-2 rounded-full bg-black border border-white/10 overflow-hidden">
-                                                    <div className="h-full bg-[#00ffa3] shadow-[0_0_15px_rgba(0,255,163,0.5)] transition-all duration-300" style={{ width: `${progress.pct}%` }} />
+                                                <div className="w-full h-2 rounded-full bg-muted border border-border overflow-hidden">
+                                                    <div className="h-full bg-accent shadow-[0_0_15px_rgba(var(--color-accent),0.5)] transition-all duration-300" style={{ width: `${progress.pct}%` }} />
                                                 </div>
                                             </div>
                                         )}
                                     </div>
 
-                                    <div className="bg-[#050505] rounded-3xl border border-white/10 p-6 shadow-2xl">
+                                    <div className="bg-card border border-border rounded-3xl p-6 shadow-sm">
                                         <div className="flex items-center justify-between mb-6">
                                             <div>
-                                                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-white/50">Equity Trajectory</p>
-                                                <p className="text-[9px] font-bold text-white/20 mt-1 uppercase tracking-widest">Real-time capital propagation audit</p>
+                                                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground">Equity Trajectory</p>
+                                                <p className="text-[9px] font-bold text-muted-foreground/40 mt-1 uppercase tracking-widest">Historical equity after execution costs</p>
                                             </div>
-                                            <p className="text-[10px] font-mono text-[#00ffa3]/60">{equityCurve.length} DATA_POINTS</p>
+                                            <p className="text-[10px] font-mono text-accent/60">{equityCurve.length} DATA_POINTS</p>
                                         </div>
                                         <div className="h-64">
                                             <ResponsiveContainer width="100%" height="100%">
                                                 <AreaChart data={equityCurve} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}>
-                                                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.03)" vertical={false} />
-                                                    <XAxis dataKey="label" tick={{ fill: "#ffffff", fontSize: 9, opacity: 0.3 }} minTickGap={40} axisLine={false} tickLine={false} />
-                                                    <YAxis tick={{ fill: "#ffffff", fontSize: 9, opacity: 0.3 }} tickFormatter={(value) => `$${Number(value).toFixed(0)}`} width={60} axisLine={false} tickLine={false} />
+                                                    <CartesianGrid strokeDasharray="3 3" stroke="hsla(var(--border), 0.15)" vertical={false} />
+                                                    <XAxis dataKey="label" tick={{ fill: "hsla(var(--muted-foreground))", fontSize: 9 }} minTickGap={40} axisLine={false} tickLine={false} />
+                                                    <YAxis tick={{ fill: "hsla(var(--muted-foreground))", fontSize: 9 }} tickFormatter={(value) => `$${Number(value).toFixed(0)}`} width={60} axisLine={false} tickLine={false} />
                                                     <Tooltip
-                                                        contentStyle={{ backgroundColor: "#000", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "12px" }}
-                                                        itemStyle={{ color: "#00ffa3", fontSize: "11px", fontWeight: "bold" }}
+                                                        contentStyle={{ backgroundColor: "var(--color-card)", border: "1px solid var(--color-border)", borderRadius: "12px" }}
+                                                        itemStyle={{ color: "var(--color-accent)", fontSize: "11px", fontWeight: "bold" }}
                                                     />
-                                                    <Area type="monotone" dataKey="equity" stroke="#00ffa3" fill="url(#neonGradient)" strokeWidth={3} />
+                                                    <Area type="monotone" dataKey="equity" stroke="var(--color-accent)" fill="url(#neonGradient)" strokeWidth={3} />
                                                     <defs>
                                                         <linearGradient id="neonGradient" x1="0" y1="0" x2="0" y2="1">
-                                                            <stop offset="5%" stopColor="#00ffa3" stopOpacity={0.2} />
-                                                            <stop offset="95%" stopColor="#00ffa3" stopOpacity={0} />
+                                                            <stop offset="5%" stopColor="var(--color-accent)" stopOpacity={0.25} />
+                                                            <stop offset="95%" stopColor="var(--color-accent)" stopOpacity={0.02} />
                                                         </linearGradient>
                                                     </defs>
                                                 </AreaChart>
@@ -1718,13 +1098,13 @@ export default function BacktestLab() {
                                     </div>
 
                                     {trades.length > 0 && (
-                                        <div className="bg-background rounded-2xl border border-border p-4">
+                                        <div className="bg-card border border-border rounded-3xl p-6 shadow-sm">
                                             <div className="flex items-center justify-between mb-3">
                                                 <div>
-                                                    <p className="text-sm font-semibold">Price Chart — {activeSymbol}</p>
-                                                    <p className="text-xs text-muted">Daily closes · SMA 20 · Entry ▲▼ / Exit □ markers</p>
+                                                    <p className="text-sm font-semibold text-foreground">Price Chart — {activeSymbol}</p>
+                                                    <p className="text-xs text-muted-foreground">Daily closes · SMA 20 · Entry ▲▼ / Exit □ markers</p>
                                                 </div>
-                                                <p className="text-xs text-muted font-mono">{trades.length} trades</p>
+                                                <p className="text-xs text-muted-foreground font-mono">{trades.length} trades</p>
                                             </div>
                                             <BacktestPriceChart
                                                 trades={trades}
@@ -1737,15 +1117,15 @@ export default function BacktestLab() {
 
                                     {bootstrapLive && (profitHistogram.length > 0 || drawdownHistogram.length > 0) && (
                                         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                                            <div className="bg-background rounded-2xl border border-border p-4">
-                                                <p className="text-sm font-semibold mb-1">Bootstrap Net Profit</p>
-                                                <p className="text-xs text-muted mb-4">95% CI: ${displayBootstrap?.net_profit_95_ci[0].toFixed(0)} to ${displayBootstrap?.net_profit_95_ci[1].toFixed(0)}</p>
+                                            <div className="bg-card border border-border rounded-3xl p-6 shadow-sm">
+                                                <p className="text-sm font-semibold mb-1 text-foreground">Bootstrap Net Profit</p>
+                                                <p className="text-xs text-muted-foreground mb-4">95% CI: ${displayBootstrap?.net_profit_95_ci[0].toFixed(0)} to ${displayBootstrap?.net_profit_95_ci[1].toFixed(0)}</p>
                                                 <div className="h-56">
                                                     <ResponsiveContainer width="100%" height="100%">
                                                         <BarChart data={profitHistogram} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
-                                                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                                                            <XAxis dataKey="label" tick={{ fill: "#9ca3af", fontSize: 10 }} minTickGap={20} />
-                                                            <YAxis tick={{ fill: "#9ca3af", fontSize: 10 }} allowDecimals={false} width={42} />
+                                                            <CartesianGrid strokeDasharray="3 3" stroke="hsla(var(--border), 0.1)" />
+                                                            <XAxis dataKey="label" tick={{ fill: "hsla(var(--muted-foreground))", fontSize: 10 }} minTickGap={20} />
+                                                            <YAxis tick={{ fill: "hsla(var(--muted-foreground))", fontSize: 10 }} allowDecimals={false} width={42} />
                                                             <Tooltip formatter={(value: number | string | undefined) => [Number(value ?? 0), "Count"]} />
                                                             <Bar dataKey="count" radius={[3, 3, 0, 0]}>
                                                                 {profitHistogram.map((entry, index) => (
@@ -1757,15 +1137,15 @@ export default function BacktestLab() {
                                                 </div>
                                             </div>
 
-                                            <div className="bg-background rounded-2xl border border-border p-4">
-                                                <p className="text-sm font-semibold mb-1">Bootstrap Max Drawdown</p>
-                                                <p className="text-xs text-muted mb-4">95% CI: {displayBootstrap?.max_drawdown_95_ci_pct[0].toFixed(2)}% to {displayBootstrap?.max_drawdown_95_ci_pct[1].toFixed(2)}%</p>
+                                            <div className="bg-card border border-border rounded-3xl p-6 shadow-sm">
+                                                <p className="text-sm font-semibold mb-1 text-foreground">Bootstrap Max Drawdown</p>
+                                                <p className="text-xs text-muted-foreground mb-4">95% CI: {displayBootstrap?.max_drawdown_95_ci_pct[0].toFixed(2)}% to {displayBootstrap?.max_drawdown_95_ci_pct[1].toFixed(2)}%</p>
                                                 <div className="h-56">
                                                     <ResponsiveContainer width="100%" height="100%">
                                                         <BarChart data={drawdownHistogram} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
-                                                            <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                                                            <XAxis dataKey="label" tick={{ fill: "#9ca3af", fontSize: 10 }} minTickGap={20} />
-                                                            <YAxis tick={{ fill: "#9ca3af", fontSize: 10 }} allowDecimals={false} width={42} />
+                                                            <CartesianGrid strokeDasharray="3 3" stroke="hsla(var(--border), 0.1)" />
+                                                            <XAxis dataKey="label" tick={{ fill: "hsla(var(--muted-foreground))", fontSize: 10 }} minTickGap={20} />
+                                                            <YAxis tick={{ fill: "hsla(var(--muted-foreground))", fontSize: 10 }} allowDecimals={false} width={42} />
                                                             <Tooltip formatter={(value: number | string | undefined) => [Number(value ?? 0), "Count"]} />
                                                             <Bar dataKey="count" radius={[3, 3, 0, 0]}>
                                                                 {drawdownHistogram.map((entry, index) => (
@@ -1779,23 +1159,24 @@ export default function BacktestLab() {
                                         </div>
                                     )}
 
-                                    <div className="bg-[#050505] rounded-3xl border border-white/10 p-6 shadow-2xl overflow-hidden">
+                                    <div className="bg-card border border-border rounded-3xl p-6 shadow-sm overflow-hidden">
                                         <div className="flex items-center justify-between mb-6">
                                             <div>
-                                                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-white/50">Execution Audit</p>
-                                                <p className="text-[9px] font-bold text-white/20 mt-1 uppercase tracking-widest">Verifying mechanical entry/exit precision</p>
+                                                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground">Execution Audit</p>
+                                                <p className="text-[9px] font-bold text-muted-foreground/40 mt-1 uppercase tracking-widest">Verifying mechanical entry/exit precision</p>
                                             </div>
-                                            <p className="text-[10px] font-mono text-white/40">{trades.length} TRANSACTIONS</p>
+                                            <p className="text-[10px] font-mono text-muted-foreground/50">{trades.length} TRANSACTIONS</p>
                                         </div>
-                                        <div className="max-h-80 overflow-y-auto custom-scrollbar">
+                                        <div className="max-h-80 overflow-auto custom-scrollbar">
                                             <table className="w-full text-left border-collapse">
-                                                <thead className="sticky top-0 bg-[#000] z-10">
-                                                    <tr className="text-[9px] font-black uppercase tracking-[0.2em] text-white/30 border-b border-white/5">
+                                                <thead className="sticky top-0 bg-muted/20 z-10">
+                                                    <tr className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground border-b border-border">
                                                         <th className="px-4 py-4">Timestamp</th>
                                                         <th className="px-4 py-4 text-center">Bias</th>
-                                                        <th className="px-4 py-4">Strike</th>
+                                                        <th className="px-4 py-4">Entry fill</th>
                                                         <th className="px-4 py-4">Exit</th>
                                                         <th className="px-4 py-4">Status</th>
+                                                        <th className="px-4 py-4 text-right">Fees</th>
                                                         <th className="px-4 py-4">Magnitude</th>
                                                         <th className="px-4 py-4 text-right">PnL_USD</th>
                                                     </tr>
@@ -1803,22 +1184,23 @@ export default function BacktestLab() {
                                                 <tbody>
                                                     {trades.length === 0 && (
                                                         <tr>
-                                                            <td colSpan={7} className="px-4 py-12 text-center text-[10px] font-bold uppercase tracking-widest text-white/10">Awaiting initial execution cycle...</td>
+                                                            <td colSpan={8} className="px-4 py-12 text-center text-[10px] font-bold uppercase tracking-widest dark:text-white/10 text-zinc-300">Awaiting initial execution cycle...</td>
                                                         </tr>
                                                     )}
                                                     {trades.map((trade) => (
-                                                        <tr key={`${trade.signal_id}-${trade.exit_timestamp || trade.timestamp}`} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors group">
-                                                            <td className="px-4 py-4 font-mono text-[10px] text-white/40">{formatTimestampLabel(trade.exit_timestamp || trade.timestamp)}</td>
+                                                        <tr key={`${trade.signal_id}-${trade.exit_timestamp || trade.timestamp}`} className="border-b dark:border-white/5 border-zinc-100 dark:hover:bg-white/[0.02] hover:bg-zinc-50 transition-colors group">
+                                                            <td className="px-4 py-4 font-mono text-[10px] dark:text-white/40 text-zinc-500">{formatTimestampLabel(trade.exit_timestamp || trade.timestamp)}</td>
                                                             <td className="px-4 py-4 text-center">
-                                                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-sm border ${trade.direction === "LONG" ? "text-[#00ffa3] bg-[#00ffa3]/5 border-[#00ffa3]/20" : "text-[#ff2e2e] bg-[#ff2e2e]/5 border-[#ff2e2e]/20"}`}>
+                                                                <span className={`text-[9px] font-black px-2 py-0.5 rounded-sm border ${trade.direction === "LONG" ? "text-emerald-600 dark:text-[#00ffa3] bg-emerald-50 dark:bg-[#00ffa3]/5 border-emerald-200 dark:border-[#00ffa3]/20" : "text-red-600 dark:text-[#ff2e2e] bg-red-50 dark:bg-[#ff2e2e]/5 border-red-200 dark:border-[#ff2e2e]/20"}`}>
                                                                     {trade.direction}
                                                                 </span>
                                                             </td>
-                                                            <td className="px-4 py-4 font-mono text-[11px] text-white/80">${formatCurrency(trade.entry)}</td>
-                                                            <td className="px-4 py-4 font-mono text-[11px] text-white/60">${formatCurrency(trade.exit_price ?? trade.tp)}</td>
-                                                            <td className="px-4 py-4 text-[9px] font-bold uppercase tracking-widest text-white/30">{trade.outcome}</td>
-                                                            <td className={`px-4 py-4 font-mono text-[11px] font-black ${trade.pnl_r >= 0 ? "text-[#00ffa3]" : "text-[#ff2e2e]"}`}>{trade.pnl_r >= 0 ? "+" : ""}{trade.pnl_r.toFixed(2)}R</td>
-                                                            <td className={`px-4 py-4 font-mono text-[11px] text-right font-black ${trade.pnl_usd >= 0 ? "text-[#00ffa3]" : "text-[#ff2e2e]"}`}>
+                                                            <td className="px-4 py-4 font-mono text-[11px] dark:text-white/80 text-zinc-700">${formatCurrency(trade.entry_price ?? trade.entry)}</td>
+                                                            <td className="px-4 py-4 font-mono text-[11px] dark:text-white/60 text-zinc-500">${formatCurrency(trade.exit_price ?? trade.tp)}</td>
+                                                            <td title={trade.execution_note || undefined} className="px-4 py-4 text-[9px] font-bold uppercase tracking-widest dark:text-white/30 text-zinc-400">{trade.outcome}</td>
+                                                            <td className="px-4 py-4 font-mono text-[11px] text-right text-amber-400">${formatCurrency(trade.fees_usd ?? 0)}</td>
+                                                            <td className={`px-4 py-4 font-mono text-[11px] font-black ${trade.pnl_r >= 0 ? "text-emerald-600 dark:text-[#00ffa3]" : "text-red-600 dark:text-[#ff2e2e]"}`}>{trade.pnl_r >= 0 ? "+" : ""}{trade.pnl_r.toFixed(2)}R</td>
+                                                            <td className={`px-4 py-4 font-mono text-[11px] text-right font-black ${trade.pnl_usd >= 0 ? "text-emerald-600 dark:text-[#00ffa3]" : "text-red-600 dark:text-[#ff2e2e]"}`}>
                                                                 {trade.pnl_usd >= 0 ? "+" : ""}${formatCurrency(trade.pnl_usd)}
                                                             </td>
                                                         </tr>
@@ -1829,18 +1211,18 @@ export default function BacktestLab() {
                                     </div>
 
                                     {displayBootstrap && (
-                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-[#050505] rounded-3xl p-6 border border-white/10 shadow-2xl">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 dark:bg-[#050505] bg-white rounded-3xl p-6 border dark:border-white/10 border-zinc-200 shadow-lg">
                                             <div>
-                                                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-white/40 mb-3">Expected Profit Range</p>
-                                                <p className="text-2xl font-black font-mono text-[#00ffa3] drop-shadow-[0_0_8px_rgba(0,255,163,0.3)]">
+                                                <p className="text-[10px] font-black uppercase tracking-[0.3em] dark:text-white/40 text-zinc-500 mb-3">Expected Profit Range</p>
+                                                <p className="text-2xl font-black font-mono text-emerald-600 dark:text-[#00ffa3]">
                                                     ${displayBootstrap.net_profit_95_ci[0].toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                                                    <span className="text-white/20 mx-3 font-normal">—</span>
+                                                    <span className="dark:text-white/20 text-zinc-300 mx-3 font-normal">—</span>
                                                     ${displayBootstrap.net_profit_95_ci[1].toLocaleString(undefined, { maximumFractionDigits: 0 })}
                                                 </p>
                                             </div>
                                             <div>
-                                                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-white/40 mb-3">Mechanical Tail Risk</p>
-                                                <p className="text-2xl font-black font-mono text-[#ff2e2e] drop-shadow-[0_0_8px_rgba(255,46,46,0.3)]">
+                                                <p className="text-[10px] font-black uppercase tracking-[0.3em] dark:text-white/40 text-zinc-500 mb-3">Mechanical Tail Risk</p>
+                                                <p className="text-2xl font-black font-mono text-red-600 dark:text-[#ff2e2e]">
                                                     MAX {displayBootstrap.max_drawdown_95_ci_pct[1].toFixed(2)}%
                                                 </p>
                                             </div>
@@ -1850,10 +1232,10 @@ export default function BacktestLab() {
                                     {(ivData || ivLoading) && (
                                         <div className="space-y-6">
                                             {ivLoading && (
-                                                <div className="bg-[#050505] rounded-[2rem] border border-white/10 p-8 flex items-center justify-center gap-4 shadow-2xl relative overflow-hidden">
-                                                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/[0.02] to-transparent animate-pulse" />
-                                                    <div className="h-5 w-5 border-3 border-[#00ffa3] border-t-transparent rounded-full animate-spin shadow-[0_0_10px_#00ffa3]" />
-                                                    <span className="text-[11px] font-black uppercase tracking-[0.4em] text-white/40 animate-pulse">Core Engine: Constructing IV Surface Audit…</span>
+                                                <div className="dark:bg-[#050505] bg-white rounded-[2rem] border dark:border-white/10 border-zinc-200 p-8 flex items-center justify-center gap-4 shadow-lg relative overflow-hidden">
+                                                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-black/[0.01] dark:via-white/[0.02] to-transparent animate-pulse" />
+                                                    <div className="h-5 w-5 border-3 border-accent border-t-transparent rounded-full animate-spin" />
+                                                    <span className="text-[11px] font-black uppercase tracking-[0.4em] dark:text-white/40 text-zinc-500 animate-pulse">Core Engine: Constructing IV Surface Audit…</span>
                                                 </div>
                                             )}
                                             {ivData && <IvSmilePanel data={ivData} />}
@@ -1862,11 +1244,11 @@ export default function BacktestLab() {
 
                                     {/* ARCH / GARCH Volatility Audit */}
                                     {(archData || archLoading) && (
-                                        <div className="bg-[#050505] rounded-3xl border border-white/10 p-8 shadow-2xl space-y-6">
+                                        <div className="dark:bg-[#050505] bg-white rounded-3xl border dark:border-white/10 border-zinc-200 p-8 shadow-lg space-y-6">
                                             {archLoading ? (
                                                 <div className="flex items-center justify-center py-12 gap-4">
-                                                    <Loader2 className="animate-spin text-[#00ffa3]" size={24} />
-                                                    <span className="text-[11px] font-black uppercase tracking-[0.4em] text-white/30 animate-pulse">Fitting GARCH(1,1) Mechanical Model…</span>
+                                                    <Loader2 className="animate-spin text-accent" size={24} />
+                                                    <span className="text-[11px] font-black uppercase tracking-[0.4em] dark:text-white/30 text-zinc-500 animate-pulse">Fitting GARCH(1,1) Mechanical Model…</span>
                                                 </div>
                                             ) : archData ? (
                                                 <ArchVolPanel data={archData} />
@@ -1876,11 +1258,11 @@ export default function BacktestLab() {
 
                                     {/* Kalman Filter State Estimation */}
                                     {(kalmanData || kalmanLoading) && (
-                                        <div className="bg-[#050505] rounded-3xl border border-white/10 p-8 shadow-2xl space-y-6">
+                                        <div className="dark:bg-[#050505] bg-white rounded-3xl border dark:border-white/10 border-zinc-200 p-8 shadow-lg space-y-6">
                                             {kalmanLoading ? (
                                                 <div className="flex items-center justify-center py-12 gap-4">
-                                                    <Loader2 className="animate-spin text-[#00ffa3]" size={24} />
-                                                    <span className="text-[11px] font-black uppercase tracking-[0.4em] text-white/30 animate-pulse">Running Kalman State Audit…</span>
+                                                    <Loader2 className="animate-spin text-accent" size={24} />
+                                                    <span className="text-[11px] font-black uppercase tracking-[0.4em] dark:text-white/30 text-zinc-500 animate-pulse">Running Kalman State Audit…</span>
                                                 </div>
                                             ) : kalmanData ? (
                                                 <KalmanFilterPanel data={kalmanData} />
@@ -1890,63 +1272,63 @@ export default function BacktestLab() {
 
                                     {/* IV Regime Current Signal Audit */}
                                     {ivCurrentSignal && (
-                                        <div className="bg-[#050505] rounded-[2.5rem] p-10 border border-white/10 shadow-[0_0_50px_rgba(0,0,0,0.5)] relative overflow-hidden">
+                                        <div className="bg-card/40 backdrop-blur-md rounded-[2.5rem] p-10 border border-border shadow-sm relative overflow-hidden">
                                             <div className="absolute top-0 right-0 p-8">
-                                                <div className={`px-5 py-2 rounded-full border text-[10px] font-black uppercase tracking-[0.3em] shadow-lg ${ivCurrentSignal.direction === "LONG" ? "text-[#00ffa3] border-[#00ffa3]/20 bg-[#00ffa3]/5" : ivCurrentSignal.direction === "SHORT" ? "text-[#ff2e2e] border-[#ff2e2e]/20 bg-[#ff2e2e]/5" : "text-white/30 border-white/10"}`}>
+                                                <div className={`px-5 py-2 rounded-full border text-[10px] font-black uppercase tracking-[0.3em] shadow-lg ${ivCurrentSignal.direction === "LONG" ? "text-emerald-500 border-emerald-500/20 bg-emerald-500/5" : ivCurrentSignal.direction === "SHORT" ? "text-destructive border-destructive/20 bg-destructive/5" : "text-muted-foreground border-border"}`}>
                                                     {ivCurrentSignal.direction} SIGNAL
                                                 </div>
                                             </div>
 
-                                            <div className="flex items-center gap-6 mb-10 pb-8 border-b border-white/5">
-                                                <div className="h-16 w-16 rounded-[1.5rem] bg-[#00ffa3]/10 border border-[#00ffa3]/20 flex items-center justify-center">
-                                                    <Activity className="text-[#00ffa3]" size={32} />
+                                            <div className="flex items-center gap-6 mb-10 pb-8 border-b dark:border-white/5 border-zinc-200">
+                                                <div className="h-16 w-16 rounded-[1.5rem] bg-accent/10 border border-accent/20 flex items-center justify-center">
+                                                    <Activity className="text-accent" size={32} />
                                                 </div>
                                                 <div>
-                                                    <h3 className="text-xl font-black uppercase tracking-[0.4em] text-white">Execution Feedback</h3>
-                                                    <p className="text-[10px] font-bold text-white/20 mt-1 uppercase tracking-widest">Mechanical Signal Drift • {ivCurrentSignal.date}</p>
+                                                    <h3 className="text-xl font-black uppercase tracking-[0.4em] dark:text-white text-zinc-900">Execution Feedback</h3>
+                                                    <p className="text-[10px] font-bold dark:text-white/20 text-zinc-400 mt-1 uppercase tracking-widest">Mechanical Signal Drift • {ivCurrentSignal.date}</p>
                                                 </div>
                                             </div>
 
                                             <div className="grid grid-cols-2 lg:grid-cols-4 gap-8">
                                                 {[
-                                                    { label: "Close_Snapshot", val: `$${formatCurrency(ivCurrentSignal.close)}`, sub: "Price Level", color: "text-white" },
-                                                    { label: "IV_Rank_Index", val: ivCurrentSignal.iv_rank.toFixed(1), sub: "Volatility Decile", color: "text-[#d1ff00]" },
-                                                    { label: "Equity_Momentum", val: `${ivCurrentSignal.momentum_pct > 0 ? "+" : ""}${ivCurrentSignal.momentum_pct.toFixed(2)}%`, sub: "Trend Magnitude", color: ivCurrentSignal.momentum_pct >= 0 ? "text-[#00ffa3]" : "text-[#ff2e2e]" },
-                                                    { label: "System_Regime", val: ivCurrentSignal.regime, sub: "Market Context", color: "text-[#00e0ff]" }
+                                                    { label: "Close_Snapshot", val: `$${formatCurrency(ivCurrentSignal.close)}`, sub: "Price Level", color: "text-foreground" },
+                                                    { label: "IV_Rank_Index", val: ivCurrentSignal.iv_rank.toFixed(1), sub: "Volatility Decile", color: "text-amber-500" },
+                                                    { label: "Equity_Momentum", val: `${ivCurrentSignal.momentum_pct > 0 ? "+" : ""}${ivCurrentSignal.momentum_pct.toFixed(2)}%`, sub: "Trend Magnitude", color: ivCurrentSignal.momentum_pct >= 0 ? "text-emerald-500" : "text-destructive" },
+                                                    { label: "System_Regime", val: ivCurrentSignal.regime, sub: "Market Context", color: "text-cyan-500" }
                                                 ].map((item, i) => (
                                                     <div key={i} className="space-y-2">
-                                                        <p className="text-[9px] font-black uppercase tracking-[0.3em] text-white/30">{item.label}</p>
+                                                        <p className="text-[9px] font-black uppercase tracking-[0.3em] text-muted-foreground">{item.label}</p>
                                                         <p className={`text-2xl font-black font-mono tracking-tighter ${item.color}`}>{item.val}</p>
-                                                        <p className="text-[9px] font-bold text-white/10 uppercase tracking-widest">{item.sub}</p>
+                                                        <p className="text-[9px] font-bold text-muted-foreground/40 uppercase tracking-widest">{item.sub}</p>
                                                     </div>
                                                 ))}
                                             </div>
 
                                             {ivCurrentSignal.option_context && (
-                                                <div className="mt-12 pt-8 border-t border-white/5">
+                                                <div className="mt-12 pt-8 border-t dark:border-white/5 border-zinc-200">
                                                     <div className="flex items-center justify-between mb-6">
-                                                        <p className="text-[10px] font-black uppercase tracking-[0.4em] text-white/50">Market Liquidity Audit</p>
-                                                        <p className="text-[9px] font-bold text-[#00ffa3]/60 uppercase tracking-widest">Source: {ivCurrentSignal.option_context.source}</p>
+                                                        <p className="text-[10px] font-black uppercase tracking-[0.4em] dark:text-white/50 text-zinc-500">Market Liquidity Audit</p>
+                                                        <p className="text-[9px] font-bold text-accent/60 uppercase tracking-widest">Source: {ivCurrentSignal.option_context.source}</p>
                                                     </div>
                                                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                                                         {ivCurrentSignal.option_context.iv_realized_ratio != null && (
-                                                            <div className="bg-white/5 rounded-2xl p-4 border border-white/5">
-                                                                <p className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-1">IV/RV Ratio</p>
-                                                                <p className="text-base font-black font-mono text-[#00ffa3]">{ivCurrentSignal.option_context.iv_realized_ratio.toFixed(2)}x</p>
+                                                            <div className="dark:bg-white/5 bg-zinc-50 rounded-2xl p-4 border dark:border-white/5 border-zinc-200">
+                                                                <p className="text-[9px] font-black uppercase tracking-widest dark:text-white/30 text-zinc-400 mb-1">IV/RV Ratio</p>
+                                                                <p className="text-base font-black font-mono text-emerald-500">{ivCurrentSignal.option_context.iv_realized_ratio.toFixed(2)}x</p>
                                                             </div>
                                                         )}
                                                         {ivCurrentSignal.option_context.skew_pct != null && (
-                                                            <div className="bg-white/5 rounded-2xl p-4 border border-white/5">
-                                                                <p className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-1">Skew Factor</p>
-                                                                <p className={`text-base font-black font-mono ${ivCurrentSignal.option_context.skew_pct >= 0 ? "text-[#ff2e2e]" : "text-[#00ffa3]"}`}>
+                                                            <div className="dark:bg-white/5 bg-zinc-50 rounded-2xl p-4 border dark:border-white/5 border-zinc-200">
+                                                                <p className="text-[9px] font-black uppercase tracking-widest dark:text-white/30 text-zinc-400 mb-1">Skew Factor</p>
+                                                                <p className={`text-base font-black font-mono ${ivCurrentSignal.option_context.skew_pct >= 0 ? "text-destructive" : "text-emerald-500"}`}>
                                                                     {ivCurrentSignal.option_context.skew_pct >= 0 ? "+" : ""}{ivCurrentSignal.option_context.skew_pct.toFixed(2)}pts
                                                                 </p>
                                                             </div>
                                                         )}
                                                         {ivCurrentSignal.option_context.exp_date && (
-                                                            <div className="bg-white/5 rounded-2xl p-4 border border-white/5">
-                                                                <p className="text-[9px] font-black uppercase tracking-widest text-white/30 mb-1">Audit Expiry</p>
-                                                                <p className="text-base font-black font-mono text-white/80">{ivCurrentSignal.option_context.exp_date}</p>
+                                                            <div className="dark:bg-white/5 bg-zinc-50 rounded-2xl p-4 border dark:border-white/5 border-zinc-200">
+                                                                <p className="text-[9px] font-black uppercase tracking-widest dark:text-white/30 text-zinc-400 mb-1">Audit Expiry</p>
+                                                                <p className="text-base font-black font-mono dark:text-white/80 text-zinc-700">{ivCurrentSignal.option_context.exp_date}</p>
                                                             </div>
                                                         )}
                                                     </div>
@@ -1962,14 +1344,14 @@ export default function BacktestLab() {
                                                 href={reportUrl}
                                                 target="_blank"
                                                 rel="noreferrer"
-                                                className="inline-flex items-center gap-4 px-8 py-4 bg-[#00ffa3] text-black font-black uppercase tracking-[0.3em] rounded-2xl transition-all shadow-[0_0_40px_rgba(0,255,163,0.3)] hover:scale-[1.05] group"
+                                                className="inline-flex items-center gap-4 px-8 py-4 bg-emerald-500 text-black font-black uppercase tracking-[0.3em] rounded-2xl transition-all shadow-[0_0_40px_rgba(16,185,129,0.4)] hover:scale-[1.05] group"
                                             >
                                                 <Download size={20} />
                                                 Export mechanical audit pdf
                                                 <ExternalLinkIcon size={16} className="text-black/40 group-hover:text-black" />
                                             </a>
                                         ) : (
-                                            <div className="text-[10px] font-bold text-white/20 uppercase tracking-[0.2em] bg-white/5 px-6 py-4 rounded-2xl border border-white/5">
+                                            <div className="text-[10px] font-bold dark:text-white/20 text-zinc-400 uppercase tracking-[0.2em] dark:bg-white/5 bg-zinc-100 px-6 py-4 rounded-2xl border dark:border-white/5 border-zinc-200">
                                                 {isRunning ? "Engine: Finalizing PDF propagation..." : "Mechanical audit unavailable / not generated."}
                                             </div>
                                         )}

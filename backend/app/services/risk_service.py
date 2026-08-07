@@ -1,165 +1,267 @@
+"""Portfolio risk calculations independent from persistence details."""
+
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
+
 import numpy as np
 import pandas as pd
-from typing import List, Dict, Any, Optional
-from scipy.stats import norm, skew, kurtosis
-from ..core.container import duckdb_repo
+from scipy.stats import kurtosis, norm, skew
+
 from .math_core import math_core
-from datetime import datetime, timedelta
+from .risk_data_source import DuckDBRiskDataSource, IRiskDataSource
+
 
 class RiskService:
-    @staticmethod
-    def calculate_var(returns: List[float], confidence_level: float = 0.95) -> float:
-        """Calculates Value at Risk (VaR) using the Historical Simulation method."""
-        if not returns or len(returns) < 2:
-            return 0.0
-        sorted_returns = sorted(returns)
-        index = int((1 - confidence_level) * len(sorted_returns))
-        return abs(sorted_returns[index])
+    def __init__(self, data_source: Optional[IRiskDataSource] = None) -> None:
+        self._data_source = data_source or DuckDBRiskDataSource()
 
     @staticmethod
-    def calculate_cvar(returns: List[float], confidence_level: float = 0.95) -> float:
-        """Calculates Conditional VaR (Expected Shortfall)."""
-        if not returns or len(returns) < 2:
-            return 0.0
-        sorted_returns = np.sort(returns)
-        index = int((1 - confidence_level) * len(sorted_returns))
-        if index <= 0: return 0.0
-        return abs(np.mean(sorted_returns[:index]))
+    def _clean_returns(returns: List[float]) -> np.ndarray:
+        values = np.asarray(returns, dtype=np.float64)
+        return values[np.isfinite(values)]
 
     @staticmethod
-    def calculate_modified_var(returns: List[float], confidence_level: float = 0.95) -> float:
-        """Calculates Modified VaR (mVaR) using the Cornish-Fisher expansion."""
-        if not returns or len(returns) < 4:
-            return RiskService.calculate_var(returns, confidence_level)
-        mu = np.mean(returns)
-        sigma = np.std(returns)
-        s = skew(returns)
-        k = kurtosis(returns)
-        z_alpha = norm.ppf(1 - confidence_level)
-        z_cf = (z_alpha + (1/6)*(z_alpha**2 - 1)*s + (1/24)*(z_alpha**3 - 3*z_alpha)*k - (1/36)*(2*z_alpha**3 - 5*z_alpha)*s**2)
-        return abs(mu + z_cf * sigma)
-
-    @staticmethod
-    def calculate_modified_cvar(returns: List[float], confidence_level: float = 0.95) -> float:
-        """Calculates Modified Expected Shortfall (mES)."""
-        m_var = RiskService.calculate_modified_var(returns, confidence_level)
-        std_cvar = RiskService.calculate_cvar(returns, confidence_level)
-        return max(m_var, std_cvar)
+    def _validate_confidence(confidence_level: float) -> None:
+        if not 0 < confidence_level < 1:
+            raise ValueError("confidence_level must be between 0 and 1")
 
     @classmethod
-    def get_portfolio_risk_report(cls, holdings: List[Dict[str, Any]], days: int = 252) -> Dict[str, Any]:
-        """Generates a full risk report for the current portfolio."""
+    def calculate_var(
+        cls,
+        returns: List[float],
+        confidence_level: float = 0.95,
+    ) -> float:
+        """Historical one-period loss VaR expressed as a positive fraction."""
+        cls._validate_confidence(confidence_level)
+        values = cls._clean_returns(returns)
+        if values.size < 2:
+            return 0.0
+        quantile = float(
+            np.quantile(values, 1 - confidence_level, method="lower")
+        )
+        return max(0.0, -quantile)
+
+    @classmethod
+    def calculate_cvar(
+        cls,
+        returns: List[float],
+        confidence_level: float = 0.95,
+    ) -> float:
+        """Historical expected shortfall over the VaR tail."""
+        cls._validate_confidence(confidence_level)
+        values = np.sort(cls._clean_returns(returns))
+        if values.size < 2:
+            return 0.0
+        tail_size = max(1, int(np.ceil((1 - confidence_level) * values.size)))
+        return max(0.0, -float(np.mean(values[:tail_size])))
+
+    @classmethod
+    def calculate_modified_var(
+        cls,
+        returns: List[float],
+        confidence_level: float = 0.95,
+    ) -> float:
+        """Cornish-Fisher VaR adjusted for skewness and excess kurtosis."""
+        cls._validate_confidence(confidence_level)
+        values = cls._clean_returns(returns)
+        if values.size < 4:
+            return cls.calculate_var(values.tolist(), confidence_level)
+        sigma = float(np.std(values, ddof=1))
+        if sigma == 0:
+            return 0.0
+        mean = float(np.mean(values))
+        sample_skew = float(skew(values))
+        excess_kurtosis = float(kurtosis(values))
+        z_alpha = float(norm.ppf(1 - confidence_level))
+        z_cf = (
+            z_alpha
+            + ((z_alpha**2 - 1) * sample_skew / 6)
+            + ((z_alpha**3 - 3 * z_alpha) * excess_kurtosis / 24)
+            - ((2 * z_alpha**3 - 5 * z_alpha) * sample_skew**2 / 36)
+        )
+        return max(0.0, -(mean + z_cf * sigma))
+
+    @classmethod
+    def calculate_modified_cvar(
+        cls,
+        returns: List[float],
+        confidence_level: float = 0.95,
+    ) -> float:
+        return max(
+            cls.calculate_modified_var(returns, confidence_level),
+            cls.calculate_cvar(returns, confidence_level),
+        )
+
+    def get_portfolio_risk_report(
+        self,
+        holdings: List[Dict[str, Any]],
+        days: int = 252,
+    ) -> Dict[str, Any]:
         if not holdings:
             return {"error": "No holdings provided"}
+        if days < 20:
+            return {"error": "At least 20 calendar days are required"}
 
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=days)
-        all_returns = {}
-        total_market_value = sum(h.get('shares', 0) * h.get('price', 0) * h.get('factor', 1.0) for h in holdings)
-        
-        if total_market_value == 0:
-            return {"error": "Portfolio has zero market value"}
+        exposure_by_symbol: Dict[str, float] = {}
+        for holding in holdings:
+            symbol = str(holding.get("symbol", "")).strip().upper()
+            market_value = (
+                float(holding.get("shares", 0) or 0)
+                * float(holding.get("price", 0) or 0)
+                * float(holding.get("factor", 1.0) or 1.0)
+            )
+            if symbol and market_value:
+                exposure_by_symbol[symbol] = (
+                    exposure_by_symbol.get(symbol, 0.0) + market_value
+                )
 
-        conn = duckdb_repo._connect(read_only=True)
-        try:
-            found_symbols = []
-            symbol_prices = {}
-            for h in holdings:
-                sym = h['symbol']
-                df = conn.execute("SELECT date, close FROM ohlcv WHERE symbol = ? AND date >= ? ORDER BY date ASC", [sym, start_date.date()]).df()
-                if not df.empty and len(df) > 10:
-                    df['returns'] = df['close'].pct_change().fillna(0)
-                    all_returns[sym] = df.set_index('date')['returns']
-                    symbol_prices[sym] = df['close'].values
-                    found_symbols.append(sym)
+        total_gross_value = sum(abs(value) for value in exposure_by_symbol.values())
+        if total_gross_value <= 0:
+            return {"error": "Portfolio has zero gross market value"}
 
-            if not all_returns:
-                return {"error": "No historical data found for holdings"}
+        start_date = datetime.now() - timedelta(days=days)
+        requested_symbols = [*exposure_by_symbol, "SPY"]
+        price_series = self._data_source.load_close_prices(
+            requested_symbols,
+            start_date,
+        )
+        asset_returns = {
+            symbol: series.pct_change().dropna()
+            for symbol, series in price_series.items()
+            if symbol in exposure_by_symbol and len(series) > 10
+        }
+        if not asset_returns:
+            return {"error": "No historical data found for holdings"}
 
-            returns_df = pd.DataFrame(all_returns).fillna(0)
-            temp_market_val = sum(h.get('shares', 0) * h.get('price', 0) * h.get('factor', 1.0) for h in holdings if h['symbol'] in found_symbols)
-            weights = {h['symbol']: (h.get('shares', 0) * h.get('price', 0) * h.get('factor', 1.0)) / temp_market_val for h in holdings if h['symbol'] in found_symbols}
-            portfolio_returns = (returns_df * pd.Series(weights)).sum(axis=1)
-            
-            # --- Advanced Math Integration ---
-            txs = duckdb_repo.get_transactions()
-            expected_val = math_core.expected_value(txs)
-            sharpe = math_core.sharpe_ratio(portfolio_returns.values)
-            
-            # Annualized stats for Risk Adjusted Return
-            ann_return = portfolio_returns.mean() * 252
-            ann_vol = portfolio_returns.std() * np.sqrt(252)
-            rar = math_core.risk_adjusted_return(ann_return, ann_vol, total_market_value)
-            
-            # Momentum via Gradient Descent
-            momentum_per_asset = {}
-            # --- Factor Analysis (CAPM & Idiosyncratic Risk) ---
-            # Automatically uses SPY as benchmark, since it's the safest market proxy
-            market_proxy = "SPY"
-            try:
-                spy_df = conn.execute("SELECT date, close FROM ohlcv WHERE symbol = ? AND date >= ? ORDER BY date ASC", [market_proxy, start_date.date()]).df()
-                has_benchmark = not spy_df.empty and len(spy_df) > 10
-                if has_benchmark:
-                    spy_df['returns'] = spy_df['close'].pct_change().fillna(0)
-                    market_returns = spy_df['returns'].values
-            except Exception:
-                has_benchmark = False
+        returns_frame = pd.concat(
+            asset_returns,
+            axis=1,
+            join="inner",
+        ).dropna()
+        if len(returns_frame) < 2:
+            return {"error": "Holdings do not have enough overlapping return history"}
 
-            factor_metrics = {}
-            for sym, prices in symbol_prices.items():
-                m, _ = math_core.gradient_descent_momentum(prices[-30:]) # Last 30 days
-                momentum_per_asset[sym] = m
-                
-                # If market benchmark available, try CAPM metrics
-                if has_benchmark and sym in all_returns:
-                    asset_rets = all_returns[sym].values
-                    min_len = min(len(asset_rets), len(market_returns))
-                    
-                    if min_len >= 10: # Ensure valid length
-                        asset_rets = asset_rets[-min_len:]
-                        market_rets_adj = market_returns[-min_len:]
-                        
-                        beta, alpha, exp_ret = math_core.calculate_capm(asset_rets, market_rets_adj)
-                        idio_risk = math_core.calculate_idiosyncratic_risk(asset_rets, market_rets_adj)
-                        factor_metrics[sym] = {
-                            "beta": round(beta, 4),
-                            "alpha_daily": round(alpha, 6),
-                            "expected_return_capm": round(exp_ret * 100, 2), # %
-                            "idiosyncratic_risk": round(idio_risk * 100, 2) # %
-                        }
+        found_symbols = list(returns_frame.columns)
+        covered_gross_value = sum(
+            abs(exposure_by_symbol[symbol]) for symbol in found_symbols
+        )
+        if covered_gross_value <= 0:
+            return {"error": "Covered holdings have zero gross market value"}
 
-            # Covariance matrix & PCA on the portfolio assets
-            returns_dict = {sym: df_ret.values for sym, df_ret in all_returns.items()}
-            _, cov_matrix = math_core.calculate_covariance_matrix(returns_dict)
-            pca_res = math_core.calculate_pca(returns_dict)
+        weights = {
+            symbol: exposure_by_symbol[symbol] / covered_gross_value
+            for symbol in found_symbols
+        }
+        weight_series = pd.Series(weights, dtype=float)
+        portfolio_returns = returns_frame.mul(weight_series, axis=1).sum(axis=1)
+        return_values = portfolio_returns.to_numpy(dtype=float)
 
-            # --- Hedging Strategy ---
-            hedging = cls.generate_hedging_strategy(weights, ann_vol, portfolio_returns.tolist())
+        transactions = self._data_source.get_transactions()
+        expected_value = math_core.expected_value(transactions)
+        sharpe_ratio = math_core.sharpe_ratio(return_values)
+        annual_return = float(portfolio_returns.mean() * 252)
+        annual_volatility = float(portfolio_returns.std(ddof=1) * np.sqrt(252))
+        risk_adjusted_return = math_core.risk_adjusted_return(
+            annual_return,
+            annual_volatility,
+        )
 
-            return {
-                "var_95_percent": round(cls.calculate_var(portfolio_returns.tolist()) * 100, 2),
-                "mvar_95_percent": round(cls.calculate_modified_var(portfolio_returns.tolist()) * 100, 2),
-                "sharpe_ratio": round(sharpe, 2),
-                "expected_value_trade": round(expected_val, 2),
-                "risk_adjusted_return": round(rar * 1000000, 4), # Scaled for readability
-                "annualized_volatility": round(ann_vol * 100, 2),
-                "excess_kurtosis": round(kurtosis(portfolio_returns), 3),
-                "skewness": round(skew(portfolio_returns), 3),
-                "momentum": {s: round(m, 4) for s, m in momentum_per_asset.items()},
-                "exposure": weights,
-                "hedging_strategy": hedging,
-                "total_aum": round(total_market_value, 2),
-                "coverage_percent": round(len(found_symbols) / len(holdings) * 100, 1),
-                # New Advanced Data Return:
-                "factor_analysis": factor_metrics if has_benchmark else None,
-                "pca_variance_explained": [round(v*100, 2) for v in pca_res.get('explained_variance', [])][:3], # Top 3 PC
-            }
-        finally:
-            conn.close()
+        momentum_per_asset: Dict[str, float] = {}
+        for symbol in found_symbols:
+            prices = price_series[symbol].to_numpy(dtype=float)
+            momentum, _ = math_core.gradient_descent_momentum(prices[-30:])
+            momentum_per_asset[symbol] = momentum
+
+        benchmark_returns = (
+            price_series["SPY"].pct_change().dropna()
+            if "SPY" in price_series else None
+        )
+        factor_metrics: Dict[str, dict] = {}
+        if benchmark_returns is not None:
+            for symbol in found_symbols:
+                aligned = pd.concat(
+                    [asset_returns[symbol], benchmark_returns],
+                    axis=1,
+                    join="inner",
+                ).dropna()
+                if len(aligned) < 10:
+                    continue
+                asset_values = aligned.iloc[:, 0].to_numpy(dtype=float)
+                benchmark_values = aligned.iloc[:, 1].to_numpy(dtype=float)
+                beta, alpha, expected_return = math_core.calculate_capm(
+                    asset_values,
+                    benchmark_values,
+                )
+                idiosyncratic_risk = math_core.calculate_idiosyncratic_risk(
+                    asset_values,
+                    benchmark_values,
+                )
+                factor_metrics[symbol] = {
+                    "beta": round(beta, 4),
+                    "alpha_daily": round(alpha, 6),
+                    "expected_return_capm": round(expected_return * 100, 2),
+                    "idiosyncratic_risk": round(idiosyncratic_risk * 100, 2),
+                }
+
+        aligned_returns = {
+            symbol: returns_frame[symbol].to_numpy(dtype=float)
+            for symbol in found_symbols
+        }
+        pca_result = math_core.calculate_pca(aligned_returns)
+        hedging = self.generate_hedging_strategy(
+            weights,
+            annual_volatility,
+        )
+
+        sample_skew = float(skew(return_values)) if len(return_values) >= 3 else 0.0
+        sample_kurtosis = (
+            float(kurtosis(return_values)) if len(return_values) >= 4 else 0.0
+        )
+        sample_skew = sample_skew if np.isfinite(sample_skew) else 0.0
+        sample_kurtosis = sample_kurtosis if np.isfinite(sample_kurtosis) else 0.0
+
+        return {
+            "var_95_percent": round(self.calculate_var(return_values.tolist()) * 100, 2),
+            "cvar_95_percent": round(self.calculate_cvar(return_values.tolist()) * 100, 2),
+            "mvar_95_percent": round(self.calculate_modified_var(return_values.tolist()) * 100, 2),
+            "mcvar_95_percent": round(self.calculate_modified_cvar(return_values.tolist()) * 100, 2),
+            "sharpe_ratio": round(sharpe_ratio, 2),
+            "expected_value_trade": round(expected_value, 2),
+            "risk_adjusted_return": round(risk_adjusted_return, 4),
+            "annualized_return": round(annual_return * 100, 2),
+            "annualized_volatility": round(annual_volatility * 100, 2),
+            "excess_kurtosis": round(sample_kurtosis, 3),
+            "skewness": round(sample_skew, 3),
+            "momentum": {
+                symbol: round(value, 4)
+                for symbol, value in momentum_per_asset.items()
+            },
+            "exposure": weights,
+            "hedging_strategy": hedging,
+            "total_aum": round(total_gross_value, 2),
+            "covered_aum": round(covered_gross_value, 2),
+            "coverage_percent": round(
+                len(found_symbols) / len(exposure_by_symbol) * 100,
+                1,
+            ),
+            "coverage_value_percent": round(
+                covered_gross_value / total_gross_value * 100,
+                1,
+            ),
+            "factor_analysis": factor_metrics or None,
+            "pca_variance_explained": [
+                round(value * 100, 2)
+                for value in pca_result.get("explained_variance", [])
+            ][:3],
+        }
 
     @staticmethod
-    def generate_hedging_strategy(weights: Dict[str, float], vol: float, returns: List[float]) -> Dict[str, Any]:
-        """Algorithmic Hedging Suggestion based on portfolio profile."""
+    def generate_hedging_strategy(
+        weights: Dict[str, float],
+        vol: float,
+    ) -> Dict[str, Any]:
         if vol > 0.25:
             action = "AGGRESSIVE_HEDGING"
             strategy = "Protective Put Collar (Buy Puts at 5% OTM, Sell Calls at 10% OTM)"
@@ -170,14 +272,13 @@ class RiskService:
             action = "MONITOR"
             strategy = "No immediate hedging required; maintain trailing stops."
 
-        # Suggest specific hedge based on highest weight
-        top_asset = max(weights, key=weights.get)
-        
+        top_asset = max(weights, key=lambda symbol: abs(weights[symbol]))
         return {
             "action": action,
             "recommended_strategy": strategy,
             "primary_hedge_target": top_asset,
-            "hedge_ratio": round(vol * 1.2, 2) # Heuristic ratio
+            "hedge_ratio": round(vol * 1.2, 2),
         }
+
 
 risk_service = RiskService()

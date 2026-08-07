@@ -10,7 +10,7 @@ class CalculateEquityCurveUseCase:
     def execute(self, days: int = 730, portfolio_id: str = "main") -> List[Dict[str, Any]]:
         """
         Calculates historical equity curve starting from initial capital.
-        Superimposes Realized Balance vs Total Equity for a specific portfolio.
+        Optimized to reduce DB calls and avoid O(N*M) loops.
         """
         # 1. Setup Timeline
         end_date = datetime.now().date()
@@ -19,50 +19,66 @@ class CalculateEquityCurveUseCase:
         
         # 2. Get Data for the specific portfolio
         portfolio = self._repository.get_portfolio(portfolio_id)
+        if not portfolio:
+            # Return flat line if no holdings
+            base_capital = 50000.0
+            return [{"time": int(d.timestamp()), "realized": base_capital, "total": base_capital} for d in date_range]
+
         transactions = self._repository.get_transactions(portfolio_id)
         
-        # 3. Fetch Prices for all symbols in portfolio
-        symbols = [p['symbol'] for p in portfolio]
+        # 3. Fetch all prices in ONE pass
+        symbols = list(set(p['symbol'] for p in portfolio))
         price_map = {}
-        for sym in symbols:
-            # Fetch historical prices from DuckDB
-            conn = self._repository._connect(read_only=True)
-            try:
-                df = conn.execute("SELECT date, close FROM ohlcv WHERE symbol = ? AND date >= ?", [sym, start_date]).df()
-                if not df.empty:
-                    df['date'] = pd.to_datetime(df['date'])
-                    df.set_index('date', inplace=True)
-                    # Reindex to full date range to fill missing days (weekends)
-                    df = df.reindex(date_range).ffill().bfill()
-                    price_map[sym] = df['close']
-            finally:
-                conn.close()
+        
+        conn = self._repository._connect(read_only=True)
+        try:
+            # Fetch all required historical data in one query for all symbols
+            symbols_placeholders = ",".join(["?" for _ in symbols])
+            query = f"SELECT symbol, date, close FROM ohlcv WHERE symbol IN ({symbols_placeholders}) AND date >= ?"
+            params = symbols + [start_date]
+            
+            all_data = conn.execute(query, params).df()
+            
+            if not all_data.empty:
+                all_data['date'] = pd.to_datetime(all_data['date'])
+                for sym in symbols:
+                    sym_df = all_data[all_data['symbol'] == sym].copy()
+                    if not sym_df.empty:
+                        sym_df.set_index('date', inplace=True)
+                        sym_df = sym_df.reindex(date_range).ffill().bfill()
+                        price_map[sym] = sym_df['close']
+        finally:
+            conn.close()
 
-        # 4. Calculate Daily Curve
+        # 4. Pre-calculate Realized PnL Timeline (Cumulative Sum)
+        daily_delta = {}
+        for t in transactions:
+            dt = t['date'][:10] # YYYY-MM-DD
+            daily_delta[dt] = daily_delta.get(dt, 0.0) + t['realized_pnl']
+            
+        # 5. Calculate Daily Curve
         history = []
-        # Adjusted base capital to $50,000 to better reflect a professional mandate's equity buffer
         base_capital = 50000.0
+        running_realized_pnl = 0.0
         
         for current_date in date_range:
             day_str = current_date.strftime("%Y-%m-%d")
             
-            # --- Realized Balance ---
-            # Sum up all realized PnL from transactions that occurred ON or BEFORE this date
-            realized_pnl = sum(t['realized_pnl'] for t in transactions if t['date'] <= day_str)
-            realized_balance = base_capital + realized_pnl
+            # Update realized balance with today's deltas
+            running_realized_pnl += daily_delta.get(day_str, 0.0)
+            realized_balance = base_capital + running_realized_pnl
             
             # --- Unrealized PnL ---
             unrealized_pnl = 0.0
             for p in portfolio:
-                purchase_date = datetime.strptime(p['purchaseDate'], "%Y-%m-%d").date()
-                if current_date.date() >= purchase_date:
+                if day_str >= p['purchaseDate']:
                     sym = p['symbol']
-                    if sym in price_map and current_date in price_map[sym].index:
-                        current_price = price_map[sym][current_date]
-                        entry_price = p['entryPrice']
-                        shares = p['shares']
-                        factor = p.get('factor', 1.0)
-                        unrealized_pnl += shares * (current_price - entry_price) * factor
+                    if sym in price_map:
+                        try:
+                            current_price = price_map[sym][current_date]
+                            unrealized_pnl += p['shares'] * (current_price - p['entryPrice']) * p.get('factor', 1.0)
+                        except KeyError:
+                            pass
             
             total_equity = realized_balance + unrealized_pnl
             

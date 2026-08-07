@@ -7,6 +7,7 @@ import {
     CartesianGrid, ReferenceLine, Legend,
 } from "recharts";
 import { Maximize2, X, Info, BrainCircuit } from "lucide-react";
+import { cachedFetch } from "@/lib/cachedFetch";
 
 // ─── Types ──────────────────────────────────────────────────────────
 interface AssetMetric {
@@ -132,7 +133,7 @@ export default function FactorAnalysisPanel({
         if (!tickerStr) return;
         setLoading(true);
         setError(null);
-        fetch(`http://127.0.0.1:8282/api/v1/analytics/factor-analysis?tickers=${tickerStr}&benchmark=SPY&days=252`)
+        cachedFetch(`http://127.0.0.1:8282/api/v1/analytics/factor-analysis?tickers=${tickerStr}&benchmark=SPY&days=252`)
             .then(r => r.ok ? r.json() : r.json().then(e => Promise.reject(e.detail)))
             .then(d => { setData(d); setSelectedTicker(d.tickers[0] ?? null); })
             .catch(e => setError(typeof e === "string" ? e : "Analysis failed"))

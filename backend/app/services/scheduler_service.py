@@ -195,14 +195,15 @@ def start_scheduler(sio=None):
         id="portfolio_scan_startup",
     )
 
-    # 5. Fast Market Data Stream — every 2 seconds
+    # 5. Fast Market Data Stream — Polls quotes for active socket rooms
+    # Only fires for symbols that don't already have a fresh IBKR/Kafka tick.
     if sio:
         scheduler.add_job(
             broadcast_prices_job,
             "interval",
-            seconds=2,
+            seconds=10,
             args=[sio],
-            id="realtime_price_stream",
+            id="broadcast_prices",
             replace_existing=True,
         )
 
@@ -212,7 +213,8 @@ def start_scheduler(sio=None):
         "   * Portfolio Risk Scan  - every 60 min + 15s after boot\n"
         "   * Daily Briefing       - Mon-Fri at 8:00 AM\n"
         "   * Equity Snapshots     - every 30 min during market hours\n"
-        "   * Background Crawler   - every 2 min (drip-feed)"
+        "   * Background Crawler   - every 2 min (drip-feed)\n"
+        "   * Price Broadcast      - every 5s (active socket rooms)"
     )
 
 

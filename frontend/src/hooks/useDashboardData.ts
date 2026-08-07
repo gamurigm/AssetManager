@@ -5,6 +5,7 @@ import { usePortfolio } from "@/context/PortfolioContext";
 import { logger } from "@/lib/logger";
 import { SECTOR_COLORS } from "@/lib/colors";
 import type { TransactionRecord, TreemapItem, SectorItem } from "@/types/dashboard";
+import { cachedFetch } from "@/lib/cachedFetch";
 
 const API_BASE = "http://127.0.0.1:8282";
 
@@ -23,7 +24,7 @@ export function useDashboardData() {
     useEffect(() => {
         const fetchHistory = async () => {
             try {
-                const res = await fetch(`${API_BASE}/api/v1/trading/history?portfolio_id=${activePortfolio}`);
+                const res = await cachedFetch(`${API_BASE}/api/v1/trading/history?portfolio_id=${activePortfolio}`);
                 if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const data = await res.json();
                 setTransactions(data);
@@ -40,7 +41,7 @@ export function useDashboardData() {
     useEffect(() => {
         const fetchRisk = async () => {
             try {
-                const res = await fetch(`${API_BASE}/api/v1/portfolios/risk?portfolio_id=${activePortfolio}`);
+                const res = await cachedFetch(`${API_BASE}/api/v1/portfolios/risk?portfolio_id=${activePortfolio}`);
                 if (!res.ok) return;
                 const data = await res.json();
                 if (!data.error) setRiskData(data);
@@ -66,7 +67,7 @@ export function useDashboardData() {
             for (let i = 0; i < newHoldings.length; i++) {
                 const h = newHoldings[i];
                 try {
-                    const res = await fetch(`${API_BASE}/api/v1/market/quote/${encodeURIComponent(h.symbol)}`);
+                    const res = await cachedFetch(`${API_BASE}/api/v1/market/quote/${encodeURIComponent(h.symbol)}`);
                     if (!res.ok) continue;
                     const data = await res.json();
                     if (data && !data.error) {

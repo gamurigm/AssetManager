@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { Search, X, TrendingUp, Clock, Star } from "lucide-react";
+import { Search, History, TrendingUp, Filter, BarChart2, Zap, LayoutGrid, Clock, Info, LineChart, X, Star } from "lucide-react";
+import { formatAssetPriceFixed } from "@/lib/marketFormatting";
+import { cachedFetch } from "@/lib/cachedFetch";
 
 /* ─── Popular / Default Suggestions ──────────────────────────────────── */
 const POPULAR_SYMBOLS = [
@@ -116,15 +118,16 @@ export default function GlobalSearch() {
 
         setIsSearching(true);
         try {
-            const res = await fetch(`http://127.0.0.1:8282/api/v1/market/search?query=${encodeURIComponent(q)}&limit=15`);
-            if (res.ok) {
-                const data = await res.json();
-                const results = data || [];
-                globalResultsCache.set(queryKey, results);
-                setApiResults(results);
-            } else {
+            const res = await cachedFetch(`http://127.0.0.1:8282/api/v1/market/search?query=${encodeURIComponent(q)}&limit=15`);
+            if (!res.ok) {
                 setApiResults([]);
+                setIsSearching(false);
+                return;
             }
+            const data = await res.json();
+            const results = data || [];
+            globalResultsCache.set(queryKey, results);
+            setApiResults(results);
         } catch {
             setApiResults([]);
         } finally {
@@ -160,8 +163,8 @@ export default function GlobalSearch() {
         setRecentSearches(updated);
         try { localStorage.setItem("mmam_recent_searches", JSON.stringify(updated)); } catch { }
 
-        // Fire-and-forget: ensure historical data is being persisted to DuckDB
-        fetch(`http://127.0.0.1:8282/api/v1/market/prefetch/${encodeURIComponent(symbol)}`, { method: "POST" }).catch(() => { });
+        // Prefetch data in background
+        cachedFetch(`http://127.0.0.1:8282/api/v1/market/prefetch/${encodeURIComponent(symbol)}`, { method: "POST" }).catch(() => { });
 
         setIsOpen(false);
         setQuery("");

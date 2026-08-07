@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 
-from ib_insync import Forex, Stock
+from ibapi.contract import Contract
 
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
@@ -14,7 +14,8 @@ def test_build_market_data_contract_uses_forex_for_yahoo_style_pair(monkeypatch)
 
     contract, app_symbol = service._build_market_data_contract("EURUSD=X")
 
-    assert isinstance(contract, Forex)
+    assert isinstance(contract, Contract)
+    assert contract.secType == "CASH"
     assert app_symbol == "EURUSD=X"
 
 
@@ -24,7 +25,8 @@ def test_build_market_data_contract_normalizes_slash_forex_pair(monkeypatch):
 
     contract, app_symbol = service._build_market_data_contract("eur/usd")
 
-    assert isinstance(contract, Forex)
+    assert isinstance(contract, Contract)
+    assert contract.secType == "CASH"
     assert app_symbol == "EURUSD=X"
 
 
@@ -34,14 +36,19 @@ def test_build_market_data_contract_keeps_stock_symbols(monkeypatch):
 
     contract, app_symbol = service._build_market_data_contract("AAPL")
 
-    assert isinstance(contract, Stock)
+    assert isinstance(contract, Contract)
+    assert contract.secType == "STK"
     assert app_symbol == "AAPL"
 
 
 def test_resolve_app_symbol_restores_forex_room_name(monkeypatch):
     monkeypatch.delenv("IBKR_PORT_CANDIDATES", raising=False)
     service = IBKRService()
-    contract = Forex("EURUSD")
+    contract = Contract()
+    contract.symbol = "EUR"
+    contract.currency = "USD"
+    contract.secType = "CASH"
+    contract.exchange = "IDEALPRO"
     contract.conId = 12345
     contract.localSymbol = "EUR.USD"
 

@@ -74,7 +74,7 @@ class IIntradayRepository(Protocol):
 #  Concrete Implementation — DuckDB                                            #
 # --------------------------------------------------------------------------- #
 
-_DB_PATH = os.path.join(os.path.dirname(__file__), "../../data/market.duckdb")
+_DB_PATH = os.path.join(os.path.dirname(__file__), "../../data/market2.duckdb")
 
 
 class DuckDBIntradayRepository:
@@ -88,7 +88,6 @@ class DuckDBIntradayRepository:
         self._db_path = db_path
         os.makedirs(os.path.dirname(self._db_path), exist_ok=True)
         self._initialized = False
-        self._main_conn = None
         self._write_lock = threading.RLock()
 
     def _ensure_initialized(self):
@@ -102,37 +101,30 @@ class DuckDBIntradayRepository:
     @contextlib.contextmanager
     def _connection(self, retries: int = 50, delay: float = 0.1, read_only=False):
         """
-        Returns a DuckDB cursor from the singleton connection.
-        NOTE: read_only is ignored to ensure configuration consistency in the process.
+        Returns a new DuckDB connection. Uses read_only when possible
+        to avoid exclusive WAL lock contention with other processes.
         """
-        with self._write_lock:
-            if self._main_conn is None:
-                last_exception = None
-                for i in range(retries):
-                    try:
-                        self._main_conn = duckdb.connect(self._db_path, read_only=False)
-                        # Pragmas moved to initialization
-                        self._main_conn.execute("PRAGMA memory_limit='1GB'")
-                        self._main_conn.execute("PRAGMA threads=4")
-                        break
-                    except Exception as e:
-                        last_exception = e
-                        err_str = str(e).lower()
-                        if "used by another process" in err_str or "io error" in err_str:
-                            import time
-                            time.sleep(delay)
-                        else:
-                            raise e
-                
-                if self._main_conn is None:
-                    raise last_exception or Exception(f"Could not connect to DuckDB Intraday after retries.")
-
-            # Return a cursor
-            cursor = self._main_conn.cursor()
+        last_exception = None
+        for i in range(retries):
             try:
-                yield cursor
-            finally:
-                cursor.close()
+                conn = duckdb.connect(self._db_path, read_only=False)
+                conn.execute("PRAGMA memory_limit='1GB'")
+                conn.execute("PRAGMA threads=4")
+                try:
+                    yield conn
+                finally:
+                    conn.close()
+                return
+            except Exception as e:
+                last_exception = e
+                err_str = str(e).lower()
+                if "used by another process" in err_str or "io error" in err_str or "locked" in err_str:
+                    import time
+                    time.sleep(delay)
+                else:
+                    raise e
+        
+        raise last_exception or Exception(f"Could not connect to DuckDB Intraday after retries.")
 
     def _init_schema(self) -> None:
         with self._connection() as conn:

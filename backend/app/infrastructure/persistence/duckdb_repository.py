@@ -16,7 +16,7 @@ from ...domain.interfaces.data_repository import IHistoricalRepository
 from ...domain.interfaces.portfolio_repository import IPortfolioRepository
 from ...domain.entities.market import Candle
 
-DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../data/market.duckdb"))
+DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../data/market2.duckdb"))
 
 
 class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
@@ -26,7 +26,6 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
         self.db_path = DB_PATH
         self._write_lock = threading.RLock()
         self._initialized = False
-        self._main_conn = None  # Singleton connection for the process
         try:
             self._ensure_initialized()
         except duckdb.IOException as exc:
@@ -42,40 +41,43 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
             "used by another process" in message
             or "cannot access the file" in message
             or "io error" in message
+            or "database is locked" in message
         )
 
-    def _open_connection(self, read_only: bool = False, retries: int = 5, delay: float = 0.2):
+    def _open_connection(self, read_only: bool = False, retries: int = 30, delay: float = 0.15):
         """
-        Returns a DuckDB cursor. If the shared connection hasn't been established,
-        it opens one. We always use read_only=False for the shared connection to
-        simplify configuration and permit all operations.
-        """
-        with self._write_lock:
-            if self._main_conn is None:
-                last_exc = None
-                for attempt in range(retries):
-                    try:
-                        # Shared process-wide connection
-                        self._main_conn = duckdb.connect(self.db_path, read_only=False)
-                        break
-                    except duckdb.IOException as exc:
-                        last_exc = exc
-                        if attempt < retries - 1 and self._is_lock_error(exc):
-                            time.sleep(delay * (attempt + 1))
-                            continue
-                        raise
-                
-                if self._main_conn is None:
-                    if last_exc: raise last_exc
-                    raise RuntimeError("Could not connect to DuckDB")
+        Returns a new DuckDB connection.
 
-                # PERFORMANCE PRAGMAS on initialization
-                self._main_conn.execute("PRAGMA memory_limit='1GB'")
-                self._main_conn.execute("PRAGMA threads=4")
-            
-            # Return a cursor from the existing connection.
-            # DuckDB cursors are thread-safe and isolated for query execution.
-            return self._main_conn.cursor()
+        Uses read_only=True for read operations to allow concurrent readers
+        without competing for the exclusive WAL write lock.
+        Falls back to read-write if read_only fails (e.g. WAL recovery needed).
+        """
+        last_exc: Optional[Exception] = None
+        for attempt in range(retries):
+            try:
+                conn = duckdb.connect(self.db_path, read_only=False)
+                conn.execute("PRAGMA memory_limit='1GB'")
+                conn.execute("PRAGMA threads=4")
+                return conn
+            except duckdb.IOException as exc:
+                last_exc = exc
+                if self._is_lock_error(exc):
+                    # If read_only failed due to lock, try read-write on last attempt
+                    if read_only and attempt == retries - 1:
+                        try:
+                            conn = duckdb.connect(self.db_path, read_only=False)
+                            conn.execute("PRAGMA memory_limit='1GB'")
+                            conn.execute("PRAGMA threads=4")
+                            return conn
+                        except Exception:
+                            pass
+                    time.sleep(delay)
+                    continue
+                raise
+
+        if last_exc:
+            raise last_exc  # type: ignore
+        raise RuntimeError("Could not connect to DuckDB")
 
     def _ensure_initialized(self):
         if self._initialized:
@@ -88,9 +90,7 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
 
     def _connect(self, read_only=False):
         """
-        Retrieve a DuckDB cursor. 
-        NOTE: read_only parameter is now ignored as we share a single read-write 
-        connection for the process to avoid configuration mismatch errors.
+        Retrieve a DuckDB connection (always read-write to avoid configuration conflicts).
         """
         self._ensure_initialized()
         return self._open_connection(read_only=False)
@@ -263,6 +263,19 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
                     INSERT INTO equity_snapshots (portfolio_id, timestamp, realized_balance, total_equity)
                     VALUES ('main', CURRENT_TIMESTAMP - INTERVAL '2 year', 1200, 1200)
                 """)
+            
+            # --- REAL-TIME DATA LAKE ---
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS market_ticks (
+                    symbol VARCHAR NOT NULL,
+                    price DOUBLE NOT NULL,
+                    timestamp TIMESTAMP NOT NULL,
+                    source VARCHAR,
+                    received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_ticks_sym_ts ON market_ticks(symbol, timestamp)")
+            
         finally:
             conn.close()
 
@@ -273,8 +286,11 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
                 "SELECT COUNT(*) FROM ohlcv WHERE symbol = ?", [symbol]
             ).fetchone()[0]
             return count >= min_rows
+        except Exception:
+            return False
         finally:
             conn.close()
+        return False
 
     def get_history(self, symbol: str, limit: int = 300) -> List[Candle]:
         conn = self._connect(read_only=True)
@@ -333,6 +349,23 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
                 return 0
             finally:
                 conn.close()
+        return 0
+
+    def save_tick(self, symbol: str, price: float, timestamp: Any, source: str = "unknown"):
+        """Save a single real-time tick to the data lake."""
+        with self._write_lock:
+            conn = self._connect(read_only=False)
+            try:
+                conn.execute("""
+                    INSERT INTO market_ticks (symbol, price, timestamp, source)
+                    VALUES (?, ?, ?, ?)
+                """, [symbol, price, timestamp, source])
+                return True
+            except Exception as e:
+                print(f"[DuckDB] Tick save error for {symbol}: {e}")
+                return False
+            finally:
+                conn.close()
 
     def get_stats(self) -> Dict[str, Any]:
         conn = self._connect(read_only=True)
@@ -341,8 +374,8 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
             symbols = conn.execute("SELECT COUNT(DISTINCT symbol) FROM ohlcv").fetchone()[0]
         finally:
             conn.close()
-        size = os.path.getsize(self.db_path) / (1024 * 1024) if os.path.exists(self.db_path) else 0
-        return {"total_candles": total, "total_symbols": symbols, "db_size_mb": round(size, 2)}
+        size = float(os.path.getsize(self.db_path)) / (1024 * 1024) if os.path.exists(self.db_path) else 0.0
+        return {"total_candles": total, "total_symbols": symbols, "db_size_mb": round(size, 2)}  # type: ignore
 
     def get_latest_date(self, symbol: str) -> Optional[str]:
         conn = self._connect(read_only=True)
@@ -421,8 +454,9 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
             return []
         finally:
             conn.close()
+        return []
 
-    def add_transaction(self, type_str: str, symbol: str, shares: float, price: float, realized_pnl: float = 0, custom_date: str = None, portfolio_id: str = "main"):
+    def add_transaction(self, type_str: str, symbol: str, shares: float, price: float, realized_pnl: float = 0, custom_date: Optional[str] = None, portfolio_id: str = "main"):
         """Record a single transaction with optional custom date for a specific portfolio."""
         from datetime import datetime
         with self._write_lock:
@@ -472,6 +506,7 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
             return []
         finally:
             conn.close()
+        return []
 
     # --- Equity & Performance History ---
 
@@ -486,6 +521,7 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
             return 0.0
         finally:
             conn.close()
+        return 0.0
 
     def record_equity_snapshot(self, total_equity: float, portfolio_id: str = "main"):
         """Record a snapshot of both realized balance and total equity."""
@@ -529,6 +565,7 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
             return []
         finally:
             conn.close()
+        return []
 
     # --- Asset Classification Persistence ---
 
@@ -601,6 +638,7 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
                 return 0
             finally:
                 conn.close()
+        return 0
 
     # --- Insider Trading Persistence ---
 
@@ -638,13 +676,14 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
                 return 0
             finally:
                 conn.close()
+        return 0
 
     def get_insider_trades(self, ticker: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
         """Retrieve recent insider trades, optionally filtered by ticker."""
         conn = self._connect(read_only=True)
         try:
             query = "SELECT * FROM insider_trading"
-            params = []
+            params: List[Any] = []
             if ticker:
                 query += " WHERE ticker = ?"
                 params.append(ticker.upper())
@@ -664,4 +703,5 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
             return []
         finally:
             conn.close()
+        return []
 

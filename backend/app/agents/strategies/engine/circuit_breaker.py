@@ -68,9 +68,9 @@ class CircuitBreaker:
         return self._check()
 
     def record_win(self, gain_pct: float = 0.0) -> None:
-        """Record a winning trade (resets consecutive-loss counter)."""
-        # wins do not reset monthly drawdown — only equity recovery does
+        """Record equity recovery without changing the daily loss count."""
         self._daily_drawdown_pct = max(0.0, self._daily_drawdown_pct - gain_pct)
+        self._monthly_drawdown_pct = max(0.0, self._monthly_drawdown_pct - gain_pct)
 
     # ------------------------------------------------------------------ #
     #  State queries                                                      #
@@ -93,13 +93,21 @@ class CircuitBreaker:
         """Call at the start of each trading day to reset daily counters."""
         self._daily_losses = 0
         self._daily_drawdown_pct = 0.0
-        self._triggered = False
-        self._triggered_reason = None
+        monthly_limit_reached = (
+            self._monthly_drawdown_pct >= self.max_monthly_drawdown_pct
+        )
+        self._triggered = monthly_limit_reached
+        self._triggered_reason = (
+            f"Monthly drawdown limit remains active: "
+            f"{self._monthly_drawdown_pct:.2%} "
+            f"(max={self.max_monthly_drawdown_pct:.2%})"
+            if monthly_limit_reached else None
+        )
 
     def new_month(self) -> None:
         """Call at month boundary to reset monthly counters."""
-        self.new_day()
         self._monthly_drawdown_pct = 0.0
+        self.new_day()
 
     # ------------------------------------------------------------------ #
     #  Internal trigger logic                                             #
@@ -114,7 +122,7 @@ class CircuitBreaker:
 
         if self._daily_losses >= self.max_daily_losses:
             reason = (
-                f"Daily loss limit reached: {self._daily_losses} consecutive losses "
+                f"Daily loss limit reached: {self._daily_losses} losing trades "
                 f"(max={self.max_daily_losses})"
             )
         elif self._daily_drawdown_pct >= self.max_daily_drawdown_pct:

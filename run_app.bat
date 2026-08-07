@@ -17,12 +17,12 @@ echo %Yellow%==========================================%Reset%
 
 set "PORTFOLIO_CPP_SERVICE_URL="
 
-:: --- Portfolio C++ Service (Puerto 9092) ---
+:: --- Portfolio C++ Service (Puerto 9095) ---
 echo.
-echo %White%[1/3] Verificando Portfolio C++ Service (Puerto 9092)...%Reset%
-powershell -ExecutionPolicy Bypass -File "%~dp0run_portfolio_cpp_service.ps1" -Port 9092 -WindowStyle Minimized >nul
+echo %White%[1/6] Verificando Portfolio C++ Service (Puerto 9095)...%Reset%
+powershell -ExecutionPolicy Bypass -File "%~dp0run_portfolio_cpp_service.ps1" -Port 9095 -WindowStyle Minimized >nul
 if %errorlevel% equ 0 (
-    set "PORTFOLIO_CPP_SERVICE_URL=http://127.0.0.1:9092"
+    set "PORTFOLIO_CPP_SERVICE_URL=http://127.0.0.1:9095"
     echo %Green% - Portfolio C++ listo en %PORTFOLIO_CPP_SERVICE_URL%%Reset%
 ) else (
     echo %Yellow% - AVISO: No se pudo iniciar portfolio_cpp_service. Se usara fallback embebido o Python.%Reset%
@@ -30,7 +30,7 @@ if %errorlevel% equ 0 (
 
 :: --- Backend (Puerto 8282) ---
 echo.
-echo %White%[2/3] Verificando Backend (Puerto 8282)...%Reset%
+echo %White%[2/6] Verificando Backend (Puerto 8282)...%Reset%
 netstat -ano | findstr :8282 | findstr LISTENING >nul
 if %errorlevel% equ 0 (
     echo %Red% - ¡Puerto 8282 ocupado! Matando proceso anterior...%Reset%
@@ -47,7 +47,7 @@ if exist "backend\venv\Scripts\python.exe" (
 
 :: --- Frontend (Puerto 3309) ---
 echo.
-echo %White%[3/3] Verificando Frontend (Puerto 3309)...%Reset%
+echo %White%[3/6] Verificando Frontend (Puerto 3309)...%Reset%
 netstat -ano | findstr :3309 | findstr LISTENING >nul
 if %errorlevel% equ 0 (
     echo %Red% - ¡Puerto 3309 ocupado! Matando proceso anterior...%Reset%
@@ -77,6 +77,17 @@ if exist "frontend" (
 ) else (
     echo %Red% - ERROR: No se encontró el directorio frontend%Reset%
 )
+
+:: --- Microservicios de Mercado ---
+echo.
+echo %White%[4/6] Iniciando Market Data Gateway...%Reset%
+start "Market Gateway" cmd /k "set PYTHONUTF8=1 && cd backend && venv\Scripts\python.exe services\market_data_gateway\main.py"
+
+echo %White%[5/6] Iniciando Storage Service (Data Lake)...%Reset%
+start "Storage Service" cmd /k "set PYTHONUTF8=1 && cd backend && venv\Scripts\python.exe services\storage_service\main.py"
+
+echo %White%[6/6] Iniciando Strategy Engine (Live Trading)...%Reset%
+start "Strategy Engine" cmd /k "set PYTHONUTF8=1 && cd backend && venv\Scripts\python.exe services\strategy_engine\main.py"
 
 echo.
 echo %Yellow%¡Chequeo completado!%Reset%

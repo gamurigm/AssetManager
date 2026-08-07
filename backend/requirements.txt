@@ -34,3 +34,5 @@ ib_insync
 crochet
 ctrader-open-api
 service_identity
+confluent-kafka
+MetaTrader5==5.0.5735

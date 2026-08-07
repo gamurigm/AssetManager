@@ -46,27 +46,4 @@ Interact via natural language or direct commands.
 - `portfolio.sharpe --assets AMZN,TSLA`
 - `market.sentiment --query "semiconductors"`
 
-### Data Visualization
-- **Bento Dashboard:** Modular UI for custom workspace configuration.
-- **Glassmorphism UI:** High-contrast neon theme optimized for dark environments.
-- **3D Event Horizon:** WebGL environment for data-intensive processing states.
-
----
-
-## 🚀 Deployment
-
-```powershell
-# Boot entire stack (Frontend, Backend, OpenBB, C++ Service)
-.\run_app.ps1
-```
-
-- **Frontend:** `http://localhost:3309`
-- **API (FastAPI):** `http://localhost:8282`
-- **OpenBB Node:** `http://localhost:6900`
-
----
-
-<div align="center">
-  <p><i>Engineered for Alpha. Defined by Gravity.</i></p>
-</div>
-
+-----------

@@ -16,16 +16,11 @@ SOLID:
 
 from __future__ import annotations
 
-import uuid
-from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 
-from .models import StrategyConfig, ORBLevel, FVG, TradeSignal, SessionState
+from .models import CandleRow, StrategyConfig, ORBLevel, FVG, TradeSignal, SessionState
+from .position_sizer import FixedFractionPositionSizer
 from .indicators import compute_ATR, compute_avg_volume, body_ratio, is_bullish, is_bearish
-
-# Local alias — engine layer stays independent of infrastructure
-from typing import Dict, Any
-CandleRow = Dict[str, Any]
 
 
 class ORBFVGEngine:
@@ -47,7 +42,7 @@ class ORBFVGEngine:
         m1_candles: List[CandleRow],
         account_size: float,
         config: StrategyConfig,
-    ) -> Optional[TradeSignal]:
+    ) -> List[TradeSignal]:
         """
         Evaluate one trading session (9:30–11:00 NY).
 
@@ -58,25 +53,49 @@ class ORBFVGEngine:
             config: Strategy parameters.
 
         Returns:
-            TradeSignal if a valid setup completes, None otherwise.
+            Zero or more valid signals in chronological order.
         """
         if not m5_candles or not m1_candles:
-            return None
+            return []
 
-        # PASO 1: Register ORB
-        orb = self._detect_orb(m5_candles[0], config.min_range_pips)
+        # PASO 1: Register ORB (Search specifically for 9:30-9:35 candle)
+        orb_candle = None
+        for c in m5_candles:
+            ts_str = c["timestamp"]
+            # Detect 9:30:00 (NY Time usually, but we check based on the timestamp string)
+            if "T09:30:00" in ts_str or " 09:30:00" in ts_str:
+                orb_candle = c
+                break
+        
+        if not orb_candle:
+            # Fallback to the first available if exactly 9:30 isn't found
+            orb_candle = m5_candles[0]
+
+        orb = self._detect_orb(orb_candle, config.min_range_pips)
         if not orb.valid:
-            return None
+            return []
 
         state = SessionState()
         state.orb = orb
-
-        atr_m1 = compute_ATR(m1_candles[-20:], period=14)
-        avg_vol_m1 = compute_avg_volume(m1_candles[-20:], period=20)
+        signals: List[TradeSignal] = []
+        cooldown_ticks = 0
 
         prev_candle: Optional[CandleRow] = None
 
         for idx, candle in enumerate(m1_candles):
+            # Avoid Look-Ahead Bias: compute indicators using only data up to time t
+            current_buffer = m1_candles[max(0, idx - 19) : idx + 1]
+            atr_m1 = compute_ATR(current_buffer, period=14)
+            avg_vol_m1 = compute_avg_volume(current_buffer, period=20)
+
+            # ---------------------------------------------------------- #
+            # Cooldown logic (avoid overlapping signals)
+            # ---------------------------------------------------------- #
+            if cooldown_ticks > 0:
+                cooldown_ticks -= 1
+                prev_candle = candle
+                continue
+
             # ---------------------------------------------------------- #
             # PASO 2: Detect breakout (only when no breakout yet)         #
             # ---------------------------------------------------------- #
@@ -96,7 +115,10 @@ class ORBFVGEngine:
             # ---------------------------------------------------------- #
             elif not state.fvg:
                 if state.fvg_countdown <= 0:
-                    return None  # Setup expired: no FVG formed in time
+                    # Setup expired for this specific breakout — reset to hunt NEXT breakout
+                    state.breakout_detected = False
+                    state.breakout_direction = None
+                    continue
                 
                 state.fvg_countdown -= 1
                 
@@ -119,13 +141,18 @@ class ORBFVGEngine:
             # ---------------------------------------------------------- #
             elif not state.setup_active:
                 if state.retest_countdown <= 0:
-                    return None  # Setup expired — best attempt for this session
+                    # Retest expired: reset this specific setup hunt
+                    state.fvg = None
+                    state.breakout_detected = False
+                    continue
 
                 state.retest_countdown -= 1
 
                 # Invalidation checks
                 if self._setup_invalidated(candle, state.fvg, orb, config):
-                    return None
+                    state.fvg = None
+                    state.breakout_detected = False
+                    continue
 
                 # Check if price has returned to FVG
                 if self._price_in_fvg(candle, state.fvg):
@@ -145,12 +172,20 @@ class ORBFVGEngine:
                             premium=self._is_premium_signal(candle, prev_candle),
                         )
                         if signal:
-                            state.setup_active = True
-                            return signal
+                            signals.append(signal)
+                            # Reset for next trade (sequential)
+                            state.fvg = None
+                            state.breakout_detected = False
+                            # 30-candle cooldown after a trade signal to avoid noise entries
+                            cooldown_ticks = 30
+                            
+                            # Limit to max_trades_per_day
+                            if len(signals) >= config.max_trades_per_day:
+                                return signals
 
             prev_candle = candle
 
-        return None  # No valid signal found this session
+        return signals  # All valid signals found this session
 
     # ================================================================== #
     #  PASO 1 — ORB Detection                                             #
@@ -352,12 +387,17 @@ class ORBFVGEngine:
         if risk_pips == 0:
             return None
 
-        position_size = self._calc_position_size(
-            account_size, config.risk_per_trade, risk_pips
+        position_size = FixedFractionPositionSizer().calculate(
+            account_size,
+            config.risk_per_trade,
+            risk_pips,
+            1.0,
         )
 
         return TradeSignal(
-            signal_id=f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}_ORB_{side}_{uuid.uuid4().hex[:4].upper()}",
+            signal_id=(
+                f"ORB_FVG:{confirm_candle['timestamp']}:{side}:{entry:.8f}"
+            ),
             timestamp=confirm_candle["timestamp"],
             direction=side,
             orh=orb.high,
@@ -376,17 +416,6 @@ class ORBFVGEngine:
     # ================================================================== #
     #  Helpers (pure, static)                                             #
     # ================================================================== #
-
-    @staticmethod
-    def _calc_position_size(account: float, risk_pct: float, risk_pips: float, pip_value: float = 1.0) -> float:
-        """
-        position_size = (account × risk_pct) / (risk_pips × pip_value)
-        Section 4.1 of strategy doc.
-        """
-        if risk_pips <= 0 or pip_value <= 0:
-            return 0.0
-        risk_amount = account * risk_pct
-        return risk_amount / (risk_pips * pip_value)
 
     @staticmethod
     def _swing_high(candles: List[CandleRow], lookback: int) -> float:

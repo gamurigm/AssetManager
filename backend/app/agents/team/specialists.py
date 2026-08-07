@@ -877,11 +877,11 @@ async def create_or_edit_strategy_engine(ctx: RunContext[TeamContext], strategy_
     3. You MUST import typing: `from typing import List, Optional, Dict`
     4. Your class MUST inherit from `IStrategyEngine`.
     5. Your class MUST implement: 
-       `def run_session(self, m5_candles: List[dict], m1_candles: List[dict], account_size: float, config: StrategyConfig) -> Optional[TradeSignal]:`
-    6. Return a `TradeSignal` if criteria met, else `None`.
+       `def run_session(self, m5_candles: List[dict], m1_candles: List[dict], account_size: float, config: StrategyConfig) -> List[TradeSignal]:`
+    6. Return `[]` when there is no setup, or a list of `TradeSignal` values.
     
-    This tool dynamically loads the code, registers it in the StrategyFactory, 
-    and saves the file to disk so it can be backtested immediately.
+    Dynamic loading is disabled by default and must only be enabled in an
+    isolated development environment with ALLOW_DYNAMIC_STRATEGIES=true.
     """
     import os
     from ...agents.strategies.engine.strategy_factory import StrategyFactory

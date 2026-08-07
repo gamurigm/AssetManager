@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Plus, MoreHorizontal, ChevronDown, ChevronRight, ExternalLink, LayoutGrid, Pencil, X } from "lucide-react";
 import { useSocket } from "@/context/SocketContext";
 import { formatAssetPrice, formatAssetPriceFixed, getAssetPriceDecimals, isForexSymbol } from "@/lib/marketFormatting";
+import { cachedFetch } from "@/lib/cachedFetch";
 import styles from "./Watchlist.module.css";
 
 declare global {
@@ -111,7 +112,7 @@ export default function Watchlist({ onSelectSymbol }: { onSelectSymbol: (s: stri
             const data = await Promise.all(
                 allSymbols.map(async (s) => {
                     try {
-                        const res = await fetch(`http://127.0.0.1:8282/api/v1/market/quote/${encodeURIComponent(s)}`);
+                        const res = await cachedFetch(`http://127.0.0.1:8282/api/v1/market/quote/${encodeURIComponent(s)}`);
                         const d = await res.json();
                         const prc = d.price || 0;
                         const chgPct = d.changePercentage || 0;

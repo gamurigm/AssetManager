@@ -37,6 +37,11 @@ function createWindow(symbol = null) {
     }
 }
 
+// Disable caches to bypass "Access is denied" cache corruption errors
+app.commandLine.appendSwitch('disable-http-cache');
+app.commandLine.appendSwitch('disable-gpu-shader-disk-cache');
+app.commandLine.appendSwitch('disable-gpu-cache');
+
 app.whenReady().then(() => {
     log('APP', 'Electron application ready');
     createWindow();
