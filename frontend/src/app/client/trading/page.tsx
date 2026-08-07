@@ -44,7 +44,7 @@ const PortfolioBacktestPanel = dynamic(() => import("@/components/dashboard/Port
     ),
 });
 
-const API_BASE = "http://127.0.0.1:8282";
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8282";
 
 import { 
     KpiSnapshot, LiveTrade, ProgressState, BootstrapLiveData, 
@@ -58,7 +58,7 @@ import { IvSmilePanel } from "@/components/trading/IvSmilePanel";
 import { ArchVolPanel } from "@/components/trading/ArchVolPanel";
 import { KalmanFilterPanel } from "@/components/trading/KalmanFilterPanel";
 import { BacktestPriceChart } from "@/components/trading/BacktestPriceChart";
-import { MetricCard, BacktestPanel, DataSection } from "@/components/trading/BacktestUI";
+import { MetricCard, BacktestPanel } from "@/components/trading/BacktestUI";
 
 import { cachedFetch } from "@/lib/cachedFetch";
 import {
@@ -66,6 +66,95 @@ import {
     getCachedArchVol, setCachedArchVol,
     getCachedKalman, setCachedKalman,
 } from "@/components/trading/analyticsCache";
+
+type BacktestProgressEvent = {
+    sim_id?: string;
+    day?: number;
+    total?: number;
+    pct?: number;
+};
+
+type BacktestTradeEvent = {
+    sim_id?: string;
+    trade?: LiveTrade;
+};
+
+function apiErrorMessage(detail: unknown, fallback: string): string {
+    if (typeof detail === "string" && detail.trim()) return detail;
+    if (Array.isArray(detail)) {
+        const messages = detail
+            .map((item) => {
+                if (!item || typeof item !== "object") return null;
+                const message = "msg" in item ? item.msg : null;
+                return typeof message === "string" ? message : null;
+            })
+            .filter((message): message is string => Boolean(message));
+        if (messages.length) return messages.join(" ");
+    }
+    if (detail && typeof detail === "object") {
+        const record = detail as Record<string, unknown>;
+        for (const key of ["error", "message"]) {
+            const value = record[key];
+            if (typeof value === "string" && value.trim()) return value;
+        }
+    }
+    return fallback;
+}
+
+function normalizeKpis(payload: unknown, fallbackEquity: number): KpiSnapshot {
+    const source = payload && typeof payload === "object"
+        ? payload as Record<string, unknown>
+        : {};
+    const value = (key: keyof KpiSnapshot, fallback = 0) => {
+        const parsed = Number(source[key]);
+        return Number.isFinite(parsed) ? parsed : fallback;
+    };
+    const wins = value("wins");
+    const losses = value("losses");
+    const rawProfitFactor = source.profit_factor;
+    const profitFactor = rawProfitFactor === null && wins > 0 && losses === 0
+        ? Number.POSITIVE_INFINITY
+        : value("profit_factor");
+
+    return {
+        total_trades: value("total_trades"),
+        wins,
+        losses,
+        win_rate: value("win_rate"),
+        expectancy_r: value("expectancy_r"),
+        profit_factor: profitFactor,
+        max_drawdown_pct: value("max_drawdown_pct"),
+        sharpe_ratio: value("sharpe_ratio"),
+        sortino_ratio: value("sortino_ratio"),
+        avg_rr_realized: value("avg_rr_realized"),
+        total_r: value("total_r"),
+        final_equity: value("final_equity", fallbackEquity),
+        cagr: value("cagr"),
+    };
+}
+
+type BacktestBootstrapEvent = {
+    sim_id?: string;
+    iterations?: number;
+    net_profit_95_ci?: [number, number];
+    max_drawdown_95_ci_pct?: [number, number];
+    net_profit_samples?: number[];
+    max_drawdown_samples?: number[];
+};
+
+type BacktestCompleteEvent = {
+    sim_id?: string;
+    kpis?: unknown;
+    trading_days?: number;
+    total_trades?: number;
+    bootstrap?: CompletedResult["bootstrap"];
+    report_url?: string | null;
+};
+
+type BacktestErrorEvent = {
+    sim_id?: string;
+    error?: string;
+};
 
 export default function BacktestLab() {
     const { socket, connected, reconnect } = useSocket();
@@ -127,6 +216,11 @@ export default function BacktestLab() {
 
     const [debugLookbehind, setDebugLookbehind] = useState(false);
     const [useAtrSlippage, setUseAtrSlippage] = useState(false);
+    const [fixedSlippagePrice, setFixedSlippagePrice] = useState("0");
+    const [atrSlippageFactor, setAtrSlippageFactor] = useState("0.2");
+    const [commissionPerTrade, setCommissionPerTrade] = useState("0");
+    const [intrabarFillPolicy, setIntrabarFillPolicy] = useState<"conservative" | "optimistic">("conservative");
+    const [markExpiredToMarket, setMarkExpiredToMarket] = useState(true);
 
     const equityCurve = buildEquityCurve(trades, activeAccountSize);
     const liveKpis = deriveLiveKpis(trades, activeAccountSize);
@@ -229,7 +323,7 @@ export default function BacktestLab() {
             }
         };
 
-        const onProgress = (data: any) => {
+        const onProgress = (data: BacktestProgressEvent) => {
             if (data?.sim_id !== activeSim) return;
             setProgress({
                 day: Number(data.day || 0),
@@ -238,16 +332,17 @@ export default function BacktestLab() {
             });
         };
 
-        const onTrade = (data: any) => {
+        const onTrade = (data: BacktestTradeEvent) => {
             if (data?.sim_id !== activeSim || !data.trade) return;
             setTrades((prev) => {
-                const alreadyExists = prev.some((trade) => trade.signal_id === data.trade.signal_id && trade.exit_timestamp === data.trade.exit_timestamp);
+                const incomingTrade = data.trade as LiveTrade;
+                const alreadyExists = prev.some((trade) => trade.signal_id === incomingTrade.signal_id && trade.exit_timestamp === incomingTrade.exit_timestamp);
                 if (alreadyExists) return prev;
-                return [...prev, data.trade as LiveTrade];
+                return [...prev, incomingTrade];
             });
         };
 
-        const onBootstrapReady = (data: any) => {
+        const onBootstrapReady = (data: BacktestBootstrapEvent) => {
             if (data?.sim_id !== activeSim) return;
             setBootstrapLive({
                 iterations: Number(data.iterations || 0),
@@ -258,7 +353,7 @@ export default function BacktestLab() {
             });
         };
 
-        const onComplete = (data: any) => {
+        const onComplete = (data: BacktestCompleteEvent) => {
             if (data?.sim_id !== activeSim) return;
             setIsRunning(false);
             setProgress((prev) => ({
@@ -271,16 +366,16 @@ export default function BacktestLab() {
                 symbol: activeSymbol,
                 strategy: strategyName,
                 status: "completed",
-                kpis: data.kpis,
+                kpis: normalizeKpis(data.kpis, activeAccountSize),
                 trading_days: Number(data.trading_days || 0),
                 total_trades: Number(data.total_trades || 0),
                 bootstrap: data.bootstrap ?? null,
                 report_url: data.report_url,
             });
-            void hydrateCompletedTrades(data.sim_id);
+            if (data.sim_id) void hydrateCompletedTrades(data.sim_id);
         };
 
-        const onError = (data: any) => {
+        const onError = (data: BacktestErrorEvent) => {
             if (data?.sim_id !== activeSim) return;
             setIsRunning(false);
             setErrorMessage(data?.error || "Backtest execution failed.");
@@ -299,7 +394,90 @@ export default function BacktestLab() {
             socket.off("backtest_complete", onComplete);
             socket.off("backtest_error", onError);
         };
-    }, [socket, activeSim, activeSymbol]);
+    }, [socket, activeSim, activeSymbol, strategyName, activeAccountSize]);
+
+    useEffect(() => {
+        if (!activeSim || !isRunning) return;
+
+        let cancelled = false;
+        let timer: number | undefined;
+        let connectionFailures = 0;
+        const scheduleNext = (delay = 1500) => {
+            if (!cancelled) timer = window.setTimeout(poll, delay);
+        };
+        const poll = async () => {
+            try {
+                const response = await fetch(
+                    `${API_BASE}/api/v1/simulation/results/${encodeURIComponent(activeSim)}`,
+                    { cache: "no-store" },
+                );
+                connectionFailures = 0;
+                if (response.status === 202) {
+                    scheduleNext();
+                    return;
+                }
+
+                const payload: {
+                    detail?: string | { error?: string; message?: string };
+                    summary?: Record<string, unknown>;
+                    trades?: LiveTrade[];
+                } = await response.json();
+                if (!response.ok) {
+                    const detail = payload.detail;
+                    const message = typeof detail === "string"
+                        ? detail
+                        : detail?.error || detail?.message || "Backtest execution failed.";
+                    if (!cancelled) {
+                        setErrorMessage(message);
+                        setIsRunning(false);
+                    }
+                    return;
+                }
+
+                const summary = payload.summary ?? {};
+                const kpis = normalizeKpis(summary, activeAccountSize);
+                const tradingDays = Number(summary.trading_days ?? 0);
+                const reportPath = typeof summary.report_path === "string"
+                    ? summary.report_path
+                    : null;
+
+                if (!cancelled) {
+                    setTrades(Array.isArray(payload.trades) ? payload.trades : []);
+                    setProgress({ day: tradingDays, total: tradingDays, pct: 100 });
+                    setCompletedResult({
+                        sim_id: activeSim,
+                        symbol: String(summary.symbol ?? activeSymbol),
+                        strategy: String(summary.strategy ?? strategyName),
+                        status: "completed",
+                        kpis,
+                        trading_days: tradingDays,
+                        total_trades: kpis.total_trades,
+                        bootstrap: (summary.bootstrap as CompletedResult["bootstrap"]) ?? null,
+                        report_url: reportPath
+                            ? `${API_BASE}/view-reports/${encodeURIComponent(reportPath)}`
+                            : null,
+                    });
+                    setIsRunning(false);
+                }
+            } catch {
+                connectionFailures += 1;
+                if (connectionFailures >= 5) {
+                    if (!cancelled) {
+                        setErrorMessage("Lost contact with the simulation service. The job may still be running.");
+                        setIsRunning(false);
+                    }
+                    return;
+                }
+                scheduleNext(Math.min(1500 * (2 ** connectionFailures), 12_000));
+            }
+        };
+
+        void poll();
+        return () => {
+            cancelled = true;
+            if (timer !== undefined) window.clearTimeout(timer);
+        };
+    }, [activeSim, isRunning, activeAccountSize, activeSymbol, strategyName]);
 
     const handleRunIVRegime = async () => {
         const parsedAccount = parseFloat(account);
@@ -343,11 +521,11 @@ export default function BacktestLab() {
 
             const data = await response.json();
             if (!response.ok) {
-                setErrorMessage(data?.detail || "IV Regime backtest failed.");
+                setErrorMessage(apiErrorMessage(data?.detail, "IV Regime backtest failed."));
                 return;
             }
 
-            const tradeList = (data.trades || []).map((t: any) => ({
+            const tradeList = (data.trades || []).map((t: LiveTrade) => ({
                 signal_id: t.signal_id,
                 timestamp: t.timestamp,
                 direction: t.direction,
@@ -369,7 +547,7 @@ export default function BacktestLab() {
                 symbol,
                 strategy: "IV_REGIME",
                 status: "completed",
-                kpis: data.kpis,
+                kpis: normalizeKpis(data.kpis, parsedAccount),
                 trading_days: data.n_trading_days,
                 total_trades: data.kpis?.total_trades ?? 0,
                 bootstrap: null,
@@ -387,6 +565,21 @@ export default function BacktestLab() {
         const parsedAccount = parseFloat(account);
         if (!Number.isFinite(parsedAccount) || parsedAccount <= 0) {
             setErrorMessage("Initial capital must be greater than 0.");
+            return;
+        }
+        const parsedSlippage = parseFloat(fixedSlippagePrice);
+        const parsedAtrSlippageFactor = parseFloat(atrSlippageFactor);
+        const parsedCommission = parseFloat(commissionPerTrade);
+        if (!Number.isFinite(parsedSlippage) || parsedSlippage < 0) {
+            setErrorMessage("Fixed slippage must be zero or greater.");
+            return;
+        }
+        if (!Number.isFinite(parsedCommission) || parsedCommission < 0) {
+            setErrorMessage("Commission per trade must be zero or greater.");
+            return;
+        }
+        if (!Number.isFinite(parsedAtrSlippageFactor) || parsedAtrSlippageFactor < 0) {
+            setErrorMessage("ATR slippage factor must be zero or greater.");
             return;
         }
 
@@ -415,12 +608,17 @@ export default function BacktestLab() {
                     bootstrap_iterations: parseInt(iterations, 10),
                     debug_lookbehind_guard: debugLookbehind,
                     use_atr_slippage: useAtrSlippage,
+                    atr_slippage_factor: parsedAtrSlippageFactor,
+                    fixed_slippage_price: parsedSlippage,
+                    commission_per_trade: parsedCommission,
+                    intrabar_fill_policy: intrabarFillPolicy,
+                    mark_expired_to_market: markExpiredToMarket,
                 }),
             });
 
             const data = await response.json();
             if (!response.ok) {
-                setErrorMessage(data?.detail || "Failed to launch simulation.");
+                setErrorMessage(apiErrorMessage(data?.detail, "Failed to launch simulation."));
                 return;
             }
 
@@ -681,7 +879,7 @@ export default function BacktestLab() {
                                         </div>
 
                                         <div className="p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5 space-y-4 shadow-inner shadow-emerald-500/5">
-                                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400">Strategy Integrity Audit</p>
+                                            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400">Validation</p>
                                             
                                             <div className="flex items-center justify-between">
                                                 <div className="flex items-center gap-2 text-muted-foreground">
@@ -689,6 +887,8 @@ export default function BacktestLab() {
                                                     <label className="text-[11px] font-bold uppercase tracking-widest">Look-ahead Guard</label>
                                                 </div>
                                                 <button
+                                                    type="button"
+                                                    aria-pressed={debugLookbehind}
                                                     onClick={() => setDebugLookbehind(!debugLookbehind)}
                                                     className={`w-10 h-5 rounded-full relative transition-colors ${debugLookbehind ? "bg-emerald-500" : "bg-card-hover"}`}
                                                 >
@@ -699,9 +899,11 @@ export default function BacktestLab() {
                                             <div className="flex items-center justify-between">
                                                 <div className="flex items-center gap-2 text-muted-foreground">
                                                     <Target size={14} className="text-orange-400" />
-                                                    <label className="text-[11px] font-bold uppercase tracking-widest">Dynamic Slippage</label>
+                                                    <label className="text-[11px] font-bold uppercase tracking-widest">ATR Slippage</label>
                                                 </div>
                                                 <button
+                                                    type="button"
+                                                    aria-pressed={useAtrSlippage}
                                                     onClick={() => setUseAtrSlippage(!useAtrSlippage)}
                                                     className={`w-10 h-5 rounded-full relative transition-colors ${useAtrSlippage ? "bg-orange-500" : "bg-card-hover"}`}
                                                 >
@@ -709,16 +911,102 @@ export default function BacktestLab() {
                                                 </button>
                                             </div>
                                         </div>
+
+                                        <div className="p-4 rounded-xl border border-amber-500/25 bg-amber-500/5 space-y-4">
+                                            <div>
+                                                <p className="text-xs font-black uppercase tracking-[0.16em] text-amber-300">Execution realism</p>
+                                                <p className="mt-1 text-xs leading-5 text-muted">
+                                                    Costs and ambiguous candles are applied before KPIs.
+                                                </p>
+                                            </div>
+
+                                            <div className="grid grid-cols-2 gap-3">
+                                                <div>
+                                                    <label htmlFor="fixed-slippage" className="text-xs text-muted block mb-1.5">Slippage · price units</label>
+                                                    <input
+                                                        id="fixed-slippage"
+                                                        type="number"
+                                                        min="0"
+                                                        step="0.0001"
+                                                        value={fixedSlippagePrice}
+                                                        onChange={(event) => setFixedSlippagePrice(event.target.value)}
+                                                        disabled={useAtrSlippage}
+                                                        className="w-full bg-background border border-border rounded-lg p-2.5 text-xs font-mono disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-amber-400/30"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label htmlFor="commission-per-trade" className="text-xs text-muted block mb-1.5">Commission · round trip</label>
+                                                    <input
+                                                        id="commission-per-trade"
+                                                        type="number"
+                                                        min="0"
+                                                        step="0.01"
+                                                        value={commissionPerTrade}
+                                                        onChange={(event) => setCommissionPerTrade(event.target.value)}
+                                                        className="w-full bg-background border border-border rounded-lg p-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-amber-400/30"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            {useAtrSlippage && (
+                                                <div>
+                                                    <label htmlFor="atr-slippage-factor" className="text-xs text-muted block mb-1.5">ATR slippage factor</label>
+                                                    <input
+                                                        id="atr-slippage-factor"
+                                                        type="number"
+                                                        min="0"
+                                                        max="5"
+                                                        step="0.05"
+                                                        value={atrSlippageFactor}
+                                                        onChange={(event) => setAtrSlippageFactor(event.target.value)}
+                                                        className="w-full bg-background border border-border rounded-lg p-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-amber-400/30"
+                                                    />
+                                                    <p className="mt-1 text-[11px] text-muted">Applied as ATR × factor at entry and exit.</p>
+                                                </div>
+                                            )}
+
+                                            <div>
+                                                <label htmlFor="intrabar-policy" className="text-xs text-muted block mb-1.5">When SL and TP touch the same candle</label>
+                                                <select
+                                                    id="intrabar-policy"
+                                                    value={intrabarFillPolicy}
+                                                    onChange={(event) => setIntrabarFillPolicy(event.target.value as "conservative" | "optimistic")}
+                                                    className="w-full bg-background border border-border rounded-lg p-2.5 text-xs focus:outline-none focus:ring-2 focus:ring-amber-400/30"
+                                                >
+                                                    <option value="conservative">Stop first · conservative (recommended)</option>
+                                                    <option value="optimistic">Target first · optimistic</option>
+                                                </select>
+                                            </div>
+
+                                            <div className="flex items-center justify-between gap-4">
+                                                <div>
+                                                    <p className="text-xs font-semibold text-foreground">Mark open positions to market</p>
+                                                    <p className="mt-0.5 text-xs text-muted">Uses the final available close instead of zero PnL.</p>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    aria-pressed={markExpiredToMarket}
+                                                    onClick={() => setMarkExpiredToMarket(!markExpiredToMarket)}
+                                                    className={`w-10 h-5 shrink-0 rounded-full relative transition-colors ${markExpiredToMarket ? "bg-amber-500" : "bg-card-hover"}`}
+                                                >
+                                                    <span className={`block w-4 h-4 rounded-full bg-white absolute top-0.5 shadow-sm transition-all ${markExpiredToMarket ? "left-5" : "left-0.5"}`} />
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
 
                                     <button
+                                        type="button"
                                         onClick={strategyName === "IV_REGIME" ? handleRunIVRegime : handleRunBacktest}
                                         disabled={launching || isRunning}
                                         className="w-full py-5 rounded-2xl bg-[#00ffa3] text-black font-black uppercase tracking-[0.3em] text-sm hover:scale-[1.02] active:scale-[0.98] transition-all shadow-[0_0_30px_rgba(0,255,163,0.3)] disabled:opacity-50 disabled:hover:scale-100 flex items-center justify-center gap-3"
                                     >
                                         {launching || isRunning ? <Loader2 className="animate-spin" size={20} /> : <Play size={18} className="fill-current" />}
-                                        {launching ? "Starting..." : isRunning ? "Running..." : strategyName === "IV_REGIME" ? "Execute IV Regime" : "Launch Engine"}
+                                        {launching ? "Starting..." : isRunning ? "Running..." : strategyName === "IV_REGIME" ? "Run IV regime" : "Run backtest"}
                                     </button>
+                                    <p className="text-center text-[11px] leading-5 text-muted">
+                                        Research mode only. This action does not send orders to a broker.
+                                    </p>
                                 </div>
                             </BacktestPanel>
                         </div>
@@ -727,8 +1015,8 @@ export default function BacktestLab() {
                             {!launching && !isRunning && !completedResult && !errorMessage && (
                                 <div className="flex-1 dark:bg-card bg-zinc-50 border dark:border-border border-zinc-200 border-dashed rounded-3xl flex flex-col items-center justify-center text-muted-foreground p-10 min-h-[520px]">
                                     <Activity size={48} className="dark:text-muted/20 text-zinc-300 mb-6" />
-                                    <h3 className="text-lg font-black uppercase tracking-[0.2em] dark:text-muted-foreground/40 text-zinc-400">Engine Offline</h3>
-                                    <p className="text-[10px] mt-4 max-w-sm text-center font-bold uppercase tracking-widest dark:text-muted-foreground/20 text-zinc-400">Awaiting simulation parameters for real-time equity propagation.</p>
+                                    <h3 className="text-lg font-black uppercase tracking-[0.2em] dark:text-muted-foreground/40 text-zinc-400">Ready to simulate</h3>
+                                    <p className="text-[10px] mt-4 max-w-sm text-center font-bold uppercase tracking-widest dark:text-muted-foreground/20 text-zinc-400">Choose inputs and run a historical simulation.</p>
                                 </div>
                             )}
 
@@ -738,7 +1026,7 @@ export default function BacktestLab() {
                                         <div className="bg-[#ff2e2e]/5 border border-[#ff2e2e]/20 rounded-2xl p-5 flex items-start gap-4 text-[#ff2e2e]">
                                             <TriangleAlert size={20} className="mt-0.5" />
                                             <div>
-                                                <p className="font-black uppercase tracking-widest text-xs">Critical Exception</p>
+                                                <p className="font-black uppercase tracking-widest text-xs">Simulation error</p>
                                                 <p className="text-[11px] font-bold mt-1 text-[#ff2e2e]/80 uppercase tracking-widest">{errorMessage}</p>
                                             </div>
                                         </div>
@@ -756,20 +1044,20 @@ export default function BacktestLab() {
                                     <div className="bg-card border border-border rounded-2xl p-8 space-y-8 shadow-sm">
                                         <div className="flex flex-wrap items-center justify-between gap-4">
                                             <div>
-                                                <h3 className="text-[10px] font-black uppercase tracking-[0.4em] text-foreground/90">Live Simulation Status</h3>
+                                                <h3 className="text-[10px] font-black uppercase tracking-[0.4em] text-foreground/90">Simulation status</h3>
                                                 <p className="text-[10px] font-bold text-muted-foreground/60 uppercase tracking-widest mt-1">
                                                     {activeSim ? `Identifier: ${activeSim}` : "Awaiting thread assignment..."}
                                                 </p>
                                             </div>
                                             <div className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-[0.2em] border shadow-sm ${isRunning ? "text-emerald-500 border-emerald-500/30 bg-emerald-500/5" : "text-cyan-500 border-cyan-500/30 bg-cyan-500/5"}`}>
-                                                {isRunning ? "Engine Running" : completedResult ? "Audit Completed" : launching ? "Core Initializing" : "System Idle"}
+                                                {isRunning ? "Running" : completedResult ? "Completed" : launching ? "Starting" : "Ready"}
                                             </div>
                                         </div>
 
                                         {(launching || isRunning) && (
                                             <div className="space-y-4">
                                                 <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-[0.2em]">
-                                                    <span className="text-muted-foreground/60">Propagation Progress</span>
+                                                    <span className="text-muted-foreground/60">Progress</span>
                                                     <span className="font-mono text-accent">{progress.day}/{progress.total || "?"} SESSIONS</span>
                                                 </div>
                                                 <div className="w-full h-2 rounded-full bg-muted border border-border overflow-hidden">
@@ -783,7 +1071,7 @@ export default function BacktestLab() {
                                         <div className="flex items-center justify-between mb-6">
                                             <div>
                                                 <p className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground">Equity Trajectory</p>
-                                                <p className="text-[9px] font-bold text-muted-foreground/40 mt-1 uppercase tracking-widest">Real-time capital propagation audit</p>
+                                                <p className="text-[9px] font-bold text-muted-foreground/40 mt-1 uppercase tracking-widest">Historical equity after execution costs</p>
                                             </div>
                                             <p className="text-[10px] font-mono text-accent/60">{equityCurve.length} DATA_POINTS</p>
                                         </div>
@@ -879,15 +1167,16 @@ export default function BacktestLab() {
                                             </div>
                                             <p className="text-[10px] font-mono text-muted-foreground/50">{trades.length} TRANSACTIONS</p>
                                         </div>
-                                        <div className="max-h-80 overflow-y-auto custom-scrollbar">
+                                        <div className="max-h-80 overflow-auto custom-scrollbar">
                                             <table className="w-full text-left border-collapse">
                                                 <thead className="sticky top-0 bg-muted/20 z-10">
                                                     <tr className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground border-b border-border">
                                                         <th className="px-4 py-4">Timestamp</th>
                                                         <th className="px-4 py-4 text-center">Bias</th>
-                                                        <th className="px-4 py-4">Strike</th>
+                                                        <th className="px-4 py-4">Entry fill</th>
                                                         <th className="px-4 py-4">Exit</th>
                                                         <th className="px-4 py-4">Status</th>
+                                                        <th className="px-4 py-4 text-right">Fees</th>
                                                         <th className="px-4 py-4">Magnitude</th>
                                                         <th className="px-4 py-4 text-right">PnL_USD</th>
                                                     </tr>
@@ -895,7 +1184,7 @@ export default function BacktestLab() {
                                                 <tbody>
                                                     {trades.length === 0 && (
                                                         <tr>
-                                                            <td colSpan={7} className="px-4 py-12 text-center text-[10px] font-bold uppercase tracking-widest dark:text-white/10 text-zinc-300">Awaiting initial execution cycle...</td>
+                                                            <td colSpan={8} className="px-4 py-12 text-center text-[10px] font-bold uppercase tracking-widest dark:text-white/10 text-zinc-300">Awaiting initial execution cycle...</td>
                                                         </tr>
                                                     )}
                                                     {trades.map((trade) => (
@@ -906,9 +1195,10 @@ export default function BacktestLab() {
                                                                     {trade.direction}
                                                                 </span>
                                                             </td>
-                                                            <td className="px-4 py-4 font-mono text-[11px] dark:text-white/80 text-zinc-700">${formatCurrency(trade.entry)}</td>
+                                                            <td className="px-4 py-4 font-mono text-[11px] dark:text-white/80 text-zinc-700">${formatCurrency(trade.entry_price ?? trade.entry)}</td>
                                                             <td className="px-4 py-4 font-mono text-[11px] dark:text-white/60 text-zinc-500">${formatCurrency(trade.exit_price ?? trade.tp)}</td>
-                                                            <td className="px-4 py-4 text-[9px] font-bold uppercase tracking-widest dark:text-white/30 text-zinc-400">{trade.outcome}</td>
+                                                            <td title={trade.execution_note || undefined} className="px-4 py-4 text-[9px] font-bold uppercase tracking-widest dark:text-white/30 text-zinc-400">{trade.outcome}</td>
+                                                            <td className="px-4 py-4 font-mono text-[11px] text-right text-amber-400">${formatCurrency(trade.fees_usd ?? 0)}</td>
                                                             <td className={`px-4 py-4 font-mono text-[11px] font-black ${trade.pnl_r >= 0 ? "text-emerald-600 dark:text-[#00ffa3]" : "text-red-600 dark:text-[#ff2e2e]"}`}>{trade.pnl_r >= 0 ? "+" : ""}{trade.pnl_r.toFixed(2)}R</td>
                                                             <td className={`px-4 py-4 font-mono text-[11px] text-right font-black ${trade.pnl_usd >= 0 ? "text-emerald-600 dark:text-[#00ffa3]" : "text-red-600 dark:text-[#ff2e2e]"}`}>
                                                                 {trade.pnl_usd >= 0 ? "+" : ""}${formatCurrency(trade.pnl_usd)}

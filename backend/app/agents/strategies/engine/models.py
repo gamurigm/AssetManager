@@ -10,8 +10,11 @@ This ensures:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any
+
+CandleRow = Dict[str, Any]
 
 
 # --------------------------------------------------------------------------- #
@@ -28,11 +31,11 @@ class StrategyConfig:
     min_range_pips: float = 0.1            # Minimum ORB range to trade that day
 
     # Breakout validation
-    vol_ruptura_ratio: float = 0.40         # Volume multiplier on breakout candle (relaxed from 1.3/0.5)
-    body_ratio_breakout: float = 0.10       # Min body/range ratio on breakout candle
+    vol_ruptura_ratio: float = 1.30         # Volume multiplier on breakout candle
+    body_ratio_breakout: float = 0.50       # Min body/range ratio on breakout candle
 
     # FVG
-    min_fvg_size_atr: float = 0.20         # FVG size ≥ factor × ATR_M1 (relaxed from 0.5)
+    min_fvg_size_atr: float = 0.50         # FVG size ≥ factor × ATR_M1
     wait_fvg_max_m1: int = 20              # Max M1 candles to wait for an FVG to form after breakout
 
     # FCR candle (M5 impulse filter — optional)
@@ -41,14 +44,13 @@ class StrategyConfig:
     k3_vol_ratio_fcr: float = 1.50        # Volume ≥ k3 × avg_vol_M5
 
     # Engulfing (confirmation in M1)
-    p_cuerpo_min: float = 0.10            # Body ≥ p_cuerpo_min × ATR_M1
-    p_vol_min: float = 0.40               # Volume ≥ p_vol_min × avg_vol_M1 (relaxed from 1.2/0.5)
+    p_cuerpo_min: float = 0.40            # Body ≥ p_cuerpo_min × ATR_M1
+    p_vol_min: float = 1.20               # Volume ≥ p_vol_min × avg_vol_M1
 
     # Retest patience
     wait_retest_max_m1: int = 30          # Max M1 candles to wait for price to return to FVG
 
     # Execution
-    p_atr_slippage: float = 0.20          # Entry slippage = factor × ATR_M1
     rr_target: float = 3.0               # Risk/Reward ratio (fixed)
     buffer_sl_factor: float = 0.10       # SL buffer = factor × ATR_M1
     max_spread: float = 0.0005           # Max allowed spread at entry
@@ -56,7 +58,7 @@ class StrategyConfig:
 
     # Risk
     risk_per_trade: float = 0.005        # Fraction of account to risk (0.5%)
-    max_trades_per_day: int = 3
+    max_trades_per_day: int = 2
     max_concurrent_trades: int = 1
 
     # Circuit breakers
@@ -71,14 +73,54 @@ class StrategyConfig:
     tp2_rr: float = 3.0
     tp2_size_pct: float = 50.0
 
+    def __post_init__(self) -> None:
+        if self.min_range_pips < 0:
+            raise ValueError("min_range_pips cannot be negative")
+        for name in ("body_ratio_breakout", "k2_body_ratio"):
+            value = getattr(self, name)
+            if not 0 <= value <= 1:
+                raise ValueError(f"{name} must be between 0 and 1")
+        for name in (
+            "vol_ruptura_ratio", "min_fvg_size_atr", "k1_atr_fcr",
+            "k3_vol_ratio_fcr", "p_cuerpo_min", "p_vol_min", "rr_target",
+            "swing_lookback", "wait_fvg_max_m1", "wait_retest_max_m1",
+            "max_trades_per_day", "max_daily_losses",
+        ):
+            if getattr(self, name) <= 0:
+                raise ValueError(f"{name} must be greater than zero")
+        if not 0 < self.risk_per_trade <= 0.05:
+            raise ValueError("risk_per_trade must be between 0 and 0.05")
+        for name in ("max_daily_drawdown_pct", "max_monthly_drawdown_pct"):
+            value = getattr(self, name)
+            if not 0 < value <= 1:
+                raise ValueError(f"{name} must be between 0 and 1")
+        if self.max_concurrent_trades != 1:
+            raise ValueError(
+                "Only one concurrent trade is supported by the current backtest model"
+            )
+        if self.tp_scaling_enabled:
+            if self.tp1_rr <= 0 or self.tp2_rr <= 0:
+                raise ValueError("TP risk/reward targets must be greater than zero")
+            if not math.isclose(
+                self.tp1_size_pct + self.tp2_size_pct,
+                100.0,
+                abs_tol=1e-9,
+            ):
+                raise ValueError("TP scaling sizes must add up to 100")
+
     @classmethod
     def default(cls) -> "StrategyConfig":
         return cls()
 
     @classmethod
     def from_dict(cls, d: dict) -> "StrategyConfig":
-        """Factory from dict — allows API to override individual params."""
-        return cls(**{k: v for k, v in d.items() if k in cls.__dataclass_fields__})
+        """Create a config without silently discarding misspelled parameters."""
+        unknown = set(d) - set(cls.__dataclass_fields__)
+        if unknown:
+            raise ValueError(
+                f"Unknown strategy parameters: {', '.join(sorted(unknown))}"
+            )
+        return cls(**d)
 
 
 # --------------------------------------------------------------------------- #
@@ -130,10 +172,30 @@ class TradeSignal:
 
 
 @dataclass(frozen=True)
+class ExecutionSettings:
+    """Broker-cost and ambiguous-candle assumptions for one simulation."""
+
+    slippage_price: float = 0.0
+    commission_per_trade: float = 0.0
+    intrabar_fill_policy: str = "conservative"
+    mark_expired_to_market: bool = True
+
+    def __post_init__(self) -> None:
+        if self.slippage_price < 0:
+            raise ValueError("slippage_price cannot be negative")
+        if self.commission_per_trade < 0:
+            raise ValueError("commission_per_trade cannot be negative")
+        if self.intrabar_fill_policy not in {"conservative", "optimistic"}:
+            raise ValueError(
+                "intrabar_fill_policy must be conservative or optimistic"
+            )
+
+
+@dataclass(frozen=True)
 class TradeRecord:
     """
     Result of simulating a TradeSignal against subsequent M1 candles.
-    Produced by BacktestRunner._simulate_trade().
+    Produced by an ITradeExecutionModel.
     """
     signal: TradeSignal
     outcome: str             # 'win_tp' | 'loss_sl' | 'expired' | 'circuit_break'
@@ -142,14 +204,23 @@ class TradeRecord:
     pnl_r: float             # +3.0 for TP hit, -1.0 for SL hit, 0 for expired
     pnl_usd: float
     slippage_pips: float
+    entry_price: Optional[float] = None
+    gross_pnl_usd: float = 0.0
+    fees_usd: float = 0.0
+    execution_note: str = ""
 
     @property
     def is_win(self) -> bool:
-        return self.outcome == "win_tp"
+        return self.pnl_usd > 0
 
     @property
     def is_loss(self) -> bool:
-        return self.outcome == "loss_sl"
+        return self.pnl_usd < 0
+
+    @property
+    def slippage_price(self) -> float:
+        """Price-distance alias for the legacy slippage_pips field."""
+        return self.slippage_pips
 
 
 @dataclass
@@ -199,13 +270,18 @@ class KPIResult:
     cagr: float               # Annualised growth rate
 
     def as_dict(self) -> dict:
+        serialized_profit_factor = (
+            round(self.profit_factor, 4)
+            if math.isfinite(self.profit_factor)
+            else None
+        )
         return {
             "total_trades": self.total_trades,
             "wins": self.wins,
             "losses": self.losses,
             "win_rate": round(self.win_rate, 4),
             "expectancy_r": round(self.expectancy_r, 4),
-            "profit_factor": round(self.profit_factor, 4),
+            "profit_factor": serialized_profit_factor,
             "max_drawdown_pct": round(self.max_drawdown_pct, 4),
             "sharpe_ratio": round(self.sharpe_ratio, 4),
             "sortino_ratio": round(self.sortino_ratio, 4),

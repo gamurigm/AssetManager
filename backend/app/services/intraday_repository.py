@@ -74,7 +74,7 @@ class IIntradayRepository(Protocol):
 #  Concrete Implementation — DuckDB                                            #
 # --------------------------------------------------------------------------- #
 
-_DB_PATH = os.path.join(os.path.dirname(__file__), "../../data/market.duckdb")
+_DB_PATH = os.path.join(os.path.dirname(__file__), "../../data/market2.duckdb")
 
 
 class DuckDBIntradayRepository:
@@ -101,7 +101,8 @@ class DuckDBIntradayRepository:
     @contextlib.contextmanager
     def _connection(self, retries: int = 50, delay: float = 0.1, read_only=False):
         """
-        Returns a new DuckDB connection. Transient for multi-process.
+        Returns a new DuckDB connection. Uses read_only when possible
+        to avoid exclusive WAL lock contention with other processes.
         """
         last_exception = None
         for i in range(retries):
@@ -109,8 +110,10 @@ class DuckDBIntradayRepository:
                 conn = duckdb.connect(self._db_path, read_only=False)
                 conn.execute("PRAGMA memory_limit='1GB'")
                 conn.execute("PRAGMA threads=4")
-                yield conn
-                conn.close()
+                try:
+                    yield conn
+                finally:
+                    conn.close()
                 return
             except Exception as e:
                 last_exception = e

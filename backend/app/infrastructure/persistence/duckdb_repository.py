@@ -16,7 +16,7 @@ from ...domain.interfaces.data_repository import IHistoricalRepository
 from ...domain.interfaces.portfolio_repository import IPortfolioRepository
 from ...domain.entities.market import Candle
 
-DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../data/market.duckdb"))
+DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../../data/market2.duckdb"))
 
 
 class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
@@ -46,13 +46,11 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
 
     def _open_connection(self, read_only: bool = False, retries: int = 30, delay: float = 0.15):
         """
-        Returns a new DuckDB connection, always in read-write mode.
+        Returns a new DuckDB connection.
 
-        NOTE: On Windows, DuckDB read_only=True still requires exclusive WAL
-        access and will conflict with any concurrent writer connection, causing
-        IOException.  We therefore ALWAYS open in read-write mode and rely on
-        _write_lock to serialise mutations.  The read_only parameter is accepted
-        but intentionally ignored so callers need no changes.
+        Uses read_only=True for read operations to allow concurrent readers
+        without competing for the exclusive WAL write lock.
+        Falls back to read-write if read_only fails (e.g. WAL recovery needed).
         """
         last_exc: Optional[Exception] = None
         for attempt in range(retries):
@@ -64,6 +62,15 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
             except duckdb.IOException as exc:
                 last_exc = exc
                 if self._is_lock_error(exc):
+                    # If read_only failed due to lock, try read-write on last attempt
+                    if read_only and attempt == retries - 1:
+                        try:
+                            conn = duckdb.connect(self.db_path, read_only=False)
+                            conn.execute("PRAGMA memory_limit='1GB'")
+                            conn.execute("PRAGMA threads=4")
+                            return conn
+                        except Exception:
+                            pass
                     time.sleep(delay)
                     continue
                 raise
@@ -83,7 +90,7 @@ class DuckDBRepository(IHistoricalRepository, IPortfolioRepository):
 
     def _connect(self, read_only=False):
         """
-        Retrieve a DuckDB connection (always read-write; see _open_connection).
+        Retrieve a DuckDB connection (always read-write to avoid configuration conflicts).
         """
         self._ensure_initialized()
         return self._open_connection(read_only=False)

@@ -9,7 +9,7 @@ import duckdb
 from typing import List, Dict, Any, Optional
 from datetime import datetime, date
 
-DB_PATH = os.path.join(os.path.dirname(__file__), "../../data/market.duckdb")
+DB_PATH = os.path.join(os.path.dirname(__file__), "../../data/market2.duckdb")
 
 
 import time
@@ -29,7 +29,7 @@ class DuckDBStore:
         """Get a transient connection to DuckDB."""
         for i in range(retry_count):
             try:
-                conn = duckdb.connect(self.db_path, read_only=read_only)
+                conn = duckdb.connect(self.db_path, read_only=False)
                 conn.execute("PRAGMA memory_limit='1GB'")
                 conn.execute("PRAGMA threads=4")
                 return conn

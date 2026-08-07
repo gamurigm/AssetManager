@@ -26,7 +26,7 @@ cache = Cache(CACHE_DIR)
 # --- The Data Cascade Router --- #
 
 class MarketDataService:
-    CACHE_QUOTE_TTL = 90    # 90s cache — reduces provider calls significantly
+    CACHE_QUOTE_TTL = 300   # 5 min cache — Kafka handles real-time, this avoids hammering APIs
     _INTRADAY_COVERAGE_HINT = (
         "Yahoo Finance only exposes about 7 days of 1m candles and about 1 month of 5m candles. "
         "Load longer intraday history into DuckDB first or use a provider like Polygon for the full range."
@@ -102,12 +102,16 @@ class MarketDataService:
         return symbol
 
     @staticmethod
-    async def get_price(symbol: str) -> Dict[str, Any]:
+    async def get_price(
+        symbol: str,
+        *,
+        bypass_cache: bool = False,
+    ) -> Dict[str, Any]:
         """
         Unified method with optimized cascade, rate limiting, and symbol translation.
         """
         cache_key = f"quote_{symbol.replace('/', '_')}"
-        cached = cache.get(cache_key)
+        cached = None if bypass_cache else cache.get(cache_key)
         if cached:
             print(f"[MarketData] Cache HIT for {symbol}")
             return cached

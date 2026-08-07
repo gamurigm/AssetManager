@@ -12,8 +12,15 @@ Applied SOLID principles:
 
 from __future__ import annotations
 
-from typing import Protocol, List, Optional, runtime_checkable
-from .models import StrategyConfig, TradeSignal, TradeRecord, KPIResult
+from typing import Protocol, List, runtime_checkable
+from .models import (
+    CandleRow,
+    ExecutionSettings,
+    StrategyConfig,
+    TradeSignal,
+    TradeRecord,
+    KPIResult,
+)
 
 # CandleRow is a TypedDict — avoid importing from services to keep engine layer pure
 # The engine layer accepts any dict with {timestamp, open, high, low, close, volume}
@@ -28,8 +35,7 @@ from .models import StrategyConfig, TradeSignal, TradeRecord, KPIResult
 @runtime_checkable
 class IStrategyEngine(Protocol):
     """
-    A Strategy Engine evaluates one trading session and optionally returns a signal.
-    The session is atomic: either a setup exists and is valid, or it's None.
+    A strategy evaluates one trading session and returns zero or more signals.
     """
 
     def run_session(
@@ -41,7 +47,7 @@ class IStrategyEngine(Protocol):
     ) -> List[TradeSignal]:
         """
         Evaluate one trading session.
-        Returns a TradeSignal if all conditions are met, otherwise None.
+        Returns a list of valid signals; an empty list means no setup.
         Must be a pure function: no I/O, no side effects.
 
         ⚠️ CRITICAL RULE: AVOIDING LOOK-AHEAD BIAS
@@ -52,6 +58,34 @@ class IStrategyEngine(Protocol):
            or during the loop, as this injects future data into past decisions.
         3. Do not use future returns or statistics that "peek ahead".
         """
+        ...
+
+
+@runtime_checkable
+class ITradeExecutionModel(Protocol):
+    """Resolve a signal against future candles using explicit fill assumptions."""
+
+    def simulate(
+        self,
+        signal: TradeSignal,
+        remaining_candles: List[CandleRow],
+        pip_value: float,
+        settings: ExecutionSettings,
+    ) -> TradeRecord:
+        ...
+
+
+@runtime_checkable
+class IPositionSizer(Protocol):
+    """Convert an account risk budget and stop distance into trade units."""
+
+    def calculate(
+        self,
+        account_equity: float,
+        risk_fraction: float,
+        risk_price_distance: float,
+        price_value_per_unit: float,
+    ) -> float:
         ...
 
 

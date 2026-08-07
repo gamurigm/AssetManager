@@ -16,16 +16,11 @@ SOLID:
 
 from __future__ import annotations
 
-import uuid
-from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 
-from .models import StrategyConfig, ORBLevel, FVG, TradeSignal, SessionState
+from .models import CandleRow, StrategyConfig, ORBLevel, FVG, TradeSignal, SessionState
+from .position_sizer import FixedFractionPositionSizer
 from .indicators import compute_ATR, compute_avg_volume, body_ratio, is_bullish, is_bearish
-
-# Local alias — engine layer stays independent of infrastructure
-from typing import Dict, Any
-CandleRow = Dict[str, Any]
 
 
 class ORBFVGEngine:
@@ -58,10 +53,10 @@ class ORBFVGEngine:
             config: Strategy parameters.
 
         Returns:
-            TradeSignal if a valid setup completes, None otherwise.
+            Zero or more valid signals in chronological order.
         """
         if not m5_candles or not m1_candles:
-            return None
+            return []
 
         # PASO 1: Register ORB (Search specifically for 9:30-9:35 candle)
         orb_candle = None
@@ -392,12 +387,17 @@ class ORBFVGEngine:
         if risk_pips == 0:
             return None
 
-        position_size = self._calc_position_size(
-            account_size, config.risk_per_trade, risk_pips
+        position_size = FixedFractionPositionSizer().calculate(
+            account_size,
+            config.risk_per_trade,
+            risk_pips,
+            1.0,
         )
 
         return TradeSignal(
-            signal_id=f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}_ORB_{side}_{uuid.uuid4().hex[:4].upper()}",
+            signal_id=(
+                f"ORB_FVG:{confirm_candle['timestamp']}:{side}:{entry:.8f}"
+            ),
             timestamp=confirm_candle["timestamp"],
             direction=side,
             orh=orb.high,
@@ -416,17 +416,6 @@ class ORBFVGEngine:
     # ================================================================== #
     #  Helpers (pure, static)                                             #
     # ================================================================== #
-
-    @staticmethod
-    def _calc_position_size(account: float, risk_pct: float, risk_pips: float, pip_value: float = 1.0) -> float:
-        """
-        position_size = (account × risk_pct) / (risk_pips × pip_value)
-        Section 4.1 of strategy doc.
-        """
-        if risk_pips <= 0 or pip_value <= 0:
-            return 0.0
-        risk_amount = account * risk_pct
-        return risk_amount / (risk_pips * pip_value)
 
     @staticmethod
     def _swing_high(candles: List[CandleRow], lookback: int) -> float:

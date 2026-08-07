@@ -3,6 +3,8 @@ import pandas as pd
 from typing import List, Dict, Any, Optional
 from datetime import timezone
 
+import asyncio
+
 class YahooFinanceService:
     @staticmethod
     async def get_historical(symbol: str, period: str = "1mo", interval: str = "1d") -> Dict[str, Any]:
@@ -12,14 +14,15 @@ class YahooFinanceService:
         interval: 1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo
         """
         try:
-            # yfinance is synchronous, so we run it in a way that doesn't block if needed, 
-            # though for simple calls it's fine in FastAPI
-            ticker = yf.Ticker(symbol)
-            hist = ticker.history(period=period, interval=interval)
-            
+            def _fetch():
+                ticker = yf.Ticker(symbol)
+                return ticker.history(period=period, interval=interval)
+
+            hist = await asyncio.to_thread(_fetch)
+
             if hist.empty:
                 return {"error": f"No historical data found for {symbol}"}
-            
+
             # Convert to standard OHLC format
             historical_data = []
             for date, row in hist.iterrows():
@@ -41,28 +44,30 @@ class YahooFinanceService:
 
     @staticmethod
     async def get_quote(symbol: str) -> Dict[str, Any]:
-        """Get current price info using yfinance. More robust than .info"""
+        """Get current price info using yfinance. Optimized to avoid slow ticker.info call."""
         try:
-            ticker = yf.Ticker(symbol)
-            # Fetch the most recent 1-day bar
-            hist = ticker.history(period="1d")
-            
+            def _fetch():
+                ticker = yf.Ticker(symbol)
+                return ticker.history(period="2d")
+
+            # Run blocking yfinance in thread to not block event loop
+            hist = await asyncio.to_thread(_fetch)
+
             if hist.empty:
-                # Fallback to info if history fails
-                info = ticker.info
-                return {
-                    "price": info.get("regularMarketPrice") or info.get("currentPrice"),
-                    "change": info.get("regularMarketChange"),
-                    "changePercentage": info.get("regularMarketChangePercent"),
-                    "source": "Yahoo Finance (Info Fallback)"
-                }
-            
+                return {"error": f"No quote data for {symbol}"}
+
             latest = hist.iloc[-1]
-            prev_close = ticker.info.get("previousClose") or latest["Open"]
             price = float(latest["Close"])
+
+            # Use previous day's close from history instead of slow ticker.info call
+            if len(hist) >= 2:
+                prev_close = float(hist.iloc[-2]["Close"])
+            else:
+                prev_close = float(latest["Open"])
+
             change = price - prev_close
             pct_change = (change / prev_close) * 100 if prev_close else 0
-            
+
             return {
                 "price": price,
                 "change": change,

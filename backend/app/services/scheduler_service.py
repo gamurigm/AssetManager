@@ -201,7 +201,7 @@ def start_scheduler(sio=None):
         scheduler.add_job(
             broadcast_prices_job,
             "interval",
-            seconds=5,
+            seconds=10,
             args=[sio],
             id="broadcast_prices",
             replace_existing=True,

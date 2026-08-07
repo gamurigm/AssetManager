@@ -194,28 +194,41 @@ class TestIsEngulfing:
 
 
 # =========================================================================== #
-#  GRUPO 4 — calc_position_size                                               #
+#  GRUPO 4 — Signal identity                                                  #
 # =========================================================================== #
 
-class TestCalcPositionSize:
+def test_signal_identity_is_deterministic_for_idempotent_execution():
+    engine = ORBFVGEngine()
+    candle = make_candle(
+        open_=100.0,
+        high=101.0,
+        low=99.5,
+        close=100.5,
+        ts="2026-01-02T09:40:00",
+    )
+    kwargs = {
+        "confirm_candle": candle,
+        "fvg": FVG(
+            top=100.5,
+            bottom=100.0,
+            midpoint=100.25,
+            direction="bullish",
+            size=0.5,
+        ),
+        "orb": ORBLevel(high=101.0, low=99.0, range_=2.0, valid=True),
+        "m1_candles": [candle],
+        "atr_m1": 0.5,
+        "account_size": 10_000.0,
+        "config": StrategyConfig(),
+        "premium": False,
+    }
 
-    def test_known_example_from_doc(self):
-        """
-        From strategy doc Section 4.2:
-          account=$10,000, risk=0.5%, risk_pips=0.0019, pip_value=1.0
-          position_size = 50 / (0.0019 × 1.0) ≈ 26,315.79
-        """
-        size = ORBFVGEngine._calc_position_size(
-            account=10_000.0,
-            risk_pct=0.005,
-            risk_pips=0.0019,
-            pip_value=1.0,
-        )
-        assert size == pytest.approx(10_000.0 * 0.005 / 0.0019, rel=1e-4)
+    first = engine._build_signal(**kwargs)
+    second = engine._build_signal(**kwargs)
 
-    def test_zero_risk_pips_returns_zero(self):
-        size = ORBFVGEngine._calc_position_size(10_000, 0.005, 0.0, 1.0)
-        assert size == 0.0
+    assert first is not None
+    assert second is not None
+    assert first.signal_id == second.signal_id
 
 
 # =========================================================================== #
@@ -258,7 +271,8 @@ class TestFullSession:
         signal = engine.run_session(m5, m1, 10_000, cfg)
         # In synthetic data the FVG may or may not form depending on exact prices;
         # we assert no crash and check type when signal returned
-        assert signal is None or isinstance(signal, TradeSignal)
+        assert isinstance(signal, list)
+        assert all(isinstance(item, TradeSignal) for item in signal)
 
     def test_session_no_orb_returns_none(self):
         """ORB candle with range=0 → no signal."""
@@ -267,7 +281,7 @@ class TestFullSession:
         cfg = StrategyConfig(min_range_pips=0.05)   # very high threshold
         m5, m1 = self._build_session()
         signal = engine.run_session([flat_orb], m1, 10_000, cfg)
-        assert signal is None
+        assert signal == []
 
 
 # =========================================================================== #
@@ -307,6 +321,33 @@ class TestCircuitBreaker:
         assert breaker.is_triggered() is False
         assert breaker.daily_losses() == 0
 
+    def test_monthly_trip_remains_active_across_new_day(self):
+        breaker = CircuitBreaker(
+            max_daily_losses=99,
+            max_daily_drawdown_pct=1.0,
+            max_monthly_drawdown_pct=0.02,
+        )
+        breaker.record_loss(0.02)
+        assert breaker.is_triggered() is True
+
+        breaker.new_day()
+
+        assert breaker.is_triggered() is True
+        assert "Monthly" in (breaker.reason() or "")
+
+    def test_monthly_trip_resets_at_new_month(self):
+        breaker = CircuitBreaker(
+            max_daily_losses=99,
+            max_daily_drawdown_pct=1.0,
+            max_monthly_drawdown_pct=0.02,
+        )
+        breaker.record_loss(0.02)
+        assert breaker.is_triggered() is True
+
+        breaker.new_month()
+
+        assert breaker.is_triggered() is False
+
 
 # =========================================================================== #
 #  GRUPO 7 — Setup expiry                                                     #
@@ -338,7 +379,7 @@ class TestSetupExpiry:
             ]
         ]
         signal = engine.run_session([m5_orb], m1_candles, 10_000, cfg)
-        assert signal is None
+        assert signal == []
 
 
 # =========================================================================== #
@@ -363,8 +404,37 @@ class TestStrategyFactory:
         StrategyFactory.register("DUMMY", DummyEngine)
         engine = StrategyFactory.create("DUMMY")
         assert isinstance(engine, DummyEngine)
-        # Cleanup
-        del StrategyFactory._registry["DUMMY"]
+        StrategyFactory.unregister("DUMMY")
+
+    def test_names_are_normalized_at_the_factory_boundary(self):
+        engine = StrategyFactory.create(" orb_fvg_engulfing ")
+        assert isinstance(engine, ORBFVGEngine)
+
+    def test_dynamic_code_loading_is_disabled_by_default(self, monkeypatch):
+        monkeypatch.delenv("ALLOW_DYNAMIC_STRATEGIES", raising=False)
+        with pytest.raises(PermissionError, match="disabled"):
+            StrategyFactory.load_from_code("UNSAFE", "class Unsafe: pass")
+
+    def test_dynamic_loader_registers_only_the_class_defined_by_the_code(self, monkeypatch):
+        monkeypatch.setenv("ALLOW_DYNAMIC_STRATEGIES", "true")
+        code = (
+            "class GeneratedStrategy:\n"
+            "    def run_session(self, m5_candles, m1_candles, account_size, config):\n"
+            "        return []\n"
+        )
+        try:
+            StrategyFactory.load_from_code("GENERATED", code)
+            assert type(StrategyFactory.create("GENERATED")).__name__ == "GeneratedStrategy"
+        finally:
+            StrategyFactory.unregister("GENERATED")
+
+    def test_register_rejects_an_incompatible_strategy_signature(self):
+        class IncompatibleEngine:
+            def run_session(self, data):
+                return []
+
+        with pytest.raises(TypeError, match="must accept"):
+            StrategyFactory.register("INCOMPATIBLE", IncompatibleEngine)
 
     def test_available_includes_default(self):
         available = StrategyFactory.available()
@@ -418,6 +488,21 @@ class TestKPICalculator:
         assert kpis.final_equity == pytest.approx(10_000 + 150 - 50 + 150)
         # Expectancy = (0.667 × 3) - (0.333 × 1) > 0
         assert kpis.expectancy_r > 0
+
+    def test_flat_trade_does_not_count_as_an_implicit_loss(self):
+        calc = ORBKPICalculator()
+        trades = [
+            self._make_trade("win_tp", 3.0, 150.0),
+            self._make_trade("expired", 0.0, 0.0),
+        ]
+
+        kpis = calc.compute(trades, 10_000.0, 2)
+
+        assert kpis.total_trades == 2
+        assert kpis.wins == 1
+        assert kpis.losses == 0
+        assert kpis.win_rate == 1.0
+        assert kpis.expectancy_r == 3.0
 
     def test_indicators_atr(self):
         """ATR computation sanity check."""

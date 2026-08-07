@@ -98,6 +98,7 @@ if (Test-Path $backendPython) {
         bash -c "cd '$backendPath' && ${backendEnvVar}'$backendPython' -m uvicorn app.main:sio_app --reload --reload-dir app --host 0.0.0.0 --port 8282 > /dev/null 2>&1 &"
     } else {
         $backendEnvCommand = if ($portfolioCppReady) { "`$env:PORTFOLIO_CPP_SERVICE_URL = '$portfolioCppUrl'; " } else { "Remove-Item Env:PORTFOLIO_CPP_SERVICE_URL -ErrorAction SilentlyContinue; " }
+        $backendEnvCommand += "`$env:API_ENABLE_BROKER_CONNECTIONS = 'false'; `$env:API_ENABLE_SCHEDULER = 'false'; `$env:EXECUTION_GATEWAY_URL = 'http://127.0.0.1:8293'; "
         Start-Process powershell -ArgumentList "-NoExit", "-Command", "Set-Location '$backendPath'; $backendEnvCommand& '$backendPython' -m uvicorn app.main:sio_app --reload --reload-dir app --host 0.0.0.0 --port 8282" -WindowStyle Normal
     }
 }
@@ -141,26 +142,32 @@ else {
     Write-Host " - ERROR: No se encontró el directorio frontend en $frontendPath" -ForegroundColor Red
 }
 
-# --- Microservicios de Mercado (Kafka-aware) ---
-Write-Host "`n[5/7] Verificando Market Data Gateway..." -ForegroundColor White
-$gatewayFile = Join-Path $backendPath "services" | Join-Path -ChildPath "market_data_gateway" | Join-Path -ChildPath "main.py"
-if (Test-Path $gatewayFile) {
-    Write-Host " - Iniciando Market Data Gateway..." -ForegroundColor Green
-    Start-Process powershell -ArgumentList "-NoExit", "-Command", "`$env:PYTHONUTF8=1; Set-Location '$backendPath'; & '$backendPython' '$gatewayFile'" -WindowStyle Minimized
+# --- Procesos desacoplados ---
+Write-Host "`n[5/7] Verificando Market Data Service (Puerto 8291)..." -ForegroundColor White
+if (Test-PortInUse 8291) {
+    Write-Host " - Market Data ya esta activo." -ForegroundColor Green
+}
+else {
+    Start-Process powershell -ArgumentList "-NoProfile", "-Command", "`$env:PYTHONUTF8=1; Set-Location '$backendPath'; & '$backendPython' -m uvicorn services.market_data_gateway.main:app --host 0.0.0.0 --port 8291" -WindowStyle Hidden
+    Write-Host " - Market Data iniciado como single-writer + outbox." -ForegroundColor Green
 }
 
-Write-Host "[6/7] Verificando Storage Service (Data Lake)..." -ForegroundColor White
-$storageFile = Join-Path $backendPath "services" | Join-Path -ChildPath "storage_service" | Join-Path -ChildPath "main.py"
-if (Test-Path $storageFile) {
-    Write-Host " - Iniciando Storage Service..." -ForegroundColor Green
-    Start-Process powershell -ArgumentList "-NoExit", "-Command", "`$env:PYTHONUTF8=1; Set-Location '$backendPath'; & '$backendPython' '$storageFile'" -WindowStyle Minimized
+Write-Host "[6/7] Verificando Analysis Worker (Puerto 8292)..." -ForegroundColor White
+if (Test-PortInUse 8292) {
+    Write-Host " - Analysis Worker ya esta activo." -ForegroundColor Green
+}
+else {
+    Start-Process powershell -ArgumentList "-NoProfile", "-Command", "`$env:PYTHONUTF8=1; Set-Location '$backendPath'; & '$backendPython' -m uvicorn services.strategy_engine.main:app --host 0.0.0.0 --port 8292" -WindowStyle Hidden
+    Write-Host " - Analysis Worker iniciado con contratos Kafka v1." -ForegroundColor Green
 }
 
-Write-Host "[7/7] Verificando Strategy Engine (Live Trading)..." -ForegroundColor White
-$strategyFile = Join-Path $backendPath "services" | Join-Path -ChildPath "strategy_engine" | Join-Path -ChildPath "main.py"
-if (Test-Path $strategyFile) {
-    Write-Host " - Iniciando Strategy Engine..." -ForegroundColor Green
-    Start-Process powershell -ArgumentList "-NoExit", "-Command", "`$env:PYTHONUTF8=1; Set-Location '$backendPath'; & '$backendPython' '$strategyFile'" -WindowStyle Minimized
+Write-Host "[7/7] Verificando Execution Gateway MT5 (Puerto 8293)..." -ForegroundColor White
+if (Test-PortInUse 8293) {
+    Write-Host " - Execution Gateway ya esta activo." -ForegroundColor Green
+}
+else {
+    Start-Process powershell -ArgumentList "-NoProfile", "-Command", "`$env:PYTHONUTF8=1; Set-Location '$backendPath'; & '$backendPython' -m uvicorn services.execution_gateway.main:app --host 127.0.0.1 --port 8293" -WindowStyle Hidden
+    Write-Host " - Execution Gateway iniciado en el host Windows." -ForegroundColor Green
 }
 
 Write-Host "`n¡Chequeo completado!" -ForegroundColor Yellow
@@ -174,5 +181,8 @@ else {
 }
 Write-Host "Backend:    http://localhost:8282" -ForegroundColor Cyan
 Write-Host "Frontend:   http://localhost:3309" -ForegroundColor Cyan
+Write-Host "Market Data:http://localhost:8291" -ForegroundColor Cyan
+Write-Host "Analysis:   http://localhost:8292" -ForegroundColor Cyan
+Write-Host "Execution:  http://localhost:8293" -ForegroundColor Cyan
 Write-Host "Swagger UI: http://localhost:6900/docs" -ForegroundColor DarkCyan
 Write-Host "------------------------------------------"

@@ -106,16 +106,21 @@ class RealtimeService:
             return
 
         logger.debug(f"[Realtime] Broadcasting prices for {len(self.active_symbols)} symbols")
-        for symbol in list(self.active_symbols):
-            if ibkr_service.has_fresh_tick(symbol):
-                continue
 
+        # Filter out symbols that already have fresh IBKR ticks
+        symbols_to_fetch = [
+            s for s in list(self.active_symbols)
+            if not ibkr_service.has_fresh_tick(s)
+        ]
+
+        if not symbols_to_fetch:
+            return
+
+        async def _fetch_and_emit(symbol: str):
             try:
-                # Fetch quote via existing Clean Architecture Use Case
                 quote_data = await get_quote.execute(symbol)
                 if quote_data and "price" in quote_data:
-                    # Emit to a "room" named after the symbol
-                    await sio.emit("price_update", {
+                    payload = {
                         "symbol": symbol,
                         "price": quote_data["price"],
                         "change": quote_data.get("change", 0),
@@ -123,18 +128,14 @@ class RealtimeService:
                         "timestamp": time.time(),
                         "source": quote_data.get("source", "fallback"),
                         "live": False,
-                    }, room=symbol)
-                    await self._notify_tick_listeners({
-                        "symbol": symbol,
-                        "price": quote_data["price"],
-                        "change": quote_data.get("change", 0),
-                        "changePercent": quote_data.get("changePercentage", 0),
-                        "timestamp": time.time(),
-                        "source": quote_data.get("source", "fallback"),
-                        "live": False,
-                    })
+                    }
+                    await sio.emit("price_update", payload, room=symbol)
+                    await self._notify_tick_listeners(payload)
             except Exception as e:
                 logger.error(f"[Realtime] Error fetching {symbol} for broadcast: {e}")
+
+        # Fire ALL fetches concurrently instead of one-by-one
+        await asyncio.gather(*[_fetch_and_emit(s) for s in symbols_to_fetch])
 
     def get_status(self) -> Dict[str, Any]:
         return {

@@ -44,6 +44,7 @@ export function deriveLiveKpis(trades: LiveTrade[], initialEquity: number): KpiS
             profit_factor: 0,
             max_drawdown_pct: 0,
             sharpe_ratio: 0,
+            sortino_ratio: 0,
             avg_rr_realized: 0,
             total_r: 0,
             final_equity: initialEquity,
@@ -77,11 +78,18 @@ export function deriveLiveKpis(trades: LiveTrade[], initialEquity: number): KpiS
     });
 
     let sharpe = 0;
+    let sortino = 0;
     if (returns.length > 1) {
         const avg = returns.reduce((sum, value) => sum + value, 0) / returns.length;
         const variance = returns.reduce((sum, value) => sum + ((value - avg) ** 2), 0) / (returns.length - 1);
         const std = Math.sqrt(variance);
         sharpe = std > 0 ? (avg / std) * Math.sqrt(252) : 0;
+        const downsideVariance = returns.reduce(
+            (sum, value) => sum + (Math.min(value, 0) ** 2),
+            0,
+        ) / returns.length;
+        const downsideDeviation = Math.sqrt(downsideVariance);
+        sortino = downsideDeviation > 0 ? (avg / downsideDeviation) * Math.sqrt(252) : 0;
     }
 
     const totalR = trades.reduce((sum, trade) => sum + trade.pnl_r, 0);
@@ -96,6 +104,7 @@ export function deriveLiveKpis(trades: LiveTrade[], initialEquity: number): KpiS
         profit_factor: Number.isFinite(profitFactor) ? Number(profitFactor.toFixed(4)) : Number.POSITIVE_INFINITY,
         max_drawdown_pct: Number(maxDrawdown.toFixed(4)),
         sharpe_ratio: Number(sharpe.toFixed(4)),
+        sortino_ratio: Number(sortino.toFixed(4)),
         avg_rr_realized: Number(avgRR.toFixed(4)),
         total_r: Number(totalR.toFixed(4)),
         final_equity: Number(equity.toFixed(2)),

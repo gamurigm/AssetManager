@@ -1,0 +1,12 @@
+venv/
+.env
+ .env
+data/
+reports/
+tests/
+.cache/
+.rate_limit_cache/
+__pycache__/
+*.pyc
+*.duckdb
+*.sqlite3

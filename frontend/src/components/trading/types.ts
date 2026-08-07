@@ -24,6 +24,10 @@ export type LiveTrade = {
     outcome: string;
     pnl_r: number;
     pnl_usd: number;
+    gross_pnl_usd?: number;
+    fees_usd?: number;
+    entry_price?: number;
+    execution_note?: string;
     exit_price?: number;
     exit_timestamp?: string;
 };

@@ -10,8 +10,10 @@ Dependencies:
 """
 
 from __future__ import annotations
-from typing import List, Dict, Any, Union, Tuple
+from typing import List, Union, Tuple
 import numpy as np
+
+from .models import CandleRow
 
 try:
     import jesse_rust
@@ -22,13 +24,9 @@ try:
     from jesse_rust import ema as ema_rust
     from jesse_rust import wma as wma_rust
     from jesse_rust import rsi as rsi_rust
-    from jesse_rust import atr as atr_rust
     from jesse_rust import bollinger_bands as bb_rust
 except ImportError:
     raise ImportError("CRITICAL: jesse-rust is required but not installed. Install via 'pip install jesse-rust'.")
-
-# CandleRow shape: {timestamp: str, open: float, high: float, low: float, close: float, volume: int}
-CandleRow = Dict[str, Any]
 
 def candles_to_numpy(candles: List[CandleRow]) -> np.ndarray:
     """
@@ -63,7 +61,7 @@ def candles_to_numpy(candles: List[CandleRow]) -> np.ndarray:
 # --------------------------------------------------------------------------- #
 
 def compute_ATR(candles: Union[List[CandleRow], np.ndarray], period: int = 14) -> float:
-    """Average True Range (Wilder's Smoothing) via Rust or CUDA"""
+    """Average True Range using deterministic Wilder smoothing."""
     if isinstance(candles, list): candles = candles_to_numpy(candles)
     if len(candles) < period + 1: return 0.0
 
@@ -83,9 +81,21 @@ def compute_ATR(candles: Union[List[CandleRow], np.ndarray], period: int = 14) -
         except ImportError:
             pass  # Fall through to jesse_rust
 
-    # jesse_rust.atr expects the full candles array
-    res = atr_rust(candles, period)
-    return res[-1] if isinstance(res, np.ndarray) else res
+    highs = candles[:, 3]
+    lows = candles[:, 4]
+    closes = candles[:, 2]
+    true_ranges = np.empty(len(candles), dtype=np.float64)
+    true_ranges[0] = highs[0] - lows[0]
+    true_ranges[1:] = np.maximum.reduce([
+        highs[1:] - lows[1:],
+        np.abs(highs[1:] - closes[:-1]),
+        np.abs(lows[1:] - closes[:-1]),
+    ])
+
+    atr_value = float(np.mean(true_ranges[:period]))
+    for true_range in true_ranges[period:]:
+        atr_value = ((atr_value * (period - 1)) + float(true_range)) / period
+    return atr_value
 
 def rsi(candles: Union[List[CandleRow], np.ndarray], period: int = 14) -> float:
     """Relative Strength Index via Rust"""

@@ -6,7 +6,7 @@ Factory Pattern + Open/Closed Principle:
   - The factory itself never changes — it's closed for modification, open for extension.
 
 Usage:
-    engine = StrategyFactory.create("ORB_FVG_ENGULFING", config)
+    engine = StrategyFactory.create("ORB_FVG_ENGULFING")
 
 To add a new strategy in the future:
     StrategyFactory.register("VWAP_PULLBACK", VWAPPullbackEngine)
@@ -14,9 +14,10 @@ To add a new strategy in the future:
 
 from __future__ import annotations
 
-from typing import Dict, Type, Optional
+import inspect
+import os
+from typing import Dict, Type
 from .interfaces import IStrategyEngine
-from .models import StrategyConfig
 from .orb_fvg_engine import ORBFVGEngine
 from .ict_vp_engine import IctVpEngine
 
@@ -33,23 +34,21 @@ class StrategyFactory:
     }
 
     @classmethod
-    def create(cls, name: str, config: Optional[StrategyConfig] = None) -> IStrategyEngine:
+    def create(cls, name: str) -> IStrategyEngine:
         """
         Instantiate a strategy engine by name.
 
         Args:
             name:   Registry key, e.g. "ORB_FVG_ENGULFING".
-            config: Not passed to __init__ (engines are stateless);
-                    config is passed per run_session() call.
-
         Raises:
             ValueError: When the strategy name is not registered.
         """
-        klass = cls._registry.get(name)
+        normalized_name = name.strip().upper()
+        klass = cls._registry.get(normalized_name)
         if klass is None:
             available = ", ".join(cls._registry.keys())
             raise ValueError(
-                f"Strategy '{name}' is not registered. Available: {available}"
+                f"Strategy '{normalized_name}' is not registered. Available: {available}"
             )
         return klass()
 
@@ -61,7 +60,29 @@ class StrategyFactory:
         """
         if not callable(engine_class):
             raise TypeError(f"engine_class must be a class, got {type(engine_class)}")
-        cls._registry[name] = engine_class
+        normalized_name = name.strip().upper()
+        if not normalized_name:
+            raise ValueError("strategy name cannot be empty")
+        instance = engine_class()
+        if not isinstance(instance, IStrategyEngine):
+            raise TypeError("engine_class must implement run_session")
+        signature = inspect.signature(instance.run_session)
+        parameters = list(signature.parameters.values())
+        accepts_varargs = any(
+            parameter.kind is inspect.Parameter.VAR_POSITIONAL
+            for parameter in parameters
+        )
+        if not accepts_varargs and len(parameters) != 4:
+            raise TypeError(
+                "run_session must accept m5_candles, m1_candles, "
+                "account_size, and config"
+            )
+        cls._registry[normalized_name] = engine_class
+
+    @classmethod
+    def unregister(cls, name: str) -> None:
+        """Remove a non-core registration, mainly for isolated development/tests."""
+        cls._registry.pop(name.strip().upper(), None)
 
     @classmethod
     def load_from_code(cls, strategy_name: str, code: str) -> None:
@@ -69,49 +90,46 @@ class StrategyFactory:
         Dynamically loads a Python code string defining an IStrategyEngine.
         This allows the AI agent to write strategies and immediately test them.
         """
-        import sys
-        import types
-        import inspect
+        if os.getenv("ALLOW_DYNAMIC_STRATEGIES", "false").lower() != "true":
+            raise PermissionError(
+                "Dynamic strategy loading is disabled. "
+                "Set ALLOW_DYNAMIC_STRATEGIES=true only in an isolated development environment."
+            )
+
         from .interfaces import IStrategyEngine
         
-        # Create a dynamic module
         module_name = f"dynamic_strategy_{strategy_name.lower().replace(' ', '_')}"
-        new_module = types.ModuleType(module_name)
+        env = {
+            "__builtins__": __builtins__,
+            "__name__": module_name,
+            "__package__": __package__,
+            "IStrategyEngine": IStrategyEngine,
+        }
         
-        # We need to make sure the dynamically loaded code can resolve local imports 
-        # (like `from .interfaces import IStrategyEngine`)
-        # To do this safely, we execute the code in a dictionary that has the current globals
-        env = globals().copy()
-        
-        try:
-            # Execute the code in this environment
-            exec(code, env)
-            
-            # Find the class that implements IStrategyEngine
-            strategy_class = None
-            for name, obj in env.items():
-                if inspect.isclass(obj) and obj is not IStrategyEngine:
-                    # Check if it inherits from IStrategyEngine, or has the required methods
-                    # Using a duck-typing approach since direct inheritance check might fail across dynamic modules
-                    if hasattr(obj, 'run_session') and callable(getattr(obj, 'run_session')):
-                        strategy_class = obj
-                        break
-                        
-            if not strategy_class:
-                raise ValueError(f"No class implementing `run_session` found in the provided code for {strategy_name}.")
-                
-            # Register it
-            cls.register(strategy_name, strategy_class)
-            print(f"[StrategyFactory] Successfully loaded and registered dynamic strategy: {strategy_name}")
-            
-        except Exception as e:
-            print(f"[StrategyFactory] Failed to load dynamic strategy {strategy_name}: {e}")
-            raise e
+        exec(code, env)
+
+        strategy_class = next(
+            (
+                obj
+                for obj in env.values()
+                if inspect.isclass(obj)
+                and obj is not IStrategyEngine
+                and obj.__module__ == module_name
+                and hasattr(obj, "run_session")
+                and callable(getattr(obj, "run_session"))
+            ),
+            None,
+        )
+        if strategy_class is None:
+            raise ValueError(
+                f"No class implementing run_session found in code for {strategy_name}."
+            )
+        cls.register(strategy_name, strategy_class)
 
     @classmethod
     def available(cls) -> list:
         """Return list of registered strategy names."""
-        return list(cls._registry.keys())
+        return sorted(cls._registry.keys())
 
     @classmethod
     def auto_discover(cls):
@@ -132,6 +150,7 @@ class StrategyFactory:
             "interfaces.py", "models.py", "kpi_calculator.py",
             "circuit_breaker.py", "indicators.py", "volume_profile.py",
             "bootstrap_analyzer.py", "stationary_bootstrap.py", "purged_kfold.py",
+            "execution_model.py",
             # We already hardcoded these in _registry at the top:
             "orb_fvg_engine.py", "ict_vp_engine.py"
         }
@@ -154,10 +173,3 @@ class StrategyFactory:
                 print(f"[StrategyFactory] Auto-discovered and loaded strategy: {strategy_name}")
             except Exception as e:
                 print(f"[StrategyFactory] Error auto-discovering {file_name}: {e}")
-
-# Run auto-discovery on module import Uvicorn starts
-try:
-    StrategyFactory.auto_discover()
-except Exception as e:
-    print(f"[StrategyFactory] Early auto-discovery warning: {e}")
-

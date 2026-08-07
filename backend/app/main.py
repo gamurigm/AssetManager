@@ -16,7 +16,7 @@ load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 import logfire
 import socketio
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from contextlib import asynccontextmanager
@@ -55,7 +55,7 @@ except ImportError:
 
 # App setup
 from .core.config import settings
-from .api.routes import auth, clients, portfolios, trading, agents, market_data, openbb_config, watchlist, analytics, simulation, bybit, finviz, fmp, openbb_widgets, macro_economy, open_claw
+from .api.routes import auth, clients, portfolios, trading, mt5, agents, market_data, openbb_config, watchlist, analytics, simulation, bybit, finviz, fmp, openbb_widgets, macro_economy, open_claw
 
 # Socket.IO setup
 sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
@@ -67,6 +67,9 @@ from .services.ctrader_service import ctrader_service
 from .services.ibkr_service import ibkr_service
 from .services.simulation_service import simulation_service
 from .services.portfolio_policy_realtime_service import portfolio_policy_realtime_service
+from .core.runtime_policy import APIRuntimePolicy
+
+runtime_policy = APIRuntimePolicy.from_env()
 
 # Suppress Twisted retry noise at module load (cTrader uses Twisted internally)
 import logging as _logging
@@ -76,23 +79,31 @@ _logging.getLogger("twisted").setLevel(_logging.CRITICAL)
 async def lifespan(app: FastAPI):
     # Startup
     realtime_service.configure_streaming(sio)
-    kafka_consumer_service.start(sio)
+    if runtime_policy.kafka_fanout_enabled:
+        kafka_consumer_service.start(sio)
     portfolio_policy_realtime_service.configure(sio)
     realtime_service.add_tick_listener(portfolio_policy_realtime_service.handle_price_update)
     simulation_service.configure_realtime(sio)
-    start_scheduler(sio) # Pass SIO to scheduler for broadcasting
-    ctrader_service.start()
-    
-    # Attempt IBKR connection in background
-    asyncio.create_task(ibkr_service.connect())
+    if runtime_policy.scheduler_enabled:
+        start_scheduler(sio)
+
+    ibkr_connect_task = None
+    if runtime_policy.broker_connections_enabled:
+        ctrader_service.start()
+        ibkr_connect_task = asyncio.create_task(ibkr_service.connect())
     
     yield
     # Shutdown
-    ibkr_service.disconnect()
-    kafka_consumer_service.stop()
+    if runtime_policy.broker_connections_enabled:
+        ibkr_service.disconnect()
+        if ibkr_connect_task and not ibkr_connect_task.done():
+            ibkr_connect_task.cancel()
+    if runtime_policy.kafka_fanout_enabled:
+        kafka_consumer_service.stop()
     realtime_service.remove_tick_listener(portfolio_policy_realtime_service.handle_price_update)
     realtime_service.shutdown_streaming()
-    stop_scheduler()
+    if runtime_policy.scheduler_enabled:
+        stop_scheduler()
 
 # FastAPI app
 app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
@@ -132,6 +143,7 @@ app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["aut
 app.include_router(clients.router, prefix=f"{settings.API_V1_STR}/clients", tags=["clients"])
 app.include_router(portfolios.router, prefix=f"{settings.API_V1_STR}/portfolios", tags=["portfolios"])
 app.include_router(trading.router, prefix=f"{settings.API_V1_STR}/trading", tags=["trading"])
+app.include_router(mt5.router, prefix=f"{settings.API_V1_STR}/trading/mt5", tags=["trading", "mt5", "experts"])
 app.include_router(agents.router, prefix=f"{settings.API_V1_STR}/agents", tags=["agents"])
 app.include_router(market_data.router, prefix=f"{settings.API_V1_STR}/market", tags=["market"])
 app.include_router(watchlist.router, prefix=f"{settings.API_V1_STR}/watchlist", tags=["watchlist"])
@@ -149,6 +161,39 @@ app.include_router(open_claw.router, prefix=f"{settings.API_V1_STR}/openclaw", t
 async def root():
     logfire.info("Root endpoint accessed via diagnostic check")
     return {"message": "MMAM Intelligence Core Running", "version": "1.0.0", "logging": "enabled"}
+
+
+@app.get("/health/live")
+async def health_live():
+    return {"service": "api-bff", "status": "alive"}
+
+
+@app.get("/health/ready")
+async def health_ready():
+    dependencies = {
+        "kafka_fanout": {
+            "enabled": runtime_policy.kafka_fanout_enabled,
+            "running": kafka_consumer_service.is_running,
+            "error": kafka_consumer_service.last_error,
+        },
+        "embedded_scheduler": runtime_policy.scheduler_enabled,
+        "embedded_brokers": runtime_policy.broker_connections_enabled,
+    }
+    kafka_ready = (
+        not runtime_policy.kafka_fanout_enabled
+        or (
+            kafka_consumer_service.is_running
+            and kafka_consumer_service.last_error is None
+        )
+    )
+    snapshot = {
+        "service": "api-bff",
+        "status": "ready" if kafka_ready else "not_ready",
+        "dependencies": dependencies,
+    }
+    if not kafka_ready:
+        raise HTTPException(status_code=503, detail=snapshot)
+    return snapshot
 
 # Socket.IO events
 from .core.logging import logger

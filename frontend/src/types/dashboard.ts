@@ -15,7 +15,7 @@ export interface DashboardHolding {
     purchaseDate?: string;
 }
 
-export type SidebarTab = 'watchlist' | 'indicators' | 'alerts' | 'history' | 'trading';
+export type SidebarTab = 'watchlist' | 'indicators' | 'alerts' | 'history' | 'trading' | 'experts';
 
 export type PanelId = 'equity-curve' | 'holdings' | 'sector' | 'treemap' | 'economics' | 'activity' | 'factor-analysis';
 

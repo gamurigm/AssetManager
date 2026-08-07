@@ -50,12 +50,13 @@ class ORBKPICalculator:
         total_trades = len(trades)
         n_wins   = len(wins)
         n_losses = len(losses)
-        win_rate = n_wins / total_trades if total_trades > 0 else 0.0
+        resolved_trades = n_wins + n_losses
+        win_rate = n_wins / resolved_trades if resolved_trades > 0 else 0.0
 
         # — Expectancy (in R) —
         avg_win_r  = statistics.mean(t.pnl_r for t in wins)   if wins   else 0.0
         avg_loss_r = statistics.mean(abs(t.pnl_r) for t in losses) if losses else 0.0
-        loss_rate  = 1.0 - win_rate
+        loss_rate  = n_losses / resolved_trades if resolved_trades > 0 else 0.0
         expectancy_r = (win_rate * avg_win_r) - (loss_rate * avg_loss_r)
 
         # — Profit Factor —
@@ -93,7 +94,8 @@ class ORBKPICalculator:
         running_equity_for_ret = initial_equity
         
         # Add active days
-        for pnl in daily_pnl.values():
+        for day in sorted(daily_pnl):
+            pnl = daily_pnl[day]
             daily_returns.append(pnl / running_equity_for_ret if running_equity_for_ret > 0 else 0.0)
             running_equity_for_ret += pnl
             

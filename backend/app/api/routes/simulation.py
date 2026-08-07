@@ -10,14 +10,16 @@ Follows the same style as analytics.py and market_data.py:
     - All heavy lifting delegated to SimulationService (Façade).
 """
 
-import asyncio
+from datetime import date
+import re
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel, Field
-from typing import Optional, List
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from typing import Literal, Optional, List
 import logfire
 
 from ...agents.strategies.backtest_runner import BacktestConfig
+from ...agents.strategies.engine import StrategyFactory
 from ...services.simulation_service import simulation_service
 
 router = APIRouter()
@@ -29,21 +31,37 @@ router = APIRouter()
 
 class StrategyParamsRequest(BaseModel):
     """Optional override for any strategy parameter. All are optional."""
-    min_range_pips: Optional[float] = None
-    vol_ruptura_ratio: Optional[float] = None
-    p_cuerpo_min: Optional[float] = None
-    p_vol_min: Optional[float] = None
-    min_fvg_size_atr: Optional[float] = None
-    wait_retest_max_m1: Optional[int] = None
-    rr_target: Optional[float] = None
-    buffer_sl_factor: Optional[float] = None
-    risk_per_trade: Optional[float] = None
+    model_config = ConfigDict(extra="forbid")
+
+    min_range_pips: Optional[float] = Field(default=None, ge=0)
+    vol_ruptura_ratio: Optional[float] = Field(default=None, gt=0, le=10)
+    body_ratio_breakout: Optional[float] = Field(default=None, ge=0, le=1)
+    min_fvg_size_atr: Optional[float] = Field(default=None, ge=0, le=10)
+    wait_fvg_max_m1: Optional[int] = Field(default=None, ge=1, le=240)
+    k1_atr_fcr: Optional[float] = Field(default=None, ge=0, le=10)
+    k2_body_ratio: Optional[float] = Field(default=None, ge=0, le=1)
+    k3_vol_ratio_fcr: Optional[float] = Field(default=None, ge=0, le=10)
+    p_cuerpo_min: Optional[float] = Field(default=None, ge=0, le=10)
+    p_vol_min: Optional[float] = Field(default=None, ge=0, le=10)
+    wait_retest_max_m1: Optional[int] = Field(default=None, ge=1, le=240)
+    rr_target: Optional[float] = Field(default=None, gt=0, le=20)
+    buffer_sl_factor: Optional[float] = Field(default=None, ge=0, le=5)
+    max_spread: Optional[float] = Field(default=None, ge=0)
+    swing_lookback: Optional[int] = Field(default=None, ge=1, le=240)
+    risk_per_trade: Optional[float] = Field(default=None, gt=0, le=0.05)
+    max_trades_per_day: Optional[int] = Field(default=None, ge=1, le=20)
+    max_concurrent_trades: Optional[int] = Field(default=None, ge=1, le=1)
+    max_daily_losses: Optional[int] = Field(default=None, ge=1, le=20)
+    max_daily_drawdown_pct: Optional[float] = Field(default=None, gt=0, le=1)
+    max_monthly_drawdown_pct: Optional[float] = Field(default=None, gt=0, le=1)
 
     def to_dict(self) -> dict:
         return {k: v for k, v in self.model_dump().items() if v is not None}
 
 
 class SimulationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     symbol: str = Field(..., examples=["AAPL"])
     start_date: str = Field(..., examples=["2025-11-01"])
     end_date: str = Field(..., examples=["2025-11-30"])
@@ -51,10 +69,42 @@ class SimulationRequest(BaseModel):
     strategy_name: str = Field(default="ORB_FVG_ENGULFING")
     strategy_params: Optional[StrategyParamsRequest] = None
     pip_value: float = Field(default=1.0, gt=0)
+    fixed_slippage_price: float = Field(default=0.0, ge=0)
+    commission_per_trade: float = Field(default=0.0, ge=0)
+    intrabar_fill_policy: Literal["conservative", "optimistic"] = "conservative"
+    mark_expired_to_market: bool = True
     run_bootstrap: bool = Field(default=False)
-    bootstrap_iterations: int = Field(default=1000, gt=0)
+    bootstrap_iterations: int = Field(default=1000, gt=0, le=100_000)
     debug_lookbehind_guard: bool = Field(default=False)
     use_atr_slippage: bool = Field(default=False)
+    atr_slippage_factor: float = Field(default=0.20, ge=0, le=5)
+
+    @field_validator("symbol")
+    @classmethod
+    def normalize_symbol(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if not re.fullmatch(r"[A-Z0-9._=-]{1,32}", normalized):
+            raise ValueError("symbol contains unsupported characters")
+        return normalized
+
+    @field_validator("strategy_name")
+    @classmethod
+    def normalize_strategy_name(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if not re.fullmatch(r"[A-Z0-9_]{2,64}", normalized):
+            raise ValueError("strategy_name contains unsupported characters")
+        return normalized
+
+    @model_validator(mode="after")
+    def validate_date_range(self):
+        try:
+            start = date.fromisoformat(self.start_date)
+            end = date.fromisoformat(self.end_date)
+        except ValueError as exc:
+            raise ValueError("start_date and end_date must use YYYY-MM-DD") from exc
+        if start >= end:
+            raise ValueError("start_date must be before end_date")
+        return self
 
 
 class TradeRecordResponse(BaseModel):
@@ -69,6 +119,10 @@ class TradeRecordResponse(BaseModel):
     outcome: str
     pnl_r: float
     pnl_usd: float
+    gross_pnl_usd: float
+    fees_usd: float
+    entry_price: Optional[float] = None
+    execution_note: str = ""
 
 
 class SimulationRunResponse(BaseModel):
@@ -102,27 +156,31 @@ async def run_simulation(request: SimulationRequest):
     - Applies the ORB FVG Engulfing strategy session by session.
     - Returns KPIs: win_rate, expectancy, profit_factor, max_drawdown, sharpe, CAGR.
     """
-    if request.start_date >= request.end_date:
-        raise HTTPException(status_code=400, detail="start_date must be before end_date")
-
-    params = request.strategy_params.to_dict() if request.strategy_params else {}
-    config = BacktestConfig(
-        symbol=request.symbol,
-        start_date=request.start_date,
-        end_date=request.end_date,
-        account_size=request.account_size,
-        strategy_name=request.strategy_name,
-        strategy_params=params,
-        pip_value=request.pip_value,
-        run_bootstrap=request.run_bootstrap,
-        bootstrap_iterations=request.bootstrap_iterations,
-        debug_lookbehind_guard=request.debug_lookbehind_guard,
-        use_atr_slippage=request.use_atr_slippage,
-    )
-
     try:
-        sim_id = simulation_service.pre_register(request.symbol, request.strategy_name)
-        asyncio.create_task(simulation_service.run_backtest_background(sim_id, config))
+        if request.strategy_name not in StrategyFactory.available():
+            raise ValueError(
+                f"Strategy '{request.strategy_name}' is not registered"
+            )
+        params = request.strategy_params.to_dict() if request.strategy_params else {}
+        config = BacktestConfig(
+            symbol=request.symbol,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            account_size=request.account_size,
+            strategy_name=request.strategy_name,
+            strategy_params=params,
+            pip_value=request.pip_value,
+            fixed_slippage_price=request.fixed_slippage_price,
+            commission_per_trade=request.commission_per_trade,
+            intrabar_fill_policy=request.intrabar_fill_policy,
+            mark_expired_to_market=request.mark_expired_to_market,
+            run_bootstrap=request.run_bootstrap,
+            bootstrap_iterations=request.bootstrap_iterations,
+            debug_lookbehind_guard=request.debug_lookbehind_guard,
+            use_atr_slippage=request.use_atr_slippage,
+            atr_slippage_factor=request.atr_slippage_factor,
+        )
+        sim_id = simulation_service.start_background(config)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
@@ -133,7 +191,7 @@ async def run_simulation(request: SimulationRequest):
         sim_id=sim_id,
         symbol=request.symbol,
         strategy=request.strategy_name,
-        status="running",
+        status="queued",
     )
 
 
@@ -142,12 +200,23 @@ async def get_simulation_result(sim_id: str):
     """
     Retrieve the full result of a previously executed backtest, including trade-level detail.
     """
-    if simulation_service.is_pending(sim_id):
+    job = simulation_service.get_job(sim_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Simulation '{sim_id}' not found.")
+    if job["status"] in {"queued", "running"}:
         raise HTTPException(status_code=202, detail=f"Simulation '{sim_id}' is still running.")
+    if job["status"] == "failed":
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": f"Simulation '{sim_id}' failed.",
+                "error": job.get("error"),
+            },
+        )
 
     result = simulation_service.get_result(sim_id)
     if result is None:
-        raise HTTPException(status_code=404, detail=f"Simulation '{sim_id}' not found.")
+        raise HTTPException(status_code=500, detail=f"Simulation '{sim_id}' has no result.")
 
     trades_out = [
         TradeRecordResponse(
@@ -162,6 +231,10 @@ async def get_simulation_result(sim_id: str):
             outcome=t.outcome,
             pnl_r=t.pnl_r,
             pnl_usd=t.pnl_usd,
+            gross_pnl_usd=t.gross_pnl_usd,
+            fees_usd=t.fees_usd,
+            entry_price=t.entry_price,
+            execution_note=t.execution_note,
         )
         for t in result.trades
     ]
@@ -276,4 +349,3 @@ async def run_iv_regime(request: IVRegimeRequest):
     except Exception as e:
         logfire.error(f"IV Regime backtest error: {e}")
         raise HTTPException(status_code=500, detail=f"IV Regime error: {str(e)}")
-

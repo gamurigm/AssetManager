@@ -12,15 +12,12 @@ Logic:
 
 from __future__ import annotations
 
-import uuid
-from datetime import datetime, timezone
-from typing import List, Optional, Dict, Any
+from typing import List, Optional
 
-from .models import StrategyConfig, FVG, TradeSignal
+from .models import CandleRow, StrategyConfig, FVG, TradeSignal
+from .position_sizer import FixedFractionPositionSizer
 from .volume_profile import VolumeProfileCalculator, VolumeProfileResult
-from .indicators import compute_ATR, compute_avg_volume, is_bullish, is_bearish
-
-CandleRow = Dict[str, Any]
+from .indicators import compute_ATR, is_bullish, is_bearish
 
 class ICTSessionState:
     def __init__(self):
@@ -44,21 +41,21 @@ class IctVpEngine:
         m1_candles: List[CandleRow],
         account_size: float,
         config: StrategyConfig,
-    ) -> Optional[TradeSignal]:
+    ) -> List[TradeSignal]:
         
         if len(m1_candles) < 30: # Need some data to build a profile and swings
-            return None
+            return []
 
         state = ICTSessionState()
-        atr_m1 = compute_ATR(m1_candles[-20:], period=14)
-        avg_vol_m1 = compute_avg_volume(m1_candles[-20:], period=20)
-        
         prev_candle: Optional[CandleRow] = None
 
         for idx, candle in enumerate(m1_candles):
             if idx < 15: # Skip first 15 mins to let the day develop a bit of structure
                 prev_candle = candle
                 continue
+
+            current_buffer = m1_candles[max(0, idx - 19):idx + 1]
+            atr_m1 = compute_ATR(current_buffer, period=14)
                 
             # 1. Update rolling Volume Profile
             # Note: in real-time, this would be computed up to idx.
@@ -120,11 +117,11 @@ class IctVpEngine:
                             candle, fvg, m1_candles[:idx+1], atr_m1, account_size, config
                         )
                         if signal:
-                            return signal
+                            return [signal]
 
             prev_candle = candle
 
-        return None
+        return []
 
     def _tapped_hvn(self, candle: CandleRow, vp: VolumeProfileResult) -> bool:
         """Check if candle wicks into any HVN edge, POC, VAH, or VAL."""
@@ -195,11 +192,15 @@ class IctVpEngine:
         risk_pips = abs(entry - stop)
         if risk_pips == 0: return None
         
-        risk_amt = account_size * config.risk_per_trade
-        pos_size = risk_amt / risk_pips
-        
+        pos_size = FixedFractionPositionSizer().calculate(
+            account_size,
+            config.risk_per_trade,
+            risk_pips,
+            1.0,
+        )
+
         return TradeSignal(
-            signal_id=f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S')}_ICTVP_{side}_{uuid.uuid4().hex[:4].upper()}",
+            signal_id=f"ICT_VP:{candle['timestamp']}:{side}:{entry:.8f}",
             timestamp=candle["timestamp"],
             direction=side,
             orh=0.0, orl=0.0, # Not strictly ORB

@@ -16,15 +16,15 @@ Entry point: SimulationService (Façade) calls BacktestRunner.run().
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, date, timedelta, timezone
 from typing import List, Optional, Dict
 import logfire
 
 from .engine import (
-    IStrategyEngine, IKPICalculator,
-    StrategyConfig, TradeSignal, TradeRecord, KPIResult, CircuitBreaker,
-    ORBFVGEngine, ORBKPICalculator,
+    IPositionSizer, IStrategyEngine, ITradeExecutionModel, IKPICalculator,
+    ExecutionSettings, StrategyConfig, TradeSignal, TradeRecord, KPIResult, CircuitBreaker,
+    FixedFractionPositionSizer, OHLCExecutionModel, ORBFVGEngine, ORBKPICalculator,
     FoldResult, CrossValidationResult,
 )
 from .engine.purged_kfold import PurgedKFoldSplitter, WalkForwardSplitter
@@ -49,13 +49,51 @@ class BacktestConfig:
     bootstrap_iterations: int = 10000
     # --- Quality Assurance & Auditing ---
     debug_lookbehind_guard: bool = False  # If True, enforces strict temporal access
-    use_atr_slippage: bool = False       # If True, slippage is dynamic (0.2 * ATR)
+    use_atr_slippage: bool = False
+    atr_slippage_factor: float = 0.20
+    fixed_slippage_price: float = 0.0
+    commission_per_trade: float = 0.0
+    intrabar_fill_policy: str = "conservative"
+    mark_expired_to_market: bool = True
     cv_n_splits: int = 5         # K folds (for CV) or num test windows (for WFA)
     cv_embargo_days: int = 5     # calendar days to exclude around each test window (for CV)
     
     # --- Survivorship Bias Protection ---
     # To truly avoid survivorship bias, the `symbol` or universe should reflect
     # Point-in-Time membership (including merged/delisted assets) for any given time t.
+
+    def __post_init__(self) -> None:
+        normalized_symbol = self.symbol.strip().upper()
+        if not normalized_symbol:
+            raise ValueError("symbol cannot be empty")
+        object.__setattr__(self, "symbol", normalized_symbol)
+        normalized_strategy = self.strategy_name.strip().upper()
+        if not normalized_strategy:
+            raise ValueError("strategy_name cannot be empty")
+        object.__setattr__(self, "strategy_name", normalized_strategy)
+        object.__setattr__(self, "strategy_params", dict(self.strategy_params))
+        try:
+            start = date.fromisoformat(self.start_date)
+            end = date.fromisoformat(self.end_date)
+        except ValueError as exc:
+            raise ValueError("start_date and end_date must use YYYY-MM-DD") from exc
+        if start >= end:
+            raise ValueError("start_date must be before end_date")
+        if self.account_size <= 0:
+            raise ValueError("account_size must be greater than zero")
+        if self.pip_value <= 0:
+            raise ValueError("pip_value must be greater than zero")
+        if self.bootstrap_iterations <= 0:
+            raise ValueError("bootstrap_iterations must be greater than zero")
+        if self.atr_slippage_factor < 0:
+            raise ValueError("atr_slippage_factor cannot be negative")
+        ExecutionSettings(
+            slippage_price=self.fixed_slippage_price,
+            commission_per_trade=self.commission_per_trade,
+            intrabar_fill_policy=self.intrabar_fill_policy,
+            mark_expired_to_market=self.mark_expired_to_market,
+        )
+        self.strategy_config()
 
     def strategy_config(self) -> StrategyConfig:
         return StrategyConfig.from_dict(self.strategy_params) if self.strategy_params else StrategyConfig.default()
@@ -75,7 +113,7 @@ class BacktestResult:
     def summary(self) -> dict:
         # Per-trade position sizing summary (capital-normalized metrics)
         executed_trades = [t for t in self.trades if t.outcome != "expired"]
-        risk_pct = 0.005  # Default StrategyConfig.risk_per_trade
+        risk_pct = self.config.strategy_config().risk_per_trade
         risk_per_trade_usd = round(self.config.account_size * risk_pct, 4)
 
         lot_sizes = [t.signal.position_size for t in executed_trades if t.signal.position_size > 0]
@@ -143,6 +181,8 @@ class BacktestRunner:
         on_progress_cb=None,
         on_trade_cb=None,
         on_bootstrap_cb=None,
+        execution_model: Optional[ITradeExecutionModel] = None,
+        position_sizer: Optional[IPositionSizer] = None,
     ):
         # DIP: all dependencies are injected as abstractions
         self._strategy   = strategy
@@ -152,6 +192,8 @@ class BacktestRunner:
         self._on_progress_cb  = on_progress_cb   # (day: int, total: int) -> None
         self._on_trade_cb     = on_trade_cb       # (record: TradeRecord, equity: float) -> None
         self._on_bootstrap_cb = on_bootstrap_cb   # (stats: dict) -> None
+        self._execution_model = execution_model or OHLCExecutionModel()
+        self._position_sizer = position_sizer or FixedFractionPositionSizer()
 
     # ================================================================== #
     #  Public entry point                                                 #
@@ -478,7 +520,7 @@ class BacktestRunner:
         trading_days = 0
         missing_days = 0
         current_equity = run_config.account_size
-        last_month: Optional[int] = None
+        last_month: Optional[tuple[int, int]] = None
 
         breaker = CircuitBreaker(
             max_daily_losses=cfg.max_daily_losses,
@@ -509,11 +551,12 @@ class BacktestRunner:
             trading_days += 1
 
             # Monthly reset
-            if last_month is not None and session_date.month != last_month:
+            current_month = (session_date.year, session_date.month)
+            if last_month is not None and current_month != last_month:
                 breaker.new_month()
-            last_month = session_date.month
+            last_month = current_month
 
-            # Daily reset of daily counters
+            # Daily reset of daily counters. Monthly trips remain active.
             breaker.new_day()
 
             # Circuit breaker check (monthly may still be tripped)
@@ -529,36 +572,67 @@ class BacktestRunner:
                 config=cfg,
             )
 
-            # Process all signals sequentially
-            for signal in session_signals:
+            # Process signals chronologically and enforce the current single-position model.
+            last_exit_timestamp: Optional[str] = None
+            for signal in sorted(session_signals, key=lambda item: item.timestamp):
                 if breaker.is_triggered():
                     break
-
-                # Hook for subclasses
-                self._on_signal(signal, session_date)
+                if last_exit_timestamp and signal.timestamp <= last_exit_timestamp:
+                    logfire.info(
+                        "[Backtest] Overlapping signal skipped",
+                        signal_id=signal.signal_id,
+                        previous_exit=last_exit_timestamp,
+                    )
+                    continue
 
                 # Simulate the trade against remaining M1 candles
                 # To avoid look-ahead bias and respect sequentiality, we find where the signal triggered
                 confirmation_idx = self._find_candle_index(m1, signal.timestamp)
-                remaining_m1 = m1[confirmation_idx + 1:] if confirmation_idx >= 0 else []
+                if confirmation_idx < 0:
+                    raise ValueError(
+                        f"Signal {signal.signal_id} timestamp {signal.timestamp} "
+                        "does not exist in the session candle stream"
+                    )
+                remaining_m1 = m1[confirmation_idx + 1:]
 
-                # Determine dynamic slippage (p_atr_slippage * ATR)
-                slippage_pips = (signal.atr_m1 * cfg.p_atr_slippage / 0.0001) if run_config.use_atr_slippage else 1.0
+                position_size = self._position_sizer.calculate(
+                    current_equity,
+                    cfg.risk_per_trade,
+                    abs(signal.entry - signal.stop),
+                    run_config.pip_value,
+                )
+                signal = replace(signal, position_size=position_size)
 
-                record = self._simulate_trade(signal, remaining_m1, run_config.pip_value, slippage_pips)
+                # Hook for subclasses receives the executable, risk-sized signal.
+                self._on_signal(signal, session_date)
+
+                slippage_price = (
+                    signal.atr_m1 * run_config.atr_slippage_factor
+                    if run_config.use_atr_slippage
+                    else run_config.fixed_slippage_price
+                )
+                record = self._simulate_trade(
+                    signal,
+                    remaining_m1,
+                    run_config.pip_value,
+                    slippage_price,
+                    commission_per_trade=run_config.commission_per_trade,
+                    intrabar_fill_policy=run_config.intrabar_fill_policy,
+                    mark_expired_to_market=run_config.mark_expired_to_market,
+                )
                 trades.append(record)
+                if record.exit_timestamp:
+                    last_exit_timestamp = record.exit_timestamp
 
                 # Update equity
                 current_equity += record.pnl_usd
 
                 # Notify circuit breaker
-                risk_amount = run_config.account_size * cfg.risk_per_trade
-                loss_pct = risk_amount / run_config.account_size
-
                 if record.is_loss:
+                    loss_pct = abs(record.pnl_usd) / max(current_equity - record.pnl_usd, 1.0)
                     breaker.record_loss(loss_pct)
                 elif record.is_win:
-                    gain_pct = record.pnl_usd / run_config.account_size
+                    gain_pct = record.pnl_usd / max(current_equity - record.pnl_usd, 1.0)
                     breaker.record_win(gain_pct)
 
                 self._on_trade_close(record, current_equity)
@@ -593,75 +667,23 @@ class BacktestRunner:
         remaining_m1: List[CandleRow],
         pip_value: float = 1.0,
         slippage_override: Optional[float] = None,
+        *,
+        commission_per_trade: float = 0.0,
+        intrabar_fill_policy: str = "conservative",
+        mark_expired_to_market: bool = True,
     ) -> TradeRecord:
-        """
-        Walk forward through M1 candles until SL or TP is hit.
-        """
-        # Slippage model: ATR-based or fixed
-        if slippage_override is not None:
-             slippage_pips = slippage_override
-        elif signal.atr_m1 > 0:
-             # Default: 0.2 ATR slippage if not specified
-             slippage_pips = signal.atr_m1 * 0.2 / 0.0001 # in pips (approx)
-             # Better: just use pips directly
-             slippage_pips = 1.0
-        else:
-             slippage_pips = 1.0 
-
-        for candle in remaining_m1:
-            h = candle["high"]
-            l = candle["low"]
-
-            # risk_amount = lots × risk_pips × pip_value  (= account × risk_pct, by construction)
-            risk_amount = signal.position_size * signal.risk_pips * pip_value
-
-            if signal.direction == "SHORT":
-                if l <= signal.tp:        # TP hit first (price moved down)
-                    return TradeRecord(
-                        signal=signal, outcome="win_tp",
-                        exit_price=signal.tp,
-                        exit_timestamp=candle["timestamp"],
-                        pnl_r=3.0,
-                        pnl_usd=risk_amount * 3.0,
-                        slippage_pips=slippage_pips,
-                    )
-                if h >= signal.stop:      # SL hit
-                    return TradeRecord(
-                        signal=signal, outcome="loss_sl",
-                        exit_price=signal.stop + slippage_pips,
-                        exit_timestamp=candle["timestamp"],
-                        pnl_r=-1.0,
-                        pnl_usd=-risk_amount * 1.0,
-                        slippage_pips=slippage_pips,
-                    )
-            else:  # LONG
-                if h >= signal.tp:        # TP hit
-                    return TradeRecord(
-                        signal=signal, outcome="win_tp",
-                        exit_price=signal.tp,
-                        exit_timestamp=candle["timestamp"],
-                        pnl_r=3.0,
-                        pnl_usd=risk_amount * 3.0,
-                        slippage_pips=slippage_pips,
-                    )
-                if l <= signal.stop:      # SL hit
-                    return TradeRecord(
-                        signal=signal, outcome="loss_sl",
-                        exit_price=signal.stop - slippage_pips,
-                        exit_timestamp=candle["timestamp"],
-                        pnl_r=-1.0,
-                        pnl_usd=-risk_amount * 1.0,
-                        slippage_pips=slippage_pips,
-                    )
-
-        # Expired: no SL/TP hit before session end
-        return TradeRecord(
-            signal=signal, outcome="expired",
-            exit_price=signal.entry,
-            exit_timestamp="",
-            pnl_r=0.0,
-            pnl_usd=0.0,
-            slippage_pips=slippage_pips,
+        """Delegate OHLC fill resolution to the injected execution strategy."""
+        settings = ExecutionSettings(
+            slippage_price=slippage_override or 0.0,
+            commission_per_trade=commission_per_trade,
+            intrabar_fill_policy=intrabar_fill_policy,
+            mark_expired_to_market=mark_expired_to_market,
+        )
+        return self._execution_model.simulate(
+            signal,
+            remaining_m1,
+            pip_value,
+            settings,
         )
 
     # ================================================================== #
@@ -812,4 +834,4 @@ class BacktestRunner:
         for i, c in enumerate(candles):
             if c["timestamp"].startswith(timestamp[:16]):   # compare up to minute
                 return i
-        return len(candles) - 1  # fallback: last candle
+        return -1

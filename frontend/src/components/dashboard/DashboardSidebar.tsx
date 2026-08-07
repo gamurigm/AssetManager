@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import {
     TrendingUp, Activity, Bell, Settings, Pin, PinOff,
     History as HistoryIcon, ShoppingCart,
-    LineChart, BarChart2, Zap, Layers, Maximize2, Repeat, Target, Sliders, Hash
+    LineChart, BarChart2, Zap, Layers, Maximize2, Repeat, Target, Sliders, Hash, Bot
 } from "lucide-react";
 import type { SidebarTab, TransactionRecord } from "@/types/dashboard";
 
@@ -17,6 +17,11 @@ const Watchlist = dynamic(() => import("@/components/watchlist/Watchlist"), {
 const TradingPanel = dynamic(() => import("@/components/dashboard/TradingPanel"), {
     ssr: false,
     loading: () => <div className="p-4 text-muted text-xs">Initializing Terminal...</div>,
+});
+
+const MT5ExpertsPanel = dynamic(() => import('@/components/dashboard/MT5ExpertsPanel'), {
+    ssr: false,
+    loading: () => <div className="p-4 text-muted text-xs">Inicializando MT5 Experts...</div>,
 });
 
 // ─── Props ──────────────────────────────────────────────────────────
@@ -112,6 +117,9 @@ export default function DashboardSidebar({
                 <RailButton active={activeTab === 'trading'} onClick={() => selectTab('trading')} title="Trading Terminal"
                     activeClass="bg-emerald-400/10 text-emerald-400" hoverClass="hover:text-emerald-400"><ShoppingCart size={15} /></RailButton>
 
+                <RailButton active={activeTab === 'experts'} onClick={() => selectTab('experts')} title="MT5 Expert Advisors"
+                    activeClass="bg-violet-400/10 text-violet-400" hoverClass="hover:text-violet-400"><Bot size={15} /></RailButton>
+
                 <RailButton active={activeTab === 'indicators'} onClick={() => selectTab('indicators')} title="Technicals & Indicators"
                     activeClass="bg-cyan-400/10 text-cyan-400" hoverClass="hover:text-cyan-400"><Activity size={15} /></RailButton>
 
@@ -134,6 +142,7 @@ export default function DashboardSidebar({
                     <>
                         {activeTab === 'watchlist' && <Watchlist onSelectSymbol={onSelectSymbol} />}
                         {activeTab === 'trading' && <TradingPanel />}
+                        {activeTab === 'experts' && <MT5ExpertsPanel />}
                         {activeTab === 'indicators' && <IndicatorsPanel showFib={showFib} setShowFib={setShowFib} showBollinger={showBollinger} setShowBollinger={setShowBollinger} showIchimoku={showIchimoku} setShowIchimoku={setShowIchimoku} showVwap={showVwap} setShowVwap={setShowVwap} showRsi={showRsi} setShowRsi={setShowRsi} showAtr={showAtr} setShowAtr={setShowAtr} showKeltner={showKeltner} setShowKeltner={setShowKeltner} showCci={showCci} setShowCci={setShowCci} showAdx={showAdx} setShowAdx={setShowAdx} showPsar={showPsar} setShowPsar={setShowPsar} showSupertrend={showSupertrend} setShowSupertrend={setShowSupertrend} showWilliams={showWilliams} setShowWilliams={setShowWilliams} showMfi={showMfi} setShowMfi={setShowMfi} showCmf={showCmf} setShowCmf={setShowCmf} />}
                         {activeTab === 'alerts' && <AlertsPanel />}
                         {activeTab === 'history' && <HistoryPanel transactions={transactions} />}
@@ -220,7 +229,8 @@ function IndicatorsPanel({ showFib, setShowFib, showBollinger, setShowBollinger,
 }
 
 function IndicatorToggle({ active, onClick, name, desc, activeColor, Icon }: {
-    active: boolean; onClick: () => void; name: string; desc: string; activeColor: string; Icon?: any;
+    active: boolean; onClick: () => void; name: string; desc: string; activeColor: string;
+    Icon?: React.ComponentType<{ size?: number }>;
 }) {
     const colorMap: Record<string, { bg: string; border: string; text: string; glow: string; hoverBg: string; hoverBorder: string }> = {
         cyan: { bg: 'bg-cyan-400/10', border: 'border-cyan-400/30', text: 'text-cyan-400', glow: 'shadow-[0_0_12px_rgba(34,211,238,0.8)]', hoverBg: 'hover:bg-cyan-400/5', hoverBorder: 'hover:border-cyan-400/30' },

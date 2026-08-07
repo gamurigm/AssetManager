@@ -1,92 +1,137 @@
-import json
+"""Kafka-to-Socket.IO fanout owned by the public API/BFF."""
+
+from __future__ import annotations
+
 import asyncio
-from confluent_kafka import Consumer, KafkaException
+import os
+import socket
+from typing import Any
+
+from confluent_kafka import Consumer, Producer, TopicPartition
+
 from app.core.logging import logger
+from services.contracts.events import MarketTickV1
+from services.platform.kafka import (
+    KafkaDeadLetterPublisher,
+    KafkaJsonPublisher,
+    KafkaSettings,
+    ReliableMessageProcessor,
+)
+
 
 class KafkaConsumerService:
-    def __init__(self):
-        self.config = {
-            'bootstrap.servers': 'localhost:9092',
-            'group.id': 'fastapi-backend-cluster',
-            'auto.offset.reset': 'latest',
-            # Optimizations for fast real-time pulling
-            'fetch.min.bytes': 1,
-            'max.poll.interval.ms': 300000,
-            'session.timeout.ms': 10000,
-        }
-        self.consumer = None
-        self.sio = None
-        self.loop = None
+    TOPIC = "market.ticks.v1"
+    DLQ_TOPIC = "market.ticks.dlq.v1"
+
+    def __init__(self) -> None:
+        instance_id = os.getenv("API_INSTANCE_ID", socket.gethostname()).strip()
+        bootstrap_servers = os.getenv(
+            "KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"
+        )
+        kafka = KafkaSettings(
+            bootstrap_servers=bootstrap_servers,
+            client_id=f"api-fanout-{instance_id}",
+        )
+        self.config = kafka.consumer_config(
+            group_id=f"api-fanout-{instance_id}"
+        )
+        # WebSocket fanout is live state; historical ticks are hydrated via HTTP.
+        self.config["auto.offset.reset"] = "latest"
+        self._producer_config = kafka.producer_config()
+        self.consumer: Consumer | None = None
+        self.producer: Producer | None = None
+        self.sio: Any = None
         self._running = False
-        self._task = None
+        self._task: asyncio.Task | None = None
+        self._processor: ReliableMessageProcessor | None = None
+        self.last_error: str | None = None
 
-    def start(self, sio):
-        """Inicializa el consumidor de Kafka en un bucle asíncrono secundario."""
-        self.sio = sio
-        self.loop = asyncio.get_running_loop()
-        self.consumer = Consumer(self.config)
-        
-        # Nos suscribimos con una expresión regular a TODOS los tópicos de precios
-        try:
-            self.consumer.subscribe(['^market\.ticks\..*'])
-            logger.info("[Kafka Consumer] Conectado y escuchando tópicos market.ticks.*")
-        except Exception as e:
-            logger.error(f"Error de suscripción: {e}")
+    @property
+    def is_running(self) -> bool:
+        return self._running and self._task is not None and not self._task.done()
+
+    def start(self, sio: Any) -> None:
+        if self.is_running:
             return
-            
+        self.sio = sio
+        self.consumer = Consumer(self.config)
+        self.producer = Producer(self._producer_config)
+        dead_letter = KafkaDeadLetterPublisher(KafkaJsonPublisher(self.producer))
+        self._processor = ReliableMessageProcessor(
+            consumer=self.consumer,
+            event_model=MarketTickV1,
+            handler=self.emit_tick,
+            dead_letter_topic=self.DLQ_TOPIC,
+            dead_letter_publisher=dead_letter,
+        )
+        self.consumer.subscribe([self.TOPIC])
         self._running = True
-        self._task = self.loop.create_task(self._consume_loop())
+        self.last_error = None
+        self._task = asyncio.get_running_loop().create_task(self._consume_loop())
+        logger.info("[Kafka Fanout] Listening to %s", self.TOPIC)
 
-    def stop(self):
-        """Apaga el consumidor de Kafka limpiamente."""
+    def stop(self) -> None:
         self._running = False
         if self._task:
             self._task.cancel()
         if self.consumer:
             self.consumer.close()
-            logger.info("[Kafka Consumer] Desconectado.")
+            self.consumer = None
+        if self.producer:
+            self.producer.flush(5)
+            self.producer = None
+        logger.info("[Kafka Fanout] Stopped")
 
-    async def _consume_loop(self):
-        """Bucle infinito que consume mensajes y los transmite vía WebSockets."""
+    async def emit_tick(self, tick: MarketTickV1) -> None:
+        if self.sio is None:
+            return
+        frontend_payload = {
+            "eventId": tick.event_id,
+            "correlationId": tick.correlation_id,
+            "symbol": tick.symbol,
+            "price": tick.price,
+            "volume": tick.volume,
+            "change": 0.0,
+            "changePercent": 0.0,
+            "timestamp": tick.observed_at.timestamp(),
+            "source": f"{tick.source} -> Kafka",
+            "live": True,
+        }
+        await self.sio.emit("price_update", frontend_payload, room=tick.symbol)
+
+    async def _consume_loop(self) -> None:
+        assert self.consumer is not None
+        assert self._processor is not None
         while self._running:
             try:
-                # poll(timeout) es bloqueante a nivel de C (librería librdkafka).
-                # Usamos asyncio.to_thread para no bloquear el Event Loop de FastAPI
-                msg = await asyncio.to_thread(self.consumer.poll, 0.5)
-
-                if msg is None:
+                message = await asyncio.to_thread(self.consumer.poll, 0.5)
+                if message is None:
                     continue
-                if msg.error():
-                    # Ignorar el error de que un tópico creado dinámicamente no exista momentáneamente
-                    if msg.error().code() != msg.error().UNKNOWN_TOPIC_OR_PART:
-                        logger.warning(f"[Kafka Consumer] Error: {msg.error()}")
+                if message.error():
+                    self.last_error = str(message.error())
+                    logger.warning("[Kafka Fanout] %s", message.error())
+                    await asyncio.sleep(1)
                     continue
 
-                # Procesar mensaje válido
-                try:
-                    tick = json.loads(msg.value().decode('utf-8'))
-                    symbol = tick.get("symbol")
-                    if symbol and self.sio:
-                        # Formato compatible con el Frontend actual
-                        frontend_payload = {
-                            "symbol": symbol,
-                            "price": tick.get("price", 0.0),
-                            "change": 0.0,
-                            "changePercent": 0.0,
-                            "timestamp": tick.get("timestamp", 0),
-                            "source": f"{tick.get('source', 'Kafka')} -> Kafka",
-                            "live": True,
-                        }
-                        # Enviar el precio solo a los usuarios suscritos a esa "sala" / "cuarto"
-                        await self.sio.emit("price_update", frontend_payload, room=symbol)
-                        logger.debug(f"[Kafka Consumer] Reflected {symbol} @ {frontend_payload['price']}")
-                except json.JSONDecodeError:
-                    logger.error("[Kafka Consumer] Mensaje corrupto o no es JSON")
-
+                outcome = await self._processor.process(message)
+                if outcome == "retry":
+                    self.last_error = "tick processing failed; retrying"
+                    self.consumer.seek(
+                        TopicPartition(
+                            message.topic(),
+                            message.partition(),
+                            message.offset(),
+                        )
+                    )
+                    await asyncio.sleep(0.25)
+                else:
+                    self.last_error = None
             except asyncio.CancelledError:
                 break
-            except Exception as e:
-                logger.error(f"Error inesperado en bucle: {e}")
-                await asyncio.sleep(1) # Pausa de seguridad antes de reintentar
+            except Exception as exc:
+                self.last_error = str(exc)
+                logger.exception("[Kafka Fanout] Unexpected error: %s", exc)
+                await asyncio.sleep(1)
+
 
 kafka_consumer_service = KafkaConsumerService()

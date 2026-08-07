@@ -85,7 +85,7 @@ class PortfolioPolicyApplyRequest(BaseModel):
     trade_date: Optional[str] = Field(default=None)
 
 @router.get("/")
-async def get_portfolios(portfolio_id: str = Query("main", description="Target portfolio to load")):
+def get_portfolios(portfolio_id: str = Query("main", description="Target portfolio to load")):
     """Load persisted portfolio from DuckDB. Fallback to INITIAL_HOLDINGS if empty and no history."""
     data = duckdb_repo.get_portfolio(portfolio_id)
     if not data:
@@ -102,7 +102,7 @@ async def get_portfolios(portfolio_id: str = Query("main", description="Target p
     return data
 
 @router.post("/save")
-async def save_portfolio(
+def save_portfolio(
     holdings: List[Dict[str, Any]] = Body(...),
     portfolio_id: str = Query("main", description="Target portfolio to save")
 ):
@@ -181,7 +181,7 @@ async def apply_portfolio_policy(request: PortfolioPolicyApplyRequest):
     return result
 
 @router.get("/risk")
-async def get_portfolio_risk(portfolio_id: str = Query("main", description="Target portfolio")):
+def get_portfolio_risk(portfolio_id: str = Query("main", description="Target portfolio")):
     """Live portfolio risk metrics: VaR, Volatility, Sharpe, Drawdown, etc."""
     holdings = duckdb_repo.get_portfolio(portfolio_id)
     if not holdings:
@@ -233,7 +233,7 @@ async def generate_portfolio_report(
     return {"url": report_url, "filename": filename, "type": type}
 
 @router.post("/snapshot-equity")
-async def snapshot_equity(
+def snapshot_equity(
     total_value: float = Body(..., embed=True),
     portfolio_id: str = Query("main", description="Target portfolio")
 ):
@@ -242,7 +242,7 @@ async def snapshot_equity(
     return {"status": "success" if success else "failed"}
 
 @router.get("/history")
-async def get_equity_history(portfolio_id: str = Query("main", description="Target portfolio")):
+def get_equity_history(portfolio_id: str = Query("main", description="Target portfolio")):
     """Retrieve dynamic equity history (realized vs total) for charts."""
     return calculate_equity_curve_uc.execute(days=730, portfolio_id=portfolio_id)
 
