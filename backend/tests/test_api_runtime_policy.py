@@ -4,7 +4,7 @@ from app.core.runtime_policy import APIRuntimePolicy
 def test_default_policy_keeps_broker_connections_out_of_api_process() -> None:
     policy = APIRuntimePolicy.from_mapping({})
 
-    assert policy.kafka_fanout_enabled is True
+    assert policy.kafka_fanout_enabled is False
     assert policy.scheduler_enabled is False
     assert policy.broker_connections_enabled is False
 

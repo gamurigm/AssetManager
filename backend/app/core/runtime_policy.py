@@ -23,7 +23,7 @@ class APIRuntimePolicy:
     def from_mapping(cls, values: Mapping[str, str]) -> "APIRuntimePolicy":
         return cls(
             kafka_fanout_enabled=_as_bool(
-                values.get("API_ENABLE_KAFKA_FANOUT"), default=True
+                values.get("API_ENABLE_KAFKA_FANOUT"), default=False
             ),
             scheduler_enabled=_as_bool(
                 values.get("API_ENABLE_SCHEDULER"), default=False
