@@ -15,10 +15,10 @@ from __future__ import annotations
 
 import asyncio
 import os
-import threading
 import uuid
-from dataclasses import dataclass
-from typing import Dict, List, Optional
+import tempfile
+from pathlib import Path
+from typing import List, Optional
 from datetime import datetime, timezone
 import logfire
 
@@ -30,37 +30,12 @@ from ..agents.strategies.backtest_runner import (
 )
 from .intraday_repository import intraday_repository
 from .market_data import market_data_service
+from .simulation_jobs import InMemorySimulationJobStore, SimulationJob
 
 
 # --------------------------------------------------------------------------- #
 #  Request / Response schemas (simple dicts — Pydantic models live in routes) #
 # --------------------------------------------------------------------------- #
-
-@dataclass
-class SimulationJob:
-    sim_id: str
-    symbol: str
-    strategy_name: str
-    status: str
-    created_at: str
-    updated_at: str
-    result: Optional[BacktestResult] = None
-    error: Optional[str] = None
-
-    def as_dict(self) -> dict:
-        payload = {
-            "sim_id": self.sim_id,
-            "symbol": self.symbol,
-            "strategy": self.strategy_name,
-            "status": self.status,
-            "created_at": self.created_at,
-            "updated_at": self.updated_at,
-        }
-        if self.result is not None:
-            payload["summary"] = self.result.summary()
-        if self.error:
-            payload["error"] = self.error
-        return payload
 
 class SimulationService:
     """
@@ -75,21 +50,24 @@ class SimulationService:
         *,
         max_active_jobs: Optional[int] = None,
         max_history: Optional[int] = None,
+        job_store: Optional[InMemorySimulationJobStore] = None,
     ) -> None:
-        self._jobs: Dict[str, SimulationJob] = {}
         self._tasks: set[asyncio.Task] = set()
-        self._lock = threading.RLock()
-        self._max_active_jobs = max(
+        active_limit = max(
             1,
             max_active_jobs
             if max_active_jobs is not None
             else int(os.getenv("SIMULATION_MAX_ACTIVE_JOBS", "4")),
         )
-        self._max_history = max(
+        history_limit = max(
             10,
             max_history
             if max_history is not None
             else int(os.getenv("SIMULATION_MAX_HISTORY", "100")),
+        )
+        self._job_store = job_store or InMemorySimulationJobStore(
+            max_active_jobs=active_limit,
+            max_history=history_limit,
         )
         self._sio = None
 
@@ -101,48 +79,37 @@ class SimulationService:
         """Register the Socket.IO server so background runs can broadcast events."""
         self._sio = sio
 
-    def pre_register(self, symbol: str, strategy_name: str) -> str:
+    def pre_register(
+        self,
+        symbol: str,
+        strategy_name: str,
+        owner_id: Optional[int] = None,
+    ) -> str:
         """Reserve a bounded, queryable simulation job before execution starts."""
         sim_id = self._generate_sim_id(symbol, strategy_name)
         now = datetime.now(timezone.utc).isoformat()
-        with self._lock:
-            active = sum(
-                job.status in {"queued", "running"}
-                for job in self._jobs.values()
-            )
-            if active >= self._max_active_jobs:
-                raise ValueError(
-                    f"Simulation capacity reached ({self._max_active_jobs} active jobs)"
-                )
-            self._prune_jobs_locked()
-            self._jobs[sim_id] = SimulationJob(
+        self._job_store.add(
+            SimulationJob(
                 sim_id=sim_id,
                 symbol=symbol.strip().upper(),
                 strategy_name=strategy_name,
                 status="queued",
                 created_at=now,
                 updated_at=now,
+                owner_id=owner_id,
             )
+        )
         return sim_id
 
-    def start_background(self, config: BacktestConfig) -> str:
+    def start_background(
+        self, config: BacktestConfig, owner_id: Optional[int] = None
+    ) -> str:
         """Create and retain one background task through the service façade."""
-        sim_id = self.pre_register(config.symbol, config.strategy_name)
+        sim_id = self.pre_register(config.symbol, config.strategy_name, owner_id)
         task = asyncio.create_task(self.run_backtest_background(sim_id, config))
         self._tasks.add(task)
         task.add_done_callback(self._tasks.discard)
         return sim_id
-
-    def _prune_jobs_locked(self) -> None:
-        completed = [
-            job for job in self._jobs.values()
-            if job.status in {"completed", "failed"}
-        ]
-        overflow = len(self._jobs) - self._max_history + 1
-        if overflow <= 0:
-            return
-        for job in sorted(completed, key=lambda item: item.updated_at)[:overflow]:
-            self._jobs.pop(job.sim_id, None)
 
     def _set_job_state(
         self,
@@ -152,35 +119,35 @@ class SimulationService:
         result: Optional[BacktestResult] = None,
         error: Optional[str] = None,
     ) -> None:
-        with self._lock:
-            job = self._jobs.get(sim_id)
-            if job is None:
-                return
-            job.status = status
-            job.updated_at = datetime.now(timezone.utc).isoformat()
-            job.result = result
-            job.error = error
+        self._job_store.update(
+            sim_id,
+            status=status,
+            updated_at=datetime.now(timezone.utc).isoformat(),
+            result=result,
+            error=error,
+        )
 
-    async def _generate_pdf_report(self, result: BacktestResult) -> Optional[str]:
+    async def _generate_pdf_report(
+        self, result: BacktestResult, owner_id: Optional[int] = None
+    ) -> Optional[str]:
         """Generate a PDF report in a worker thread and return its filename."""
         from ..agents.strategies.report_generator import generate_pdf_report
+        from .artifact_service import publish_report
 
-        reports_dir = os.path.join(os.getcwd(), "reports")
-        os.makedirs(reports_dir, exist_ok=True)
-
-        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        report_filename = f"backtest_{result.config.symbol}_{stamp}.pdf"
-        full_path = os.path.join(reports_dir, report_filename)
-
-        await asyncio.to_thread(generate_pdf_report, result, full_path)
-        logfire.info(f"PDF report generated: {full_path}")
-        return report_filename
+        with tempfile.TemporaryDirectory(prefix="assetmanager-report-") as directory:
+            path = Path(directory) / "backtest.pdf"
+            await asyncio.to_thread(generate_pdf_report, result, str(path))
+            return await publish_report(path, owner_id)
 
     def _make_callbacks(
-        self, sim_id: str, loop: asyncio.AbstractEventLoop
+        self,
+        sim_id: str,
+        loop: asyncio.AbstractEventLoop,
+        owner_id: Optional[int] = None,
     ):
         """Return three thread-safe callbacks that emit Socket.IO events."""
         sio = self._sio
+        room = f"user:{owner_id}" if owner_id is not None else None
 
         def on_progress(day: int, total: int) -> None:
             if not sio:
@@ -190,7 +157,7 @@ class SimulationService:
                 sio.emit("backtest_progress", {
                     "sim_id": sim_id, "day": day,
                     "total": total, "pct": pct,
-                }),
+                }, room=room),
                 loop,
             )
 
@@ -218,7 +185,7 @@ class SimulationService:
                         "execution_note": record.execution_note,
                     },
                     "equity": round(equity, 2),
-                }),
+                }, room=room),
                 loop,
             )
 
@@ -234,7 +201,7 @@ class SimulationService:
                     "max_drawdown_95_ci_pct":  stats.get("max_drawdown_95_ci_pct", [0, 0]),
                     "net_profit_samples":      stats.get("net_profit_samples", [])[:500],
                     "max_drawdown_samples":    stats.get("max_drawdown_samples", [])[:500],
-                }),
+                }, room=room),
                 loop,
             )
 
@@ -247,8 +214,12 @@ class SimulationService:
         backtest_bootstrap_ready, backtest_complete, backtest_error.
         """
         self._set_job_state(sim_id, "running")
+        job = self._job_store.get(sim_id)
+        owner_id = job.owner_id if job else None
         loop = asyncio.get_running_loop()
-        on_progress, on_trade, on_bootstrap = self._make_callbacks(sim_id, loop)
+        on_progress, on_trade, on_bootstrap = self._make_callbacks(
+            sim_id, loop, owner_id
+        )
         try:
             engine   = StrategyFactory.create(config.strategy_name)
             kpi_calc = ORBKPICalculator()
@@ -264,7 +235,7 @@ class SimulationService:
             # --- Generate PDF report (in thread, non-blocking) ---
             report_filename = None
             try:
-                report_filename = await self._generate_pdf_report(result)
+                report_filename = await self._generate_pdf_report(result, owner_id)
                 result.report_path = report_filename
             except Exception as pdf_err:
                 logfire.error(f"PDF generation failed for {sim_id}: {pdf_err}")
@@ -272,7 +243,7 @@ class SimulationService:
             self._set_job_state(sim_id, "completed", result=result)
 
             report_url = (
-                f"http://localhost:8282/view-reports/{report_filename}"
+                f"/view-reports/{report_filename}"
                 if report_filename else None
             )
             if self._sio:
@@ -289,7 +260,7 @@ class SimulationService:
                     "total_trades": result.kpis.total_trades,
                     "bootstrap":    bootstrap_summary,
                     "report_url":   report_url,
-                })
+                }, room=f"user:{owner_id}" if owner_id is not None else None)
 
         except Exception as exc:
             logfire.error(f"run_backtest_background failed [{sim_id}]: {exc}")
@@ -298,7 +269,7 @@ class SimulationService:
                 await self._sio.emit("backtest_error", {
                     "sim_id": sim_id,
                     "error":  str(exc),
-                })
+                }, room=f"user:{owner_id}" if owner_id is not None else None)
 
     # ================================================================== #
     #  Run full backtest (sync/polling path — kept for tests/backward compat)
@@ -313,6 +284,7 @@ class SimulationService:
         strategy_name: str = "ORB_FVG_ENGULFING",
         strategy_params: Optional[dict] = None,
         pip_value: float = 1.0,
+        max_position_size: Optional[float] = None,
         use_atr_slippage: bool = False,
         atr_slippage_factor: float = 0.20,
         fixed_slippage_price: float = 0.0,
@@ -321,6 +293,7 @@ class SimulationService:
         mark_expired_to_market: bool = True,
         run_bootstrap: bool = False,
         bootstrap_iterations: int = 1000,
+        owner_id: Optional[int] = None,
     ) -> tuple[str, BacktestResult]:
         """
         Execute a full backtest and store the result.
@@ -340,6 +313,7 @@ class SimulationService:
             strategy_name=strategy_name,
             strategy_params=strategy_params or {},
             pip_value=pip_value,
+            max_position_size=max_position_size,
             use_atr_slippage=use_atr_slippage,
             atr_slippage_factor=atr_slippage_factor,
             fixed_slippage_price=fixed_slippage_price,
@@ -357,22 +331,25 @@ class SimulationService:
 
         result = await runner.run(config)
         try:
-            result.report_path = await self._generate_pdf_report(result)
+            result.report_path = await self._generate_pdf_report(result, owner_id)
         except Exception as pdf_err:
             logfire.error(f"PDF generation failed for sync run: {pdf_err}")
 
         sim_id = self._generate_sim_id(symbol, strategy_name)
         now = datetime.now(timezone.utc).isoformat()
-        with self._lock:
-            self._jobs[sim_id] = SimulationJob(
+        self._job_store.add(
+            SimulationJob(
                 sim_id=sim_id,
                 symbol=config.symbol,
                 strategy_name=config.strategy_name,
                 status="completed",
                 created_at=now,
                 updated_at=now,
+                owner_id=owner_id,
                 result=result,
-            )
+            ),
+            enforce_capacity=False,
+        )
 
         return sim_id, result
 
@@ -380,29 +357,25 @@ class SimulationService:
     #  Retrieve stored result                                             #
     # ================================================================== #
 
-    def get_result(self, sim_id: str) -> Optional[BacktestResult]:
-        with self._lock:
-            job = self._jobs.get(sim_id)
-            return job.result if job else None
+    def get_result(
+        self, sim_id: str, owner_id: Optional[int] = None
+    ) -> Optional[BacktestResult]:
+        job = self._job_store.get(sim_id, owner_id=owner_id)
+        return job.result if job else None
 
-    def get_job(self, sim_id: str) -> Optional[dict]:
-        with self._lock:
-            job = self._jobs.get(sim_id)
-            return job.as_dict() if job else None
+    def get_job(self, sim_id: str, owner_id: Optional[int] = None) -> Optional[dict]:
+        job = self._job_store.get(sim_id, owner_id=owner_id)
+        return job.as_dict() if job else None
 
     def is_pending(self, sim_id: str) -> bool:
-        with self._lock:
-            job = self._jobs.get(sim_id)
-            return bool(job and job.status in {"queued", "running"})
+        job = self._job_store.get(sim_id)
+        return bool(job and job.status in {"queued", "running"})
 
-    def list_simulations(self) -> List[dict]:
-        with self._lock:
-            jobs = sorted(
-                self._jobs.values(),
-                key=lambda item: item.created_at,
-                reverse=True,
-            )
-            return [job.as_dict() for job in jobs]
+    def list_simulations(self, owner_id: Optional[int] = None) -> List[dict]:
+        return [
+            job.as_dict()
+            for job in self._job_store.list(owner_id=owner_id)
+        ]
 
     # ================================================================== #
     #  Live signal (today's session)                                      #

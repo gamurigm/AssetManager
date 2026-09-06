@@ -95,7 +95,7 @@ from .models.models import UserRole
 from .services.auth import decode_access_token
 
 # App setup
-from .api.routes import auth, clients, portfolios, trading, mt5, agents, market_data, openbb_config, watchlist, analytics, simulation, bybit, finviz, fmp, openbb_widgets, macro_economy, open_claw, integration_settings
+from .api.routes import auth, clients, portfolios, trading, mt5, agents, market_data, openbb_config, terminal, watchlist, analytics, simulation, bybit, finviz, fmp, openbb_widgets, macro_economy, open_claw, integration_settings
 
 # Socket.IO setup
 sio = socketio.AsyncServer(
@@ -259,6 +259,7 @@ app.include_router(watchlist.router, prefix=f"{settings.API_V1_STR}/watchlist", 
 app.include_router(analytics.router, prefix=f"{settings.API_V1_STR}/analytics", tags=["analytics"], dependencies=protected)
 app.include_router(simulation.router, prefix=f"{settings.API_V1_STR}/simulation", tags=["simulation"], dependencies=protected)
 app.include_router(openbb_config.router, prefix="", tags=["openbb"], dependencies=protected)
+app.include_router(terminal.router, prefix="", tags=["terminal"], dependencies=protected)
 app.include_router(openbb_widgets.router, prefix="", tags=["openbb", "widgets"], dependencies=protected)
 app.include_router(macro_economy.router, prefix="", tags=["macro_economy"])
 app.include_router(bybit.router, prefix=f"{settings.API_V1_STR}/bybit", tags=["bybit"])

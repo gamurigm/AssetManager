@@ -1,13 +1,17 @@
 from fastapi import APIRouter, Body, HTTPException, Query
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Optional
-from ...services.report_service import report_service
+from typing import Annotated, List, Dict, Any, Optional
+from fastapi import Depends
+import asyncio
+import tempfile
+from pathlib import Path
 from ...services.risk_service import risk_service
 from ...services.portfolio_backtest_service import portfolio_backtest_service
 from ...services.portfolio_policy_service import portfolio_policy_service
 from ...services.portfolio_rebalance_service import portfolio_rebalance_service
 
 from ...core.container import duckdb_repo, calculate_equity_curve_uc
+from ...core.security import Principal, get_current_principal, scope_resource_id
 
 INITIAL_HOLDINGS = [
     { "symbol": "^N225", "name": "Nikkei 225 Index", "shares": 0.1, "entryPrice": 29600, "price": 0, "factor": 0.4166, "change": 0, "changePercent": 0, "source": "Live", "sector": "Indices", "type": "cfd", "purchaseDate": "2023-05-15" },
@@ -85,18 +89,22 @@ class PortfolioPolicyApplyRequest(BaseModel):
     trade_date: Optional[str] = Field(default=None)
 
 @router.get("/")
-def get_portfolios(portfolio_id: str = Query("main", description="Target portfolio to load")):
+def get_portfolios(
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    portfolio_id: str = Query("main", description="Target portfolio to load"),
+):
     """Load persisted portfolio from DuckDB. Fallback to INITIAL_HOLDINGS if empty and no history."""
-    data = duckdb_repo.get_portfolio(portfolio_id)
+    storage_id = scope_resource_id(portfolio_id, principal)
+    data = duckdb_repo.get_portfolio(storage_id)
     if not data:
         # Check if the user has trading history for this portfolio. If they do, they legitimately liquidated all positions.
-        history = duckdb_repo.get_transactions(portfolio_id)
+        history = duckdb_repo.get_transactions(storage_id)
         if history and len(history) > 0:
             return [] # Legitimate empty portfolio
             
         # Optional: Seed main portfolio only
         if portfolio_id == "main":
-            duckdb_repo.save_portfolio(INITIAL_HOLDINGS, portfolio_id)
+            duckdb_repo.save_portfolio(INITIAL_HOLDINGS, storage_id)
             return INITIAL_HOLDINGS
         return []
     return data
@@ -104,15 +112,20 @@ def get_portfolios(portfolio_id: str = Query("main", description="Target portfol
 @router.post("/save")
 def save_portfolio(
     holdings: List[Dict[str, Any]] = Body(...),
-    portfolio_id: str = Query("main", description="Target portfolio to save")
+    portfolio_id: str = Query("main", description="Target portfolio to save"),
+    principal: Principal = Depends(get_current_principal),
 ):
     """Persist current holdings to DuckDB."""
-    success = duckdb_repo.save_portfolio(holdings, portfolio_id)
+    storage_id = scope_resource_id(portfolio_id, principal)
+    success = duckdb_repo.save_portfolio(holdings, storage_id)
     return {"status": "success" if success else "failed"}
 
 
 @router.post("/backtest")
-async def run_portfolio_backtest(request: PortfolioBacktestRequest):
+async def run_portfolio_backtest(
+    request: PortfolioBacktestRequest,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+):
     """
     Buy a weighted basket on the first available trading day in the range and backtest it.
 
@@ -128,7 +141,7 @@ async def run_portfolio_backtest(request: PortfolioBacktestRequest):
         end_date=request.end_date,
         initial_cash=request.initial_cash,
         assets=[asset.model_dump(exclude_none=True) for asset in request.assets],
-        portfolio_id=request.portfolio_id,
+        portfolio_id=scope_resource_id(request.portfolio_id, principal),
         rebalance_frequency=request.rebalance_frequency,
         fee_bps=request.fee_bps,
         execution_mode=request.execution_mode,
@@ -147,10 +160,13 @@ async def get_portfolio_backtest_engines():
 
 
 @router.post("/policy")
-async def get_portfolio_policy(request: PortfolioPolicyRequest):
+async def get_portfolio_policy(
+    request: PortfolioPolicyRequest,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+):
     """Continuous EV-maximizing policy snapshot for the live portfolio state."""
     snapshot = portfolio_policy_service.build_policy_snapshot(
-        portfolio_id=request.portfolio_id,
+        portfolio_id=scope_resource_id(request.portfolio_id, principal),
         holdings=[holding.model_dump(exclude_none=True) for holding in request.holdings] if request.holdings else None,
         benchmark=request.benchmark,
         lookback_days=request.lookback_days,
@@ -167,10 +183,13 @@ async def get_portfolio_policy(request: PortfolioPolicyRequest):
 
 
 @router.post("/policy/apply")
-async def apply_portfolio_policy(request: PortfolioPolicyApplyRequest):
+async def apply_portfolio_policy(
+    request: PortfolioPolicyApplyRequest,
+    principal: Annotated[Principal, Depends(get_current_principal)],
+):
     """Apply one or more live portfolio policy allocations to the persisted portfolio and record transactions."""
     result = portfolio_rebalance_service.apply_policy_rebalance(
-        portfolio_id=request.portfolio_id,
+        portfolio_id=scope_resource_id(request.portfolio_id, principal),
         holdings=[holding.model_dump(exclude_none=True) for holding in request.holdings] if request.holdings else None,
         allocations=[allocation.model_dump(exclude_none=True) for allocation in request.allocations],
         symbols=request.symbols,
@@ -181,9 +200,13 @@ async def apply_portfolio_policy(request: PortfolioPolicyApplyRequest):
     return result
 
 @router.get("/risk")
-def get_portfolio_risk(portfolio_id: str = Query("main", description="Target portfolio")):
+def get_portfolio_risk(
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    portfolio_id: str = Query("main", description="Target portfolio"),
+):
     """Live portfolio risk metrics: VaR, Volatility, Sharpe, Drawdown, etc."""
-    holdings = duckdb_repo.get_portfolio(portfolio_id)
+    storage_id = scope_resource_id(portfolio_id, principal)
+    holdings = duckdb_repo.get_portfolio(storage_id)
     if not holdings:
         return {"error": "No holdings"}
 
@@ -194,7 +217,7 @@ def get_portfolio_risk(portfolio_id: str = Query("main", description="Target por
     # Calculate max drawdown from equity snapshots
     max_dd = 0.0
     try:
-        snapshots = calculate_equity_curve_uc.execute(days=365, portfolio_id=portfolio_id)
+        snapshots = calculate_equity_curve_uc.execute(days=365, portfolio_id=storage_id)
         if isinstance(snapshots, list) and snapshots:
             equities = [s.get("total", 0) for s in snapshots]
             peak = equities[0]
@@ -214,35 +237,53 @@ async def generate_portfolio_report(
     total_value: float = Body(0),
     total_pnl: float = Body(0),
     type: str = Body("standard"),
-    intelligence_text: str = Body("")
+    intelligence_text: str = Body(""),
+    principal: Principal = Depends(get_current_principal),
 ):
     """
     Generate different types of institutional reports.
     Types: 'standard', 'executive', 'risk', 'intelligence'
     """
-    if type == "executive":
-        filename = report_service.generate_executive_summary(holdings, intelligence_text)
-    elif type == "risk":
-        filename = report_service.generate_risk_audit(holdings)
-    elif type == "intelligence":
-        filename = report_service.generate_custom_intelligence_report(intelligence_text, holdings, total_value, total_pnl)
-    else:
-        filename = report_service.generate_balance_sheet(holdings, total_value, total_pnl)
-        
-    report_url = f"http://localhost:8282/view-reports/{filename}"
-    return {"url": report_url, "filename": filename, "type": type}
+    from ...services.report_service import ReportService
+    from ...services.artifact_service import publish_report
+
+    # Each request owns its chart scratch files, preventing cross-user races.
+    with tempfile.TemporaryDirectory(prefix="assetmanager-portfolio-") as directory:
+        generator = ReportService(directory)
+
+        def generate():
+            if type == "executive":
+                return generator.generate_executive_summary(holdings, intelligence_text)
+            if type == "risk":
+                return generator.generate_risk_audit(holdings)
+            if type == "intelligence":
+                return generator.generate_custom_intelligence_report(intelligence_text, holdings, total_value, total_pnl)
+            return generator.generate_balance_sheet(holdings, total_value, total_pnl)
+
+        try:
+            filename = await asyncio.to_thread(generate)
+            owned_filename = await publish_report(Path(directory) / filename, principal.id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    report_url = f"/view-reports/{owned_filename}"
+    return {"url": report_url, "filename": owned_filename, "type": type}
 
 @router.post("/snapshot-equity")
 def snapshot_equity(
     total_value: float = Body(..., embed=True),
-    portfolio_id: str = Query("main", description="Target portfolio")
+    portfolio_id: str = Query("main", description="Target portfolio"),
+    principal: Principal = Depends(get_current_principal),
 ):
     """Record current total balance and realized balance."""
-    success = duckdb_repo.record_equity_snapshot(total_value, portfolio_id)
+    storage_id = scope_resource_id(portfolio_id, principal)
+    success = duckdb_repo.record_equity_snapshot(total_value, storage_id)
     return {"status": "success" if success else "failed"}
 
 @router.get("/history")
-def get_equity_history(portfolio_id: str = Query("main", description="Target portfolio")):
+def get_equity_history(
+    principal: Annotated[Principal, Depends(get_current_principal)],
+    portfolio_id: str = Query("main", description="Target portfolio"),
+):
     """Retrieve dynamic equity history (realized vs total) for charts."""
-    return calculate_equity_curve_uc.execute(days=730, portfolio_id=portfolio_id)
-
+    storage_id = scope_resource_id(portfolio_id, principal)
+    return calculate_equity_curve_uc.execute(days=730, portfolio_id=storage_id)

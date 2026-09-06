@@ -1,0 +1,3 @@
+# Minimal SDK setup; matches existing backend pins without syncing unrelated providers.
+deepagents==0.7.13
+langchain-openai==1.6.0

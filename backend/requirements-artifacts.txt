@@ -1,0 +1,2 @@
+# Optional SDK for S3/Kumo. Filesystem deployments do not import it.
+boto3==1.42.74

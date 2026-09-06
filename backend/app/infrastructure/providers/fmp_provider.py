@@ -4,6 +4,7 @@ High quality data, strict free-tier limits.
 """
 
 import httpx
+from app.infrastructure.http.api_server_client import ApiServerError, provider_get
 from typing import Optional, List
 from ...domain.interfaces.market_provider import IMarketDataProvider
 from ...domain.entities.market import Quote, Candle
@@ -11,8 +12,7 @@ from ...core.config import settings
 
 
 class FMPProvider(IMarketDataProvider):
-    BASE_URL = "https://financialmodelingprep.com/api/v3"
-    V3_URL = "https://financialmodelingprep.com/api/v3"
+    BASE_URL = settings.FMP_BASE_URL
     _shared_client: httpx.AsyncClient | None = None
 
     @classmethod
@@ -36,8 +36,8 @@ class FMPProvider(IMarketDataProvider):
         try:
             fmp_sym = self.normalize_symbol(symbol)
             client = self._client()
-            resp = await client.get(
-                f"{self.BASE_URL}/quote",
+            resp = await provider_get(
+                client, "fmp", "quote",
                 params={"symbol": fmp_sym, "apikey": settings.FMP_API_KEY},
             )
             resp.raise_for_status()
@@ -62,8 +62,13 @@ class FMPProvider(IMarketDataProvider):
                 change_percent=pct, volume=q.get("volume"),
                 source="FMP (Real-time)",
             )
-        except Exception as e:
-            print(f"[FMPProvider] Error for {symbol}: {e}")
+        except httpx.HTTPStatusError as exc:
+            print(f"[FMPProvider] HTTP {exc.response.status_code} for quote/{symbol}")
+            return None
+        except ApiServerError:
+            raise
+        except Exception as exc:
+            print(f"[FMPProvider] Quote error for {symbol}: {type(exc).__name__}")
             return None
 
     async def get_historical(
@@ -71,32 +76,45 @@ class FMPProvider(IMarketDataProvider):
     ) -> Optional[List[Candle]]:
         try:
             fmp_sym = self.normalize_symbol(symbol)
-            params = {"apikey": settings.FMP_API_KEY}
+            params = {
+                "symbol": fmp_sym,
+                "apikey": settings.FMP_API_KEY,
+            }
             if start_date:
                 params["from"] = start_date
-            else:
-                params["timeseries"] = limit
 
             client = self._client()
-            resp = await client.get(
-                f"{self.V3_URL}/historical-price-full/{fmp_sym}",
+            resp = await provider_get(
+                client, "fmp", "historical-price-eod/full",
                 params=params,
             )
             resp.raise_for_status()
             data = resp.json()
 
-            if not data or "historical" not in data:
+            rows = data.get("historical", []) if isinstance(data, dict) else data
+            if not isinstance(rows, list) or not rows:
                 return None
 
-            return [
+            candles = [
                 Candle(
                     date=bar["date"], open=bar["open"], high=bar["high"],
-                    low=bar["low"], close=bar["close"], volume=bar.get("volume", 0),
+                    low=bar["low"], close=bar["close"],
+                    volume=int(float(bar.get("volume", 0) or 0)),
                 )
-                for bar in data["historical"]
+                for bar in rows
             ]
-        except Exception as e:
-            print(f"[FMPProvider] Historical error for {symbol}: {e}")
+            candles.sort(key=lambda candle: candle.date)
+            return candles[-limit:]
+        except httpx.HTTPStatusError as exc:
+            print(
+                f"[FMPProvider] HTTP {exc.response.status_code} "
+                f"for historical/{symbol}"
+            )
+            return None
+        except ApiServerError:
+            raise
+        except Exception as exc:
+            print(f"[FMPProvider] Historical error for {symbol}: {type(exc).__name__}")
             return None
 
     # --- FMP-specific methods (not part of interface — Open/Closed Principle) ---
@@ -105,13 +123,15 @@ class FMPProvider(IMarketDataProvider):
         """FMP-specific: company profile."""
         try:
             client = self._client()
-            resp = await client.get(
-                f"{self.BASE_URL}/profile",
+            resp = await provider_get(
+                client, "fmp", "profile",
                 params={"symbol": symbol, "apikey": settings.FMP_API_KEY},
             )
             resp.raise_for_status()
             data = resp.json()
             return data[0] if data and isinstance(data, list) else None
+        except ApiServerError:
+            raise
         except Exception:
             return None
 
@@ -119,26 +139,30 @@ class FMPProvider(IMarketDataProvider):
         """FMP-specific: ticker search."""
         try:
             client = self._client()
-            resp = await client.get(
-                f"{self.BASE_URL}/search",
+            resp = await provider_get(
+                client, "fmp", "search-symbol",
                 params={"query": query, "limit": limit, "apikey": settings.FMP_API_KEY},
             )
             resp.raise_for_status()
             return resp.json()
-        except Exception as e:
-            print(f"[FMPProvider] search_ticker error for '{query}': {e}")
+        except ApiServerError:
+            raise
+        except Exception as exc:
+            print(f"[FMPProvider] search_ticker error for '{query}': {type(exc).__name__}")
             return []
 
     async def get_stock_list(self) -> list:
         """Fetch ALL stocks from FMP list."""
         try:
             client = self._client()
-            resp = await client.get(
-                f"{self.V3_URL}/stock/list",
+            resp = await provider_get(
+                client, "fmp", "stock-list",
                 params={"apikey": settings.FMP_API_KEY},
             )
             resp.raise_for_status()
             return resp.json()
-        except Exception as e:
-            print(f"[FMPProvider] get_stock_list error: {e}")
+        except ApiServerError:
+            raise
+        except Exception as exc:
+            print(f"[FMPProvider] get_stock_list error: {type(exc).__name__}")
             return []

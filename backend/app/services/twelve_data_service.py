@@ -1,9 +1,10 @@
 from ..core.config import settings
 import httpx
+from app.infrastructure.http.api_server_client import ApiServerError, provider_get
 from typing import List, Dict, Any, Optional
 
 class TwelveDataService:
-    BASE_URL = "https://api.twelvedata.com"
+    BASE_URL = settings.TWELVE_DATA_BASE_URL
     
     @staticmethod
     async def get_price(symbol: str) -> Optional[Dict[str, Any]]:
@@ -18,7 +19,7 @@ class TwelveDataService:
         }
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(url, params=params)
+                response = await provider_get(client, "twelvedata", "quote", params)
                 data = response.json()
                 print(f"[TwelveData] Quote for {symbol}: {data}")
                 
@@ -27,9 +28,10 @@ class TwelveDataService:
                     print(f"[TwelveData] Rate limit or error for {symbol}: {data.get('message')}")
                     return None
                 
-                if "price" in data:
+                raw_price = data.get("price") or data.get("close")
+                if raw_price is not None:
                     return {
-                        "price": float(data["price"]),
+                        "price": float(raw_price),
                         "change": float(data.get("change") or 0.0),
                         "changePercentage": float(data.get("percent_change") or 0.0),
                         "previousClose": float(data.get("previous_close") or 0.0),
@@ -37,8 +39,10 @@ class TwelveDataService:
                         "source": "TwelveData"
                     }
                 return None
-        except Exception as e:
-            print(f"TwelveData Error for {symbol}: {e}")
+        except ApiServerError:
+            raise
+        except Exception as exc:
+            print(f"TwelveData Error for {symbol}: {type(exc).__name__}")
             return None
 
     @staticmethod

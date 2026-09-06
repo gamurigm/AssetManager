@@ -1,5 +1,6 @@
 from ..core.config import settings
 import httpx
+from app.infrastructure.http.api_server_client import ApiServerError, provider_get
 import logging
 from typing import List, Dict, Any
 
@@ -18,7 +19,7 @@ def _fmp_error(data: any) -> bool:
     return False
 
 class FMPService:
-    BASE_URL = "https://financialmodelingprep.com/stable"
+    BASE_URL = settings.FMP_BASE_URL
 
     @staticmethod
     async def get_quote(symbol: str) -> Dict[str, Any]:
@@ -30,7 +31,7 @@ class FMPService:
         }
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(url, params=params)
+                response = await provider_get(client, "fmp", "quote", params)
                 if response.status_code in (402, 403, 429):
                     logger.warning(f"[FMP] {response.status_code} on quote/{symbol} — premium/rate limit, skipping.")
                     return {}
@@ -45,8 +46,10 @@ class FMPService:
         except httpx.HTTPStatusError as e:
             logger.warning(f"[FMP] HTTP error on quote/{symbol}: {e.response.status_code}")
             return {}
-        except Exception as e:
-            logger.debug(f"[FMP] quote/{symbol}: {e}")
+        except ApiServerError:
+            raise
+        except Exception as exc:
+            logger.debug(f"[FMP] quote/{symbol}: {type(exc).__name__}")
             return {}
 
     @staticmethod
@@ -59,7 +62,7 @@ class FMPService:
         }
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(url, params=params)
+                response = await provider_get(client, "fmp", "profile", params)
                 if response.status_code in (402, 403, 429):
                     logger.warning(f"[FMP] {response.status_code} on profile/{symbol} — premium/rate limit, skipping.")
                     return {}
@@ -74,21 +77,23 @@ class FMPService:
         except httpx.HTTPStatusError as e:
             logger.warning(f"[FMP] HTTP error on profile/{symbol}: {e.response.status_code}")
             return {}
-        except Exception as e:
-            logger.debug(f"[FMP] profile/{symbol}: {e}")
+        except ApiServerError:
+            raise
+        except Exception as exc:
+            logger.debug(f"[FMP] profile/{symbol}: {type(exc).__name__}")
             return {}
 
     @staticmethod
     async def get_historical(symbol: str, limit: int = 30) -> Dict[str, Any]:
-        """Get historical price data (daily) using v3 API (Stable for historical)."""
-        url = f"https://financialmodelingprep.com/api/v3/historical-price-full/{symbol}"
+        """Get historical price data (daily) using the current stable API."""
+        url = f"{FMPService.BASE_URL}/historical-price-eod/full"
         params = {
             "apikey": settings.FMP_API_KEY,
-            "timeseries": limit
+            "symbol": symbol,
         }
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(url, params=params)
+                response = await provider_get(client, "fmp", "historical-price-eod/full", params)
                 if response.status_code in (402, 403, 429):
                     logger.warning(f"[FMP] {response.status_code} on historical/{symbol} — premium/rate limit, skipping.")
                     return {}
@@ -97,18 +102,24 @@ class FMPService:
                 if _fmp_error(data):
                     logger.warning(f"[FMP] Error payload on historical/{symbol}: {str(data)[:120]}")
                     return {}
-                return data
+                rows = data.get("historical", []) if isinstance(data, dict) else data
+                if not isinstance(rows, list) or not rows:
+                    return {}
+                rows = sorted(rows, key=lambda row: row.get("date", ""))
+                return {"symbol": symbol, "historical": rows[-limit:]}
         except httpx.HTTPStatusError as e:
             logger.warning(f"[FMP] HTTP error on historical/{symbol}: {e.response.status_code}")
             return {}
-        except Exception as e:
-            logger.debug(f"[FMP] historical/{symbol}: {e}")
+        except ApiServerError:
+            raise
+        except Exception as exc:
+            logger.debug(f"[FMP] historical/{symbol}: {type(exc).__name__}")
             return {}
 
     @staticmethod
     async def search_ticker(query: str, limit: int = 10) -> List[Dict[str, Any]]:
         """Search for tickers using stable API."""
-        url = f"{FMPService.BASE_URL}/search"
+        url = f"{FMPService.BASE_URL}/search-symbol"
         params = {
             "query": query,
             "limit": limit,
@@ -116,7 +127,7 @@ class FMPService:
         }
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(url, params=params)
+                response = await provider_get(client, "fmp", "search-symbol", params)
                 if response.status_code in (402, 403, 429):
                     return []
                 response.raise_for_status()
@@ -124,8 +135,10 @@ class FMPService:
                 if _fmp_error(data):
                     return []
                 return data if isinstance(data, list) else []
-        except Exception as e:
-            logger.debug(f"[FMP] search/{query}: {e}")
+        except ApiServerError:
+            raise
+        except Exception as exc:
+            logger.debug(f"[FMP] search/{query}: {type(exc).__name__}")
             return []
 
     @staticmethod
@@ -135,7 +148,7 @@ class FMPService:
         params = {"symbol": symbol, "period": period, "limit": limit, "apikey": settings.FMP_API_KEY}
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(url, params=params)
+                response = await provider_get(client, "fmp", endpoint, params)
                 if response.status_code in (402, 403, 429):
                     logger.warning(f"[FMP] {response.status_code} on {endpoint}/{symbol}")
                     return []
@@ -144,8 +157,10 @@ class FMPService:
                 if _fmp_error(data):
                     return []
                 return data if isinstance(data, list) else []
-        except Exception as e:
-            logger.debug(f"[FMP] {endpoint}/{symbol}: {e}")
+        except ApiServerError:
+            raise
+        except Exception as exc:
+            logger.debug(f"[FMP] {endpoint}/{symbol}: {type(exc).__name__}")
             return []
 
     @staticmethod
